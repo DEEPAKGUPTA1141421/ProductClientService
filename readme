@@ -1,0 +1,64 @@
+1 deals for you
+       has two columns 6 horizontal scrolling dicount percent is visisble
+       second column no scrolling
+2 picks worth the highlight 
+    has one columns horizontal scrolling height  cross width is different
+
+3 sponsored
+ 3 *2 6 prodcut height width 
+
+popular grocery product for you
+6 product each height and width is different and rating is visible
+
+iconic deals
+horizontal product box image is different and scroll is different
+
+ganpati must have means (upcoming fetival product)
+  horizontal scroll 
+
+
+people also viewed famous product in area
+height and width are different 2 * 2 box size
+
+populararity near by 2*2 product height and width are different
+
+add to wishlist product
+
+what is trending in the country
+horizantal scrolling size of box is different 
+
+
+delivery in 1 hour section
+
+delivery in 20 min section
+
+delivery in 1 day at max section 
+
+
+
+let focus on "for you","fashion","mobile","beauty"
+
+"For you"
+
+"Deals for you"  give me at max 10 product where disocunt is 50% or more on on every super-category
+take 2 element from top 5 category
+
+"best feature" product specific brand subsubcategory
+
+"picks worth the highlight"  category like subcategory click on that will lead to list of products 
+
+"sponsored product"  --> shop or brand will pay for that and we have that shop product as sponsored
+first i will fetch the shop list which is 
+
+
+popular grocery product for you
+ pick the product which is highest selling in grocery category 6 product
+
+must have smart shoppers
+ best 
+ 
+
+
+in my app there are different shops if user had add product 
+from different shop then create as many booking  per shop and details of one order  detail in another table
+  
