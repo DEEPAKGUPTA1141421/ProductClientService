@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
+import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Product.Step;
 
@@ -25,7 +26,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
         @Query("SELECT DISTINCT p FROM Product p " +
                         "LEFT JOIN FETCH p.productAttributes pa " +
-                        "LEFT JOIN FETCH pa.variants " +
+                        "LEFT JOIN FETCH p.variants " +
                         "WHERE p.id = :productId")
         Optional<Product> findProductWithAttributesAndVariants(@Param("productId") UUID productId);
 
@@ -43,6 +44,56 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         "LEFT JOIN p.brand b " +
                         "WHERE p.id = :productId")
         Optional<ProductElasticDto> findProductForIndexing(@Param("productId") UUID productId);
+
+        @Query(value = """
+                                                                      SELECT jsonb_build_object(
+                                                                          'id', p.id,
+                                                                          'name', p.name,
+                                                                          'description', p.description,
+                                                                          'step', p.step,
+                                                                          'is_standard', p.is_standard,
+                                                                          'created_at', p.created_at,
+                                                                          'updated_at', p.updated_at,
+                                                                          'seller', jsonb_build_object(
+                                                                              'id', s.id,
+                                                                              'name', s.display_name,
+                                                                              'email', s.email
+                                                                          ),
+                                                                          'variants', COALESCE(
+                                                                              jsonb_agg(DISTINCT jsonb_build_object(
+                                                                                  'id', pv.id,
+                                                                                  'price', pv.price,
+                                                                                  'sku', pv.sku,
+                                                                                  'stock', pv.stock
+                                                                              )) FILTER (WHERE pv.id IS NOT NULL), '[]'::jsonb
+                                                                          ),
+                                                                          'product_attributes', (
+                                                  SELECT jsonb_agg(attr_group)
+                                                  FROM (
+                                                      SELECT jsonb_build_object(
+                                                          'category_attribute_id', ca.id,
+                                                          'is_required', ca.is_required,
+                                                          'is_image_attribute', ca.is_image_attribute,
+                                                          'is_variant_attribute', ca.is_variant_attribute,
+                        'images', COALESCE(array_agg(DISTINCT pa.images) FILTER (WHERE pa.images IS NOT NULL), '{}'),
+                                                          'values', array_agg(pa.value)
+                                                      ) AS attr_group
+                                                      FROM product_attributes pa
+                                                      JOIN category_attributes ca ON ca.id = pa.category_attribute_id
+                                                      WHERE pa.product_id = p.id
+                                                      GROUP BY ca.id, ca.is_required, ca.is_image_attribute, ca.is_variant_attribute
+                                                  ) grouped
+                                              )
+                                              ) AS product_detail
+                                              FROM products p
+                                              LEFT JOIN sellers s ON s.id = p.seller_id
+                                              LEFT JOIN product_variants pv ON pv.product_id = p.id
+                                              WHERE p.id = :productId
+                                              GROUP BY p.id, s.id
+                                              """, nativeQuery = true)
+        String getProductDetailAsJson(@Param("productId") UUID productId);
+
 }
 
-// nbjhckhukjn njjfonihiufuhnijfiu
+// khiu hgujygugtuytutyuhyujgy kjhiuhyiu jhguyg hjgkyuyhh nhku nghuyg mnhkj
+// hmgjh hjgjh hjgj

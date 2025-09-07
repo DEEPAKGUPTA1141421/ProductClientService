@@ -57,6 +57,21 @@ public class AdminProductController {
         return ResponseEntity.status(200).body("task Queued");
     }
 
+    @PostMapping("/create-category-attribute")
+    public ResponseEntity<?> createCategoryAttribute(@RequestBody CategoryAttributeRequest request) {
+        try {
+            CategoryAttribute created = adminProductService.createCategoryAttribute(
+                    request.categoryId(),
+                    request.attributeId(),
+                    request.isRequired(),
+                    request.isImageAttribute(),
+                    request.isVariantAttribute());
+            return ResponseEntity.status(200).body(null);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
+    }
+
 }
 // fytdfugyuguhi yguyduhjbj jugguyge gyuguyduygjgyhguyjd gygd giyiudbhjgdiu
-// njhuikd kj.hikd, mkjhkuh 
+// njhuikd kj.hikd, mkjhkuh huyhuihuiyhui yut7yut7ut yutu6tyjutut jhhiuhyiyu

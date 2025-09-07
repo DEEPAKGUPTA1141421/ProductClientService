@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
@@ -335,8 +337,36 @@ public class AdminProductService {
         }
 
     }
+
+    public CategoryAttribute createCategoryAttribute(UUID categoryId, UUID attributeId,
+            Boolean isRequired, Boolean isImageAttribute, Boolean isVariantAttribute) {
+        try {
+            // fetch category
+            Category category = categoryRepository.findById(categoryId)
+                    .orElseThrow(() -> new EntityNotFoundException("Category not found with id: " + categoryId));
+
+            // fetch attribute
+            Attribute attribute = attributeRepository.findById(attributeId)
+                    .orElseThrow(() -> new EntityNotFoundException("Attribute not found with id: " + attributeId));
+
+            // create and link
+            CategoryAttribute categoryAttribute = new CategoryAttribute();
+            categoryAttribute.setCategory(category);
+            categoryAttribute.setAttributes(new HashSet<>() {
+                {
+                    add(attribute);
+                }
+            });
+            categoryAttribute.setIs_Required(isRequired != null ? isRequired : false);
+            categoryAttribute.setIsImageAttribute(isImageAttribute != null ? isImageAttribute : false);
+            categoryAttribute.setIsVariantAttribute(isVariantAttribute != null ? isVariantAttribute : false);
+
+            return categoryAttributeRepository.save(categoryAttribute);
+        } catch (Exception e) {
+            throw new RuntimeException("Error creating category attribute: " + e.getMessage(), e);
+        }
+    }
 }
 // hkiyfhgyui hiuydi hggdyu buhuf huiy78dhghuygujhgui hihuk igihuihhuiiu
 // khuiuhhuihi huhjniy gygyu hyhui gyuybyhiuyub yuiujuhiujn hjhu gyhhu huih huhj
 // hihui huhuhhuihiu ghhiuhuhuthe over is over and step is not over jkhkjkhujnkh
-// hui yui hu jkhu h hu huihuamde huiye ygrh uygijnhiu iukhf hiuk iukbjf hiujhbg

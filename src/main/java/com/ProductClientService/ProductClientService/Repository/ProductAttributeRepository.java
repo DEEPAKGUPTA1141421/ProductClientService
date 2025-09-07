@@ -14,9 +14,12 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProductAttributeRepository extends JpaRepository<ProductAttribute, UUID> {
-    @Query(value = "SELECT pa.* " +
-            "FROM product_attributes pa " +
-            "JOIN attributes a ON pa.attribute_id = a.id " +
-            "WHERE pa.product_id = :productId", nativeQuery = true)
-    List<ProductAttribute> findByProductIdWithAttribute(@Param("productId") UUID productId);
+    // @Query(value = "SELECT pa.* " +
+    // "FROM product_attributes pa " +
+    // "JOIN category_attributes a ON pa.category_attribute_id = a.id " +
+    // "WHERE pa.product_id = :productId", nativeQuery = true)
+    // List<ProductAttribute> findByProductIdWithAttribute(@Param("productId") UUID
+    // productId);
 }
+
+// khgky jht7u6t khguygiu jhghh

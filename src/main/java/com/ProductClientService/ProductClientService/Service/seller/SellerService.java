@@ -14,6 +14,7 @@ import org.elasticsearch.client.RequestOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDocument;
@@ -43,6 +44,8 @@ import com.ProductClientService.ProductClientService.Repository.ProductRepositor
 import com.ProductClientService.ProductClientService.Repository.ProductVariantRepository;
 import com.ProductClientService.ProductClientService.Repository.StandardProductRepository;
 import com.ProductClientService.ProductClientService.Service.S3Service;
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
@@ -54,8 +57,10 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class SellerService {
     @Value("${cloud.aws.s3.bucket-name}")
     private String bucketName;
@@ -69,27 +74,9 @@ public class SellerService {
     private final ProductVariantRepository productVariantRepository;
     private final ElasticsearchClient elasticsearchClient;
     private final StandardProductRepository standardProductRepository;
+    private final Cloudinary cloudinary;
     @PersistenceContext
     private EntityManager entityManager;
-
-    public SellerService(ProductRepository productRepository, S3Service s3Service,
-            CategoryRepository categoryRepository, HttpServletRequest request,
-            CategoryAttributeRepository categoryAttributeRepository,
-            AttributeRepository attributeRepository,
-            ProductAttributeRepository productAttributeRepository,
-            ProductVariantRepository productVariantRepository, ElasticsearchClient elasticsearchClient,
-            StandardProductRepository standardProductRepository) {
-        this.productRepository = productRepository;
-        this.s3Service = s3Service;
-        this.categoryRepository = categoryRepository;
-        this.request = request;
-        this.categoryAttributeRepository = categoryAttributeRepository;
-        this.attributeRepository = attributeRepository;
-        this.productAttributeRepository = productAttributeRepository;
-        this.productVariantRepository = productVariantRepository;
-        this.elasticsearchClient = elasticsearchClient;
-        this.standardProductRepository = standardProductRepository;
-    }
 
     public ApiResponse<Object> addProduct(ProductDto dto) throws IOException {
         Product product = new Product();
@@ -162,16 +149,16 @@ public class SellerService {
                 .orElseThrow(() -> new RuntimeException("Product not found"));
         product.setStep(Product.Step.valueOf(dto.step()));
         // ✅ Build product attributes
-        for (int i = 0; i < dto.attributeId().size(); i++) {
-            UUID attrId = dto.attributeId().get(i);
+        for (int i = 0; i < dto.categoryAttributeId().size(); i++) {
+            UUID attrId = dto.categoryAttributeId().get(i);
             List<String> vals = dto.values().get(i);
 
             for (String val : vals) {
                 ProductAttribute pa = new ProductAttribute();
 
-                Attribute attribute = new Attribute();
-                attribute.setId(attrId);
-                pa.setAttribute(attribute);
+                CategoryAttribute category_attribute = new CategoryAttribute();
+                category_attribute.setId(attrId);
+                pa.setCategoryAttribute(category_attribute);
                 pa.setProduct(product);
                 pa.setValue(val);
 
@@ -182,82 +169,86 @@ public class SellerService {
         productRepository.save(product);
     }
 
-    public ApiResponse<Object> getProductAttributes(UUID productId) {
-        try {
-            List<ProductAttribute> attributes = productAttributeRepository.findByProductIdWithAttribute(productId);
+    // public ApiResponse<Object> getProductAttributes(UUID productId) {
+    // try {
+    // List<ProductAttribute> attributes =
+    // productAttributeRepository.findByProductIdWithAttribute(productId);
 
-            // Map to DTO for clean response
-            List<Map<String, Object>> response = attributes.stream().map(attr -> {
-                Map<String, Object> map = new HashMap<>();
-                map.put("attributeId", attr.getAttribute().getId());
-                map.put("attributeName", attr.getAttribute().getName()); // if you want name too
-                map.put("value", attr.getValue());
-                return map;
-            }).toList();
+    // // Map to DTO for clean response
+    // List<Map<String, Object>> response = attributes.stream().map(attr -> {
+    // Map<String, Object> map = new HashMap<>();
+    // map.put("attributeId", attr.getCategory_attribute().getId());
+    // map.put("attributeName",
+    // attr.getCategory_attribute().getCategory().getName()); // you want name tooif
+    // map.put("value", attr.getValue());
+    // return map;
+    // }).toList();
 
-            return new ApiResponse<>(true, "Fetched successfully", response, 200);
-        } catch (Exception e) {
-            return new ApiResponse<>(false, e.getMessage(), null, 500);
-        }
-    }
+    // return new ApiResponse<>(true, "Fetched successfully", response, 200);
+    // } catch (Exception e) {
+    // return new ApiResponse<>(false, e.getMessage(), null, 500);
+    // }
+    // }
 
     public ApiResponse<Object> addProductVariants(ProductVariantsDto dto) {
         try {
-            List<ProductVariant> variants = new ArrayList<>();
-            List<ProductAttribute> attrcollection = new ArrayList<>();
-            for (int i = 0; i < dto.productAttributeId().size(); i++) {
-                UUID productattributeId = dto.productAttributeId().get(i);
-
-                ProductAttribute attributeOpt = productAttributeRepository.findById(productattributeId)
-                        .orElseThrow(() -> new RuntimeException("Invalid attributeId:" + productattributeId));
-                ProductVariant variant = new ProductVariant();
-                variant.setSku(dto.skus().get(i));
-                variant.setPrice(dto.price().get(i));
-                variant.setStock(Integer.parseInt(dto.stock().get(i)));
-                variants.add(variant);
-                attributeOpt.getVariants().add(variant);
-            }
-
-            productVariantRepository.saveAll(variants);
-            Product product = productRepository.findByProductAttributeId(dto.productAttributeId().get(0))
+            Product product = productRepository.findById(dto.productId())
                     .orElseThrow(() -> new RuntimeException("Product not found"));
             product.setStep(Product.Step.valueOf(dto.step()));
-            return new ApiResponse<>(true, "Variants added successfully", variants, 201);
+
+            for (int i = 0; i < dto.skus().size(); i++) {
+                ProductVariant variant = new ProductVariant();
+                variant.setSku(dto.skus().get(i));
+                variant.setStock(Integer.parseInt(dto.stock().get(i)));
+                variant.setPrice(dto.price().get(i));
+                variant = productVariantRepository.save(variant); // Save to get ID
+
+                product.getVariants().add(variant);
+            }
+            productRepository.save(product); // Update step
+
+            return new ApiResponse<>(true, "Variants added successfully", null, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 500);
         }
     }
 
-    public ApiResponse<Object> getProductWithAttributesAndVariants(UUID productId) {
-        try {
-            Product product = productRepository.findProductWithAttributesAndVariants(productId)
-                    .orElseThrow(() -> new RuntimeException("Invalid productId: " + productId));
-            List<ProductAttributeResponseDto> attributesDto = product.getProductAttributes().stream()
-                    .map(attr -> new ProductAttributeResponseDto(
-                            attr.getId(),
-                            attr.getAttribute().getName(),
-                            attr.getValue(), // adjust if you store differently
-                            attr.getVariants().stream()
-                                    .map(variant -> new ProductVariantResponseDto(
-                                            variant.getId(),
-                                            variant.getSku(),
-                                            variant.getPrice(),
-                                            variant.getStock()))
-                                    .toList()))
-                    .toList();
+    // public ApiResponse<Object> getProductWithAttributesAndVariants(UUID
+    // productId) {
+    // try {
+    // Product product =
+    // productRepository.findProductWithAttributesAndVariants(productId)
+    // .orElseThrow(() -> new RuntimeException("Invalid productId: " + productId));
+    // List<ProductAttributeResponseDto> attributesDto =
+    // product.getProductAttributes().stream()
+    // .map(attr -> new ProductAttributeResponseDto(
+    // attr.getId(),
+    // attr.getCategory_attribute().getCategory().getName(), // assuming you want
+    // category name
+    // attr.getValue(), // adjust if you store
+    // attr.getVariants().stream()
+    // .map(variant -> new ProductVariantResponseDto(
+    // variant.getId(),
+    // variant.getSku(),
+    // variant.getPrice(),
+    // variant.getStock()))
+    // .toList()))
+    // .toList();
 
-            ProductFullResponseDto responseDto = new ProductFullResponseDto(
-                    product.getId(),
-                    product.getName(),
-                    product.getDescription(),
-                    attributesDto);
+    // ProductFullResponseDto responseDto = new ProductFullResponseDto(
+    // product.getId(),
+    // product.getName(),
+    // product.getDescription(),
+    // attributesDto);
 
-            return new ApiResponse<>(true, "Product details fetched successfully", responseDto, 200);
+    // return new ApiResponse<>(true, "Product details fetched successfully",
+    // responseDto, 200);
 
-        } catch (Exception e) {
-            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 500);
-        }
-    }
+    // } catch (Exception e) {
+    // return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(),
+    // null, 500);
+    // }
+    // }
 
     public ApiResponse<Object> MakeProductLive(UUID productId) {
         try {
@@ -295,12 +286,11 @@ public class SellerService {
 
         if (Boolean.TRUE.equals(product.getIsStandard()) && product.getStep() == Product.Step.LIVE) {
             try {
-                System.out.println("product value" + product.getName() + " " + product.getDescription() + " " +
-                        product.getProductImages() + " " + product.getCategory() + " " + product.getBrand());
+                System.out.println("product value" + product.getName() + " " + product.getDescription() + " "
+                        + product.getCategory() + " " + product.getBrand());
                 StandardProduct standardProduct = new StandardProduct();
                 standardProduct.setName(product.getName());
                 standardProduct.setDescription(product.getDescription());
-                standardProduct.setProductImages(new HashSet<>(product.getProductImages()));
                 standardProduct.setCategory(product.getCategory());
                 standardProduct.setBrandEntity(product.getBrand());
 
@@ -342,6 +332,44 @@ public class SellerService {
         } catch (Exception e) {
             System.err.println("❌ Failed to indexProduct " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    public ApiResponse<Object> uploadAndUpdateImages(List<Object[]> attributeImageData, String step) {
+        try {
+            System.out.println("Received attributeImageData: " + attributeImageData.size() + " entries");
+            for (Object[] row : attributeImageData) {
+                UUID productAttributeId = UUID.fromString(row[0].toString());
+                List<MultipartFile> files = (List<MultipartFile>) row[1];
+
+                // upload each image
+                List<String> uploadedUrls = new ArrayList<>();
+                for (MultipartFile file : files) {
+                    try {
+                        Map uploadResult = cloudinary.uploader()
+                                .upload(file.getBytes(), ObjectUtils.emptyMap());
+                        uploadedUrls.add(uploadResult.get("url").toString());
+                    } catch (IOException e) {
+                        return new ApiResponse<>(false,
+                                "Failed to upload image for productAttributeId: " + productAttributeId,
+                                null,
+                                500);
+                    }
+                }
+
+                // fetch product attribute
+                ProductAttribute attribute = productAttributeRepository.findById(productAttributeId)
+                        .orElseThrow(() -> new RuntimeException("ProductAttribute not found: " + productAttributeId));
+
+                // update images list
+                attribute.getImages().addAll(uploadedUrls);
+                productAttributeRepository.save(attribute);
+            }
+
+            return new ApiResponse<>(true, "Images uploaded successfully", null, 200);
+
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Error while uploading images: " + e.getMessage(), null, 500);
         }
     }
 
@@ -405,4 +433,4 @@ public class SellerService {
     }
 }
 
-// hihiy ugytubhjguy gyutubhgu kjhk  jhbuy jbiuh hjughu
+// hihiy ugytubhjguy gyutubhgu nmbjgj uyjgtyt6yt6yu jhgu mknuh bvgu

@@ -33,12 +33,12 @@ public class ProductUpdatedListener {
 
         if (Boolean.TRUE.equals(product.getIsStandard()) && product.getStep() == Product.Step.LIVE) {
             try {
-                System.out.println("product value" + product.getName() + " " + product.getDescription() + " " +
-                        product.getProductImages() + " " + product.getCategory() + " " + product.getBrand());
+                System.out.println("product value" + product.getName() + " " + product.getDescription() + " " + " "
+                        + product.getCategory() + " " + product.getBrand());
                 StandardProduct standardProduct = new StandardProduct();
                 standardProduct.setName(product.getName());
                 standardProduct.setDescription(product.getDescription());
-                standardProduct.setProductImages(product.getProductImages());
+
                 standardProduct.setCategory(product.getCategory());
                 standardProduct.setBrandEntity(product.getBrand());
 

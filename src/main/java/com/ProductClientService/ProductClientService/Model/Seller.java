@@ -1,4 +1,5 @@
 package com.ProductClientService.ProductClientService.Model;
+
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.UUID;
@@ -6,10 +7,8 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-
 import jakarta.persistence.*;
 import lombok.Data;
-
 
 // getting the error
 @Entity
@@ -54,7 +53,8 @@ public class Seller {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
-    public enum ONBOARDSTAGE{
+
+    public enum ONBOARDSTAGE {
         RESGISTER,
         BASIC_INFO_NAME,
         LOCATION,
@@ -64,3 +64,5 @@ public class Seller {
     }
 
 }
+
+// skihyiyhhiu

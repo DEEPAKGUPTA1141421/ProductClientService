@@ -1,33 +1,39 @@
 package com.ProductClientService.ProductClientService.Model;
 
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import jakarta.persistence.*;
-import lombok.Data;
-
 @Entity
-@Table(name = "product_variants")
-@Data
-public class ProductVariant {
+@Table(name = "product_ratings")
+@Getter
+@Setter
+public class ProductRating {
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "sku", length = 100, unique = true)
-    private String sku;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
 
-    @Column(name = "price")
-    private String price;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user; // assuming user table exists, store UUID
 
-    @Column(name = "stock", nullable = false)
-    private int stock = 0;
+    @Column(nullable = false)
+    private int rating; // 1-5 stars
+
+    @Column(length = 2000)
+    private String review; // optional comment
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -37,3 +43,5 @@ public class ProductVariant {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
+
+// jhkuh hjgy yjgyggyhjj

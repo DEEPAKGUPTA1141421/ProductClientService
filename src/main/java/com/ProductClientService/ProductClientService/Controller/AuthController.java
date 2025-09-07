@@ -1,6 +1,5 @@
 package com.ProductClientService.ProductClientService.Controller;
 
-
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
@@ -18,7 +17,6 @@ import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
 import com.ProductClientService.ProductClientService.Model.Seller;
 
-
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
@@ -32,21 +30,21 @@ public class AuthController {
         System.out.println("Login request received for phone:");
         ApiResponse<String> response = authService.login(loginRequest);
         return ResponseEntity
-        .status(response.statusCode())  // use the status from your ApiResponse
-        .body(response);
+                .status(response.statusCode()) // use the status from your ApiResponse
+                .body(response);
     }
 
     @PostMapping("/verify")
     public ResponseEntity<?> verify(@Valid @RequestBody AuthRequest request) {
         System.out.println("Phone: " + request.phone() + ", Password: " + request.otp_code());
-        ApiResponse<String> response=authService.verify(request);
+        ApiResponse<String> response = authService.verify(request);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @PostMapping("/seller-basic-info")
     @PrivateApi
     public ResponseEntity<?> sellerBasicInfo(@Valid @RequestBody SellerBasicInfo sellerrequest) {
-        ApiResponse<Seller> response=authService.sellerBasicInfoVerify(sellerrequest);
+        ApiResponse<Seller> response = authService.sellerBasicInfoVerify(sellerrequest);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 }

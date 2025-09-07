@@ -12,7 +12,7 @@ import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Repository.Projection.CategoryProjection;
 
 @Repository
-public interface CategoryRepository extends JpaRepository<Category, Integer> {
+public interface CategoryRepository extends JpaRepository<Category, UUID> {
     Optional<Category> findByName(String name);
 
     @Query("SELECT c FROM Category c WHERE c.name = :name AND c.categoryLevel = :level")

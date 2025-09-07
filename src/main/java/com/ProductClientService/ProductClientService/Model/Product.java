@@ -6,15 +6,12 @@ import java.time.ZonedDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import com.ProductClientService.ProductClientService.Model.listener.ProductEntityListener;
-
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -42,13 +39,13 @@ public class Product {
 
     private Step step;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id") // FK stored in product_images table
-    private Set<ProductImage> productImages = new HashSet<>();
-
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JoinColumn(name = "product_id") // owns FK
     private Set<ProductAttribute> productAttributes = new HashSet<>();
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id") // owns F;
+    private Set<ProductVariant> variants = new HashSet<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "seller_id", nullable = false)
@@ -69,6 +66,12 @@ public class Product {
     @JoinColumn(name = "brand_id")
     private Brand brand;
 
+    @Column(name = "average_rating")
+    private Double averageRating = 0.0;
+
+    @Column(name = "rating_count")
+    private Integer ratingCount = 0;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
@@ -80,11 +83,8 @@ public class Product {
     public enum Step {
         PRODUCT_NAME,
         PRODUCT_ATTRIBUTE,
-        PRODUCT_AddITIONAL_INFO,
+        PRODUCT_IMAGE,
         PRODUCT_VARIANT,
         LIVE
     }
 }
-
-// deeeeepak bhgyu ghug ghyuy hyg y hybh huihu jujhunjkhu jh gvg guys mlij khiuh
-// hihibkh jhbkjhu jh jhj hguj hgvhg bh

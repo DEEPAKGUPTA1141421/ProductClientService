@@ -31,7 +31,7 @@ public class CartController {
         }
     }
 
-    @PatchMapping("/items/{itemId}")
+    @PutMapping("/items/{itemId}")
     public ResponseEntity<?> updateQty(@RequestHeader("X-User-Id") String userId,
             @PathVariable UUID itemId, @RequestParam int qty) {
         try {
