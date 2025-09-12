@@ -55,8 +55,8 @@ public class CartController {
     @GetMapping
     public ResponseEntity<?> getCart(@RequestHeader("X-User-Id") String userId) {
         try {
-            var cart = cartService.getCart(resolveUser(userId));
-            return ResponseEntity.status(200).body(cart);
+            // var cart = cartService.getCart(resolveUser(userId));
+            return ResponseEntity.status(200).body("cart");
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
         }

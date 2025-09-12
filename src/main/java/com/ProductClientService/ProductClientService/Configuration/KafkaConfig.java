@@ -13,6 +13,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.core.*;
 
+import jakarta.annotation.PostConstruct;
+
 @Configuration
 @EnableKafka
 public class KafkaConfig {
@@ -52,6 +54,11 @@ public class KafkaConfig {
         return String.format(jaasTemplate, saslUsername, saslPassword);
     }
 
+    @PostConstruct
+    public void checkConfig() {
+        System.out.println("Bootstrap servers: " + bootstrapServers);
+    }
+
     // ✅ Producer config
     @Bean
     public ProducerFactory<String, Object> producerFactory() {
@@ -76,4 +83,4 @@ public class KafkaConfig {
         return new KafkaTemplate<>(producerFactory());
     }
 }
-// lniuhiu hjbgyjuyhgy
+// lniuhiu hjbgyjuyhgy njmk mk jkkop

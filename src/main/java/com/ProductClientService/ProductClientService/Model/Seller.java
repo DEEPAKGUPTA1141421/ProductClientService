@@ -44,7 +44,9 @@ public class Seller {
     @OneToOne(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
     private SellerAddress address;
 
-    // Getters and setters omitted for brevity
+    @Column(name = "shop_category")
+    @Enumerated(EnumType.ORDINAL)
+    private ShopCategory shopCategory;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -61,6 +63,16 @@ public class Seller {
         ADHADHAR_CARD,
         PAN_CARD,
         DOCUMENT_VERIFIED
+    }
+
+    public enum ShopCategory {
+        GROCERY,
+        PHARMA,
+        CLOTHES,
+        MENS_FASHION,
+        WOMENS_FASHION,
+        ELECTRONICS
+        // add more as needed
     }
 
 }

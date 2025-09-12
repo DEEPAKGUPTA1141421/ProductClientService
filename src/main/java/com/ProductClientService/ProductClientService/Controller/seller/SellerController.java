@@ -7,6 +7,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
+import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Service.ImageUploadService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
@@ -175,6 +176,62 @@ public class SellerController {
 
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Upload failed: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/categories")
+    public ResponseEntity<?> getShopCategories() {
+        try {
+            ApiResponse<Object> response = sellerService.getShopCategories();
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/by-city")
+    public ResponseEntity<?> getShopsByCity(@RequestParam String city) {
+        try {
+            ApiResponse<Object> response = sellerService.getShopsByCity(city);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/by-city-category")
+    public ResponseEntity<?> getShopsByCityAndCategory(@RequestParam String city,
+            @RequestParam Seller.ShopCategory category) {
+        try {
+            ApiResponse<Object> response = sellerService.getShopsByCityAndCategory(city, category);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/nearest")
+    public ResponseEntity<?> getNearestShops(@RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam(defaultValue = "4") int limit) {
+        try {
+            ApiResponse<Object> response = sellerService.getNearestShops(lat, lon, limit);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/nearest-by-category")
+    public ResponseEntity<?> getNearestShopsByCategory(@RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam Seller.ShopCategory category,
+            @RequestParam(defaultValue = "4") int limit) {
+        try {
+            ApiResponse<Object> response = sellerService.getNearestShopsByCategory(lat, lon, category, limit);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
         }
     }
 }

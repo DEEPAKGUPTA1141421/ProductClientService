@@ -2,6 +2,7 @@ package com.ProductClientService.ProductClientService.Service;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Async;
@@ -12,21 +13,25 @@ import com.ProductClientService.ProductClientService.DTO.AuthRequest;
 import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.NotificationRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
-import com.ProductClientService.ProductClientService.DTO.AuthRequest.UserType;
+import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.CreateRiderDto;
+import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.RiderIdResponse;
 import com.ProductClientService.ProductClientService.Model.Seller;
-import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Model.Seller.ONBOARDSTAGE;
+import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Repository.OtpRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
 import com.ProductClientService.ProductClientService.Utils.RateLimiter;
+import com.ProductClientService.ProductClientService.network.DeliveryInventoryClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class AuthService {
     private final ObjectMapper objectMapper;
     private final SellerRepository sellerRepository;
@@ -37,24 +42,8 @@ public class AuthService {
     private final JwtService jwtService;
     private final HttpServletRequest request;
     private final ObjectProvider<GoogleMapsService> googleMapsProvider;
-
+    private final DeliveryInventoryClient deliveryInventoryClient;
     private final UserRepojectory userRepojectory;
-
-    public AuthService(SellerRepository sellerRepository, RateLimiter rateLimiter, OtpRepository otpRepository,
-            KafkaProducerService producerService, ObjectMapper objectMapper, JwtService jwtService,
-            HttpServletRequest request, ObjectProvider<GoogleMapsService> googleMapsProvider,
-            SellerAddressRepository sellerAddressRepository, UserRepojectory userRepojectory) {
-        this.sellerRepository = sellerRepository;
-        this.rateLimiter = rateLimiter;
-        this.otpRepository = otpRepository;
-        this.producerService = producerService;
-        this.objectMapper = objectMapper;
-        this.jwtService = jwtService;
-        this.request = request;
-        this.googleMapsProvider = googleMapsProvider;
-        this.sellerAddressRepository = sellerAddressRepository;
-        this.userRepojectory = userRepojectory;
-    }
 
     public ApiResponse<String> login(LoginRequest loginRequest) {
         // Check rate limit
@@ -79,9 +68,19 @@ public class AuthService {
         } else if (authrequest.typeOfUser() == AuthRequest.UserType.USER) {
             User user = userRepojectory.findOrCreateByPhone(authrequest.phone());
             token = jwtService.generateToken(authrequest.phone(), "USER", user.getId());
-        } else {
+        } else if (authrequest.typeOfUser() == AuthRequest.UserType.RIDER) {
             // will handle rider case
-            token = "dummy token for rider";
+            ApiResponse<RiderIdResponse> response = deliveryInventoryClient.createRiderWithPhone(
+                    new CreateRiderDto("PHONE", authrequest.phone()));
+
+            if (response.statusCode() == 200 && response.success()) {
+                UUID riderId = response.data().id();
+                token = jwtService.generateToken(authrequest.phone(), "RIDER", riderId);
+            } else {
+                throw new RuntimeException("Failed to create rider: " + response.message());
+            }
+        } else {
+            return new ApiResponse<>(true, "Invalid User Type", null, 403);
         }
         return new ApiResponse<>(true, "Otp Verification Success", token, 200);
     }
@@ -216,3 +215,5 @@ public class AuthService {
     }
 
 }
+
+// huyh hihi hyihi hyh huih huihu huj ggygggygggggg

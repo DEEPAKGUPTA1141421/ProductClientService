@@ -2,7 +2,9 @@ package com.ProductClientService.ProductClientService.Service.cart;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.Cart.ApplyCouponRequest;
+import com.ProductClientService.ProductClientService.DTO.Cart.CartItemDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
+import com.ProductClientService.ProductClientService.DTO.Cart.CartResponseDto;
 import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Model.CartItem;
 import com.ProductClientService.ProductClientService.Model.Coupon;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -91,11 +94,46 @@ public class CartService {
         return cartRepo.save(cart);
     }
 
-    @Transactional(readOnly = true)
-    public Cart getCart(UUID userId) {
-        return cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
-                .orElseGet(() -> Cart.builder().userId(userId).status(Cart.Status.ACTIVE).items(List.of()).build());
-    }
+    //@Transactional(readOnly = true)
+    // public CartResponseDto getCart(UUID userId) {
+    // Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+    // .orElseGet(() -> Cart.builder()
+    // .userId(userId)
+    // .status(Cart.Status.ACTIVE)
+    // .items(List.of())
+    // .build());
+
+    // List<CartItemDto> itemDtos = cart.getItems().stream()
+    // .map(item -> CartItemDto.builder()
+    // .id(item.getId()) // UUID
+    // .productId(item.getProductId()) // UUID
+    // .shopId(item.getShopId()) // UUID
+    // .quantity(item.getQuantity()) // int
+    // .price(item.getPrice()) // double
+    // .build())
+    // .collect(Collectors.toList());
+
+    // // 👇 Business Logic (example rules, tweak as per your business)
+    // double totalAmount = itemDtos.stream().mapToDouble(i -> i.getPrice() *
+    // i.getQuantity()).sum();
+    // double totalDiscount = totalAmount * 0.1; // assume 10% discount
+    // double serviceCharge = 30.0; // flat service fee
+    // double deliveryCharge = totalAmount > 500 ? 0 : 50; // free delivery above
+    // 500
+    // double gstCharge = totalAmount * 0.18; // 18% GST
+
+    // return CartResponseDto.builder()
+    // .cartId(cart.getId())
+    // .userId(cart.getUserId())
+    // .status(cart.getStatus().name())
+    // .items(itemDtos)
+    // .totalAmount(totalAmount)
+    // .totalDiscount(totalDiscount)
+    // .serviceCharge(serviceCharge)
+    // .deliveryCharge(deliveryCharge)
+    // .gstCharge(gstCharge)
+    // .build();
+    // }
 
     @Transactional
     public Cart clearCart(UUID userId) {

@@ -1,6 +1,5 @@
 package com.ProductClientService.ProductClientService.Model;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -17,6 +16,7 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Data
 public class CartItem {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -48,4 +48,4 @@ public class CartItem {
     @Column(columnDefinition = "jsonb")
     private JsonNode metadata; // freeform: color/size/offer etc.
 }
-// khuhihbhjhh
+// khuhihbhjhh nihiuhi uijui
