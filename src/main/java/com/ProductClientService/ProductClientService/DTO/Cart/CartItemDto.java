@@ -1,11 +1,8 @@
 package com.ProductClientService.ProductClientService.DTO.Cart;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.util.UUID;
+
+import lombok.*;
 
 @Data
 @Builder
@@ -16,5 +13,5 @@ public class CartItemDto {
     private UUID productId;
     private UUID shopId;
     private int quantity;
-    private double price; // price per unit
+    private double price;
 }

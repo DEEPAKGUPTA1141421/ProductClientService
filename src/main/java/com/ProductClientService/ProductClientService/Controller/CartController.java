@@ -8,6 +8,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.Cart.ApplyCouponRequest;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.Service.cart.CartService;
+import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
 import java.util.UUID;
 
@@ -52,11 +53,11 @@ public class CartController {
         }
     }
 
-    @GetMapping
+    @GetMapping("/get-cart")
     public ResponseEntity<?> getCart(@RequestHeader("X-User-Id") String userId) {
         try {
-            // var cart = cartService.getCart(resolveUser(userId));
-            return ResponseEntity.status(200).body("cart");
+            var cart = cartService.getCart(resolveUser(userId));
+            return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
         }
@@ -121,3 +122,7 @@ public class CartController {
         }
     }
 }
+
+// jmjfnnfnfnfnfnfn nfjfnrnrnfnfn njjv jvjfjfjfjfj
+
+// nhkhu huihu jj njnjhh hhh 

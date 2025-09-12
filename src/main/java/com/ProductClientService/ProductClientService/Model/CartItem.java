@@ -30,6 +30,7 @@ public class CartItem {
     @Column(nullable = false)
     private UUID productId;
 
+    @Column(nullable = false)
     private UUID variantId;
 
     @Column(nullable = false)

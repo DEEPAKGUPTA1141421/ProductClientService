@@ -8,7 +8,7 @@ import lombok.*;
 @Data
 public class CartItemRequest {
     private UUID productId;
-    private UUID variantId; // optional
+    private UUID variantId;
     private Integer quantity;
     private String unitPrice; // from product service at add time
     private JsonNode metadata; // optional

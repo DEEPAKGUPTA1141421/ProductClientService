@@ -25,6 +25,8 @@ public class CartService {
     private final CartItemRepository itemRepo;
     private final CouponRepository couponRepo;
 
+    private final ProductRepository productRepository;
+
     @Transactional
     public ApiResponse<Object> addItem(UUID userId, CartItemRequest req) {
         try {
@@ -94,46 +96,57 @@ public class CartService {
         return cartRepo.save(cart);
     }
 
-    //@Transactional(readOnly = true)
-    // public CartResponseDto getCart(UUID userId) {
-    // Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
-    // .orElseGet(() -> Cart.builder()
-    // .userId(userId)
-    // .status(Cart.Status.ACTIVE)
-    // .items(List.of())
-    // .build());
+    @Transactional(readOnly = true)
+    public ApiResponse<Object> getCart(UUID userId) {
+        // Find active cart for user
+        Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+                .orElseGet(() -> Cart.builder()
+                        .userId(userId)
+                        .status(Cart.Status.ACTIVE)
+                        .items(List.of())
+                        .build());
 
-    // List<CartItemDto> itemDtos = cart.getItems().stream()
-    // .map(item -> CartItemDto.builder()
-    // .id(item.getId()) // UUID
-    // .productId(item.getProductId()) // UUID
-    // .shopId(item.getShopId()) // UUID
-    // .quantity(item.getQuantity()) // int
-    // .price(item.getPrice()) // double
-    // .build())
-    // .collect(Collectors.toList());
+        // Convert CartItems -> CartItemDto
+        List<CartItemDto> itemDtos = cart.getItems().stream()
+                .map(item -> {
+                    UUID shopId = productRepository.findById(item.getProductId())
+                            .map(product -> product.getSeller().getId())
+                            .orElse(null);
 
-    // // 👇 Business Logic (example rules, tweak as per your business)
-    // double totalAmount = itemDtos.stream().mapToDouble(i -> i.getPrice() *
-    // i.getQuantity()).sum();
-    // double totalDiscount = totalAmount * 0.1; // assume 10% discount
-    // double serviceCharge = 30.0; // flat service fee
-    // double deliveryCharge = totalAmount > 500 ? 0 : 50; // free delivery above
-    // 500
-    // double gstCharge = totalAmount * 0.18; // 18% GST
+                    return CartItemDto.builder()
+                            .id(item.getId())
+                            .productId(item.getProductId())
+                            .shopId(shopId)
+                            .quantity(item.getQuantity())
+                            .price(Double.parseDouble(item.getPriceAtAddition()))
+                            .build();
+                })
+                .toList();
 
-    // return CartResponseDto.builder()
-    // .cartId(cart.getId())
-    // .userId(cart.getUserId())
-    // .status(cart.getStatus().name())
-    // .items(itemDtos)
-    // .totalAmount(totalAmount)
-    // .totalDiscount(totalDiscount)
-    // .serviceCharge(serviceCharge)
-    // .deliveryCharge(deliveryCharge)
-    // .gstCharge(gstCharge)
-    // .build();
-    // }
+        // Business logic
+        double totalAmount = itemDtos.stream()
+                .mapToDouble(i -> i.getPrice() * i.getQuantity())
+                .sum();
+
+        double totalDiscount = totalAmount * 0.1; // assume 10% discount
+        double serviceCharge = 30.0; // flat service fee
+        double deliveryCharge = totalAmount > 500 ? 0 : 50; // free delivery above ₹500
+        double gstCharge = totalAmount * 0.18; // 18% GST
+
+        // Final response
+        CartResponseDto dto = CartResponseDto.builder()
+                .cartId(cart.getId())
+                .userId(cart.getUserId())
+                .status(cart.getStatus().name())
+                .items(itemDtos)
+                .totalAmount(totalAmount)
+                .totalDiscount(totalDiscount)
+                .serviceCharge(serviceCharge)
+                .deliveryCharge(deliveryCharge)
+                .gstCharge(gstCharge)
+                .build();
+        return new ApiResponse<>(true, "Cart fetched", dto, 200);
+    }
 
     @Transactional
     public Cart clearCart(UUID userId) {
@@ -284,4 +297,6 @@ public class CartService {
         cart.setGrandTotal(taxable.add(tax).toPlainString());
     }
 }
-// huyy jggyut
+// huyy jggyut nkh jhgjgy guuvu gugyu guyut gg ggyu ygug
+
+// huihfr ygfrhihrfbhjghtu hfrguhyugthhu
