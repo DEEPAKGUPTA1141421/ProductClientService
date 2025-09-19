@@ -4,14 +4,18 @@ import java.util.UUID;
 
 import lombok.*;
 
-@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Getter
+@Setter
 public class CartItemDto {
     private UUID id;
     private UUID productId;
     private UUID shopId;
     private int quantity;
     private double price;
+    private UUID variantId;
 }
+
+//huhyuyb byguy gytguy hggy jhhhh njkh

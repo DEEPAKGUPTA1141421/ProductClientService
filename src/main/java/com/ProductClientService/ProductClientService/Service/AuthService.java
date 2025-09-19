@@ -52,7 +52,15 @@ public class AuthService {
             System.out.println("Rate limit exceeded for phone: " + loginRequest.phone());
             return new ApiResponse<>(false, "Too many requests. Please try again later.", null, 429);
         }
-        sellerRepository.findOrCreateByPhone(loginRequest.phone());
+        if (loginRequest.typeOfUser() == LoginRequest.UserType.SELLER) {
+            sellerRepository.findOrCreateByPhone(loginRequest.phone());
+        } else if (loginRequest.typeOfUser() == LoginRequest.UserType.USER) {
+            userRepojectory.findOrCreateByPhone(loginRequest.phone());
+        } else if (loginRequest.typeOfUser() == LoginRequest.UserType.RIDER) {
+            // Rider logic here
+        } else {
+            return new ApiResponse<>(true, "Invalid User Type", null, 403);
+        }
         sendOtpAsync(loginRequest.phone(), "login");
         return new ApiResponse<>(true, "Otp Triggered on you Phone", null, 200);
     }
@@ -217,3 +225,5 @@ public class AuthService {
 }
 
 // huyh hihi hyihi hyh huih huihu huj ggygggygggggg
+
+// njkhuiitgiugtuhug

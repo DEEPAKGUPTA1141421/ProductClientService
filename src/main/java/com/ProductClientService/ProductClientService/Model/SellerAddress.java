@@ -3,17 +3,20 @@ package com.ProductClientService.ProductClientService.Model;
 import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
-@Data
+@Getter
+@Setter
 @Table(name = "seller_addresses")
 public class SellerAddress {
     @Id
@@ -22,10 +25,12 @@ public class SellerAddress {
 
     @OneToOne
     @JoinColumn(name = "seller_id", referencedColumnName = "id", nullable = true)
+    @JsonIgnore
     private Seller seller;
 
     @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = true)
+    @JsonIgnore
     private User user;
 
     @Column(name = "kind", nullable = false)
@@ -82,3 +87,4 @@ public class SellerAddress {
 }
 
 // jhihhuhu jhkjbuhgujyug
+// uiiuutu7t76 t7t7y t6t76t6y87

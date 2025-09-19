@@ -8,12 +8,14 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 // getting the error
 @Entity
 @Table(name = "sellers")
-@Data
+@Getter
+@Setter
 public class Seller {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -77,4 +79,4 @@ public class Seller {
 
 }
 
-// skihyiyhhiu
+// skihyiyhhiujhuyjhjhjbgj mlnjjhjhh

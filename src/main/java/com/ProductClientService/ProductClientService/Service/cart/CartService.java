@@ -61,7 +61,8 @@ public class CartService {
             }
 
             recompute(cart);
-            return new ApiResponse<>(true, "Added To Cart", cartRepo.save(cart), 201);
+            cart = cartRepo.save(cart);
+            return new ApiResponse<>(true, "Added To Cart", cart, 201);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
@@ -98,54 +99,65 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public ApiResponse<Object> getCart(UUID userId) {
+
+        System.out.println("we receive the call");
         // Find active cart for user
-        Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
-                .orElseGet(() -> Cart.builder()
-                        .userId(userId)
-                        .status(Cart.Status.ACTIVE)
-                        .items(List.of())
-                        .build());
+        try {
+            Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+                    .orElseGet(() -> Cart.builder()
+                            .userId(userId)
+                            .status(Cart.Status.ACTIVE)
+                            .items(List.of())
+                            .build());
+            System.out.println("Cart" + cart.toString());
 
-        // Convert CartItems -> CartItemDto
-        List<CartItemDto> itemDtos = cart.getItems().stream()
-                .map(item -> {
-                    UUID shopId = productRepository.findById(item.getProductId())
-                            .map(product -> product.getSeller().getId())
-                            .orElse(null);
+            // Convert CartItems -> CartItemDto
+            List<CartItemDto> itemDtos = cart.getItems().stream()
+                    .map(item -> {
+                        System.out.println("Cart Item" + item.getProductId());
+                        UUID shopId = productRepository.findSellerIdByProductId(item.getProductId());
+                        System.out.println("shopId" + shopId);
+                        // String a = "0db8b4b7-69fd-4843-9904-8408ee1e77d8";
+                        // UUID shopId = UUID.fromString(a);
+                        return CartItemDto.builder()
+                                .id(item.getId())
+                                .productId(item.getProductId())
+                                .variantId(item.getVariantId())
+                                .shopId(shopId)
+                                .quantity(item.getQuantity())
+                                .price(Double.parseDouble(item.getPriceAtAddition())) // convert paise to ₹
+                                .build();
+                    })
+                    .toList();
 
-                    return CartItemDto.builder()
-                            .id(item.getId())
-                            .productId(item.getProductId())
-                            .shopId(shopId)
-                            .quantity(item.getQuantity())
-                            .price(Double.parseDouble(item.getPriceAtAddition()))
-                            .build();
-                })
-                .toList();
+            // Business logic
+            System.out.println("price calculation");
+            double totalAmount = itemDtos.stream()
+                    .mapToDouble(i -> i.getPrice() * i.getQuantity())
+                    .sum();
 
-        // Business logic
-        double totalAmount = itemDtos.stream()
-                .mapToDouble(i -> i.getPrice() * i.getQuantity())
-                .sum();
+            double totalDiscount = totalAmount * 0.1; // assume 10% discount
+            double serviceCharge = 30.0; // flat service fee
+            double deliveryCharge = totalAmount > 500 ? 0 : 50; // free delivery above ₹500
+            double gstCharge = totalAmount * 0.18; // 18% GST
 
-        double totalDiscount = totalAmount * 0.1; // assume 10% discount
-        double serviceCharge = 30.0; // flat service fee
-        double deliveryCharge = totalAmount > 500 ? 0 : 50; // free delivery above ₹500
-        double gstCharge = totalAmount * 0.18; // 18% GST
-
-        // Final response
-        CartResponseDto dto = CartResponseDto.builder()
-                .cartId(cart.getId())
-                .userId(cart.getUserId())
-                .status(cart.getStatus().name())
-                .items(itemDtos)
-                .totalAmount(totalAmount)
-                .totalDiscount(totalDiscount)
-                .serviceCharge(serviceCharge)
-                .deliveryCharge(deliveryCharge)
-                .gstCharge(gstCharge)
-                .build();
-        return new ApiResponse<>(true, "Cart fetched", dto, 200);
+            // Final response
+            CartResponseDto dto = CartResponseDto.builder()
+                    .cartId(cart.getId())
+                    .userId(cart.getUserId())
+                    .status(cart.getStatus().name())
+                    .items(itemDtos)
+                    .totalAmount(totalAmount)
+                    .totalDiscount(totalDiscount)
+                    .serviceCharge(serviceCharge)
+                    .deliveryCharge(deliveryCharge)
+                    .gstCharge(gstCharge)
+                    .build();
+            return new ApiResponse<>(true, "Cart fetched", dto, 200);
+        } catch (Exception e) {
+            System.out.println("Error mesaage" + e.getMessage());
+            return new ApiResponse<>(false, e.getMessage(), null, 501);
+        }
     }
 
     @Transactional
@@ -299,4 +311,7 @@ public class CartService {
 }
 // huyy jggyut nkh jhgjgy guuvu gugyu guyut gg ggyu ygug
 
-// huihfr ygfrhihrfbhjghtu hfrguhyugthhu
+// huihfr huihu gut tyrj6tvtytu hygytyuu gtt6ut6
+// kjhikhiihyuyuiuuhu,iyuiyiyikyiyiiuyiyui
+
+// nhuihyui jgyu hggtuuyuuiuiuihuhuyhinkjkh hbyhg gug ggygyug hgh

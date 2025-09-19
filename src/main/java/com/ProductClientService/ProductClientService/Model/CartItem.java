@@ -16,7 +16,6 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Data
 public class CartItem {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -50,3 +49,4 @@ public class CartItem {
     private JsonNode metadata; // freeform: color/size/offer etc.
 }
 // khuhihbhjhh nihiuhi uijui
+// hjuhui jgyug jhgjuhuhb mbhjmh
