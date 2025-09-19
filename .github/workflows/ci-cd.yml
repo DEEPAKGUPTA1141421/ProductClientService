@@ -35,6 +35,7 @@ jobs:
       - name: Build Docker image
         run: docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest .
 
+
       # Step 6: Push Docker image to GCR
       - name: Push Docker image
         run: docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest
