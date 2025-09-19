@@ -1,53 +1,48 @@
-name: CI/CD - ProductClientService
+name: CI/CD for ProductClientService
 
 on:
   push:
     branches:
-      - main   # Run pipeline on pushes to main
+      - main   # Change if you use another branch like 'master' or 'dev'
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------
-      # STEP 1: Checkout code
-      # -----------------------------
+      # Step 1: Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # -----------------------------
-      # STEP 2: Authenticate with GCP
-      # -----------------------------
+      # Step 2: Setup gcloud CLI
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          install_components: 'gke-gcloud-auth-plugin'
+
+      # Step 3: Authenticate
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          project_id: my-flutter-backend-472611
-
-      # -----------------------------
-      # STEP 3: Build & Push Docker Image to GCR
-      # -----------------------------
-      - name: Configure Docker for GCR
+      # Step 4: Configure Docker to use gcloud as a credential helper
+      - name: Configure Docker
         run: gcloud auth configure-docker gcr.io --quiet
 
+      # Step 5: Build Docker image
       - name: Build Docker image
-        run: docker build -t gcr.io/my-flutter-backend-472611/productclientservice:latest ./ProductClientService
+        run: docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest .
 
+      # Step 6: Push Docker image to GCR
       - name: Push Docker image
-        run: docker push gcr.io/my-flutter-backend-472611/productclientservice:latest
+        run: docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest
 
-      # -----------------------------
-      # STEP 4: Deploy to Cloud Run
-      # -----------------------------
+      # Step 7: Deploy to Cloud Run
       - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy productclientservice \
-            --image gcr.io/my-flutter-backend-472611/productclientservice:latest \
-            --platform managed \
-            --region asia-south1 \
-            --allow-unauthenticated
+        run: gcloud run deploy productclientservice \
+              --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest \
+              --platform managed \
+              --region asia-south1 \
+              --allow-unauthenticated
