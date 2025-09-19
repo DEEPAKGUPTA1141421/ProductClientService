@@ -1,0 +1,37 @@
+name: CI/CD ProductClientService
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v3
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: my-flutter-backend-472611
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Build Docker image
+      run: |
+        docker build -t gcr.io/my-flutter-backend-472611/productclientservice:latest .
+
+    - name: Push Docker image
+      run: |
+        docker push gcr.io/my-flutter-backend-472611/productclientservice:latest
+
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy productclientservice \
+          --image gcr.io/my-flutter-backend-472611/productclientservice:latest \
+          --region us-central1 \
+          --platform managed \
+          --allow-unauthenticated
