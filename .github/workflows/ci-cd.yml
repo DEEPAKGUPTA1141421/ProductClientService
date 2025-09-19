@@ -2,43 +2,48 @@ name: CI/CD for ProductClientService
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: [ main ]   # 🔹 Change branch if needed
 
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      # ✅ Step 1: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Authenticate with GCP
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      # Setup gcloud CLI
+      # ✅ Step 2: Authenticate with GCP
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
+          install_components: 'beta'
 
-      # Build Docker image
+      - name: Authenticate with service account
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # ✅ Step 3: Configure Docker to use Artifact Registry
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      # ✅ Step 4: Build Docker image
       - name: Build Docker image
-        run: docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest .
+        run: |
+          docker build -t asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/productclient-repo/productclientservice:latest .
 
-      # Push Docker image
+      # ✅ Step 5: Push Docker image to Artifact Registry
       - name: Push Docker image
-        run: docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest
+        run: |
+          docker push asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/productclient-repo/productclientservice:latest
 
-      # Deploy to Cloud Run
+      # ✅ Step 6: Deploy to Cloud Run
       - name: Deploy to Cloud Run
-        run: >
-          gcloud run deploy productclientservice
-          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest
-          --platform managed
-          --region asia-south1
-          --allow-unauthenticated
+        run: |
+          gcloud run deploy productclientservice \
+            --image asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/productclient-repo/productclientservice:latest \
+            --platform managed \
+            --region asia-south1 \
+            --allow-unauthenticated
