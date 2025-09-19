@@ -2,48 +2,43 @@ name: CI/CD for ProductClientService
 
 on:
   push:
-    branches:
-      - main   # Change if you use another branch like 'master' or 'dev'
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
-  build-and-deploy:
+  build-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repo
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Setup gcloud CLI
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          install_components: 'gke-gcloud-auth-plugin'
-
-      # Step 3: Authenticate
+      # Authenticate with GCP
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # Step 4: Configure Docker to use gcloud as a credential helper
-      - name: Configure Docker
-        run: gcloud auth configure-docker gcr.io --quiet
+      # Setup gcloud CLI
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # Step 5: Build Docker image
+      # Build Docker image
       - name: Build Docker image
         run: docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest .
 
-
-      # Step 6: Push Docker image to GCR
+      # Push Docker image
       - name: Push Docker image
         run: docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest
 
-      # Step 7: Deploy to Cloud Run
+      # Deploy to Cloud Run
       - name: Deploy to Cloud Run
-        run: gcloud run deploy productclientservice \
-              --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest \
-              --platform managed \
-              --region asia-south1 \
-              --allow-unauthenticated
+        run: >
+          gcloud run deploy productclientservice
+          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/productclientservice:latest
+          --platform managed
+          --region asia-south1
+          --allow-unauthenticated
