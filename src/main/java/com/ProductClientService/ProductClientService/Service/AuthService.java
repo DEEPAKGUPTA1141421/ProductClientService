@@ -49,10 +49,12 @@ public class AuthService {
         // Check rate limit
         try {
             System.out.println("Checking rate limit for phone: ");
-            if (!rateLimiter.allow(loginRequest.phone())) {
-                System.out.println("Rate limit exceeded for phone: " + loginRequest.phone());
-                return new ApiResponse<>(false, "Too many requests. Please try again later.", null, 429);
-            }
+            // will connect using connect #Todo
+            // if (!rateLimiter.allow(loginRequest.phone())) {
+            // System.out.println("Rate limit exceeded for phone: " + loginRequest.phone());
+            // return new ApiResponse<>(false, "Too many requests. Please try again later.",
+            // null, 429);
+            // }
             if (loginRequest.typeOfUser() == LoginRequest.UserType.SELLER) {
                 sellerRepository.findOrCreateByPhone(loginRequest.phone());
             } else if (loginRequest.typeOfUser() == LoginRequest.UserType.USER) {
