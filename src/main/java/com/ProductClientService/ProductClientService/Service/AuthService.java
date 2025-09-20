@@ -47,22 +47,27 @@ public class AuthService {
 
     public ApiResponse<String> login(LoginRequest loginRequest) {
         // Check rate limit
-        System.out.println("Checking rate limit for phone: ");
-        if (!rateLimiter.allow(loginRequest.phone())) {
-            System.out.println("Rate limit exceeded for phone: " + loginRequest.phone());
-            return new ApiResponse<>(false, "Too many requests. Please try again later.", null, 429);
+        try {
+            System.out.println("Checking rate limit for phone: ");
+            if (!rateLimiter.allow(loginRequest.phone())) {
+                System.out.println("Rate limit exceeded for phone: " + loginRequest.phone());
+                return new ApiResponse<>(false, "Too many requests. Please try again later.", null, 429);
+            }
+            if (loginRequest.typeOfUser() == LoginRequest.UserType.SELLER) {
+                sellerRepository.findOrCreateByPhone(loginRequest.phone());
+            } else if (loginRequest.typeOfUser() == LoginRequest.UserType.USER) {
+                userRepojectory.findOrCreateByPhone(loginRequest.phone());
+            } else if (loginRequest.typeOfUser() == LoginRequest.UserType.RIDER) {
+                // Rider logic here
+            } else {
+                return new ApiResponse<>(true, "Invalid User Type", null, 403);
+            }
+            sendOtpAsync(loginRequest.phone(), "login");
+            return new ApiResponse<>(true, "Otp Triggered on you Phone", null, 200);
+        } catch (Exception e) {
+            System.out.println("authservice login method error" + e.toString());
+            return new ApiResponse<>(true, e.getMessage(), null, 200);
         }
-        if (loginRequest.typeOfUser() == LoginRequest.UserType.SELLER) {
-            sellerRepository.findOrCreateByPhone(loginRequest.phone());
-        } else if (loginRequest.typeOfUser() == LoginRequest.UserType.USER) {
-            userRepojectory.findOrCreateByPhone(loginRequest.phone());
-        } else if (loginRequest.typeOfUser() == LoginRequest.UserType.RIDER) {
-            // Rider logic here
-        } else {
-            return new ApiResponse<>(true, "Invalid User Type", null, 403);
-        }
-        sendOtpAsync(loginRequest.phone(), "login");
-        return new ApiResponse<>(true, "Otp Triggered on you Phone", null, 200);
     }
 
     public ApiResponse<String> verify(AuthRequest authrequest) {
