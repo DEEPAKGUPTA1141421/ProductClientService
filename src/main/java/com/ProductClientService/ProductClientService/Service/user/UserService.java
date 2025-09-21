@@ -1,9 +1,7 @@
 package com.ProductClientService.ProductClientService.Service.user;
 
-import java.lang.runtime.ObjectMethods;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -11,8 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
-import com.ProductClientService.ProductClientService.Model.Seller;
-import com.ProductClientService.ProductClientService.Model.SellerAddress;
+import com.ProductClientService.ProductClientService.Model.Address;
 import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
@@ -20,6 +17,7 @@ import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.transaction.Transactional;
 
 @Service
 public class UserService {
@@ -56,7 +54,7 @@ public class UserService {
     private boolean saveAddress(AddressResponse addressDetails, String phone, BigDecimal lat, BigDecimal longi) {
         User user = userRepojectory.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        SellerAddress address = new SellerAddress();
+        Address address = new Address();
         System.out.println("City is " + addressDetails.city() + addressDetails);
         address.setCity(addressDetails.city());
         address.setLine1(addressDetails.line1());
@@ -80,18 +78,59 @@ public class UserService {
         }
     }
 
-    public ApiResponse<Object> AllAddress() {
+    public ApiResponse<Object> getUser() {
         try {
             String phone = (String) request.getAttribute("phone");
             User user = userRepojectory.findByPhone(phone)
                     .orElseThrow(() -> new RuntimeException("User not found"));
-            List<SellerAddress> address = sellerAddressRepository.findByUser(user);
-            return new ApiResponse<>(true, "Search Result", address, 201);
+            return new ApiResponse<>(true, "User Details", user, 201);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
     }
+
+    @Transactional
+    public ApiResponse<Object> setDefaultAddress(UUID addressId) {
+        try {
+            // Get current user from request attribute
+            UUID id = (UUID) request.getAttribute("id");
+            User user = userRepojectory.findById(id)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (!addressBelongToUser(user, addressId)) {
+                throw new RuntimeException("Address does not belong to the user");
+            }
+            List<Address> addresses = user.getAddresses();
+            for (Address addr : addresses) {
+                addr.setDefault(addr.getId().equals(addressId));
+            }
+
+            sellerAddressRepository.saveAll(addresses);
+
+            return new ApiResponse<>(true, "Default address updated successfully", user, 200);
+
+        } catch (Exception e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 500);
+        }
+    }
+
+    private boolean addressBelongToUser(User user, UUID addressId) {
+        List<Address> addresses = user.getAddresses();
+
+        // Flag to track if the address belongs to user
+        boolean found = false;
+
+        for (Address addr : addresses) {
+            if (addr.getId().equals(addressId)) {
+                found = true;
+                break; // stop the loop once found
+            }
+        }
+        return found;
+    }
+
 }
 
 // hhhhunhgj hvuyg yguy hjbjhh hbguj jhguygguhjhhnjhgyu yhfuhgfhj jhguyj
-// gjubhjguhn kjnkjnkjnk
+// gjubhjguhn kjnkjnkjnknikhiuhyi7y
+// huiy8i9u hiyikjhiuhihhuiiojioju

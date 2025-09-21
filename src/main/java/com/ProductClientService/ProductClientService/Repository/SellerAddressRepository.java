@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.Model.Seller;
-import com.ProductClientService.ProductClientService.Model.SellerAddress;
+import com.ProductClientService.ProductClientService.Model.Address;
 import com.ProductClientService.ProductClientService.Model.User;
 
 interface SellerAddressProjection {
@@ -20,19 +20,19 @@ interface SellerAddressProjection {
 }
 
 @Repository
-public interface SellerAddressRepository extends JpaRepository<SellerAddress, UUID> {
+public interface SellerAddressRepository extends JpaRepository<Address, UUID> {
 
     // 🔹 Find existing address by seller
-    Optional<SellerAddress> findBySeller(Seller seller);
+    Optional<Address> findBySeller(Seller seller);
 
-    List<SellerAddress> findByUser(User user);
+    List<Address> findByUser(User user);
 
     // ✅ Generic upsert helper
-    default SellerAddress saveOrUpdate(SellerAddress address, Seller seller) {
-        Optional<SellerAddress> existing = findBySeller(seller);
+    default Address saveOrUpdate(Address address, Seller seller) {
+        Optional<Address> existing = findBySeller(seller);
 
         if (existing.isPresent()) {
-            SellerAddress existingAddress = existing.get();
+            Address existingAddress = existing.get();
             // Copy new fields into existing address
             if (address.getLine1() != null)
                 existingAddress.setLine1(address.getLine1());
@@ -61,7 +61,7 @@ public interface SellerAddressRepository extends JpaRepository<SellerAddress, UU
     }
 
     // ✅ Save or update Location
-    default SellerAddress saveOrUpdateLocationAddress(
+    default Address saveOrUpdateLocationAddress(
             Seller seller,
             String line1,
             String city,
@@ -70,7 +70,7 @@ public interface SellerAddressRepository extends JpaRepository<SellerAddress, UU
             String pincode,
             BigDecimal latitude,
             BigDecimal longitude) {
-        SellerAddress address = new SellerAddress();
+        Address address = new Address();
         address.setLine1(line1);
         address.setCity(city);
         address.setState(state);
@@ -82,14 +82,14 @@ public interface SellerAddressRepository extends JpaRepository<SellerAddress, UU
         return saveOrUpdate(address, seller);
     }
 
-    default SellerAddress saveOrUpdateAadharAddress(Seller seller, String aadhaar) {
-        SellerAddress address = new SellerAddress();
+    default Address saveOrUpdateAadharAddress(Seller seller, String aadhaar) {
+        Address address = new Address();
         address.setAdhadharCard(aadhaar);
         return saveOrUpdate(address, seller);
     }
 
-    default SellerAddress saveOrUpdatePanAddress(Seller seller, String pan) {
-        SellerAddress address = new SellerAddress();
+    default Address saveOrUpdatePanAddress(Seller seller, String pan) {
+        Address address = new Address();
         address.setPanCard(pan);
         return saveOrUpdate(address, seller);
     }

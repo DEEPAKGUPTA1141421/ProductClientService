@@ -17,8 +17,8 @@ import lombok.Setter;
 @Entity
 @Getter
 @Setter
-@Table(name = "seller_addresses")
-public class SellerAddress {
+@Table(name = "addresses")
+public class Address {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -85,6 +85,3 @@ public class SellerAddress {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
-
-// jhihhuhu jhkjbuhgujyug
-// uiiuutu7t76 t7t7y t6t76t6y87

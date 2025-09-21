@@ -44,7 +44,7 @@ public class Seller {
     private ONBOARDSTAGE onboardingStage = ONBOARDSTAGE.RESGISTER;
 
     @OneToOne(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
-    private SellerAddress address;
+    private Address address;
 
     @Column(name = "shop_category")
     @Enumerated(EnumType.ORDINAL)

@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -69,11 +70,11 @@ public class UserController {
         }
     }
 
-    @GetMapping(value = "/all-address")
+    @GetMapping(value = "/get-user")
     @PrivateApi
-    public ResponseEntity<?> AllAddress() {
+    public ResponseEntity<?> getUser() {
         try {
-            ApiResponse<Object> response = userService.AllAddress();
+            ApiResponse<Object> response = userService.getUser();
             return ResponseEntity
                     .status(200)
                     .body(response);
@@ -85,6 +86,22 @@ public class UserController {
                     .body(response);
         }
     }
+
+    @PutMapping("/set-default/{addressId}")
+    @PrivateApi
+    public ResponseEntity<ApiResponse<Object>> setDefaultAddress(@PathVariable UUID addressId) {
+        try {
+            ApiResponse<Object> response = userService.setDefaultAddress(addressId);
+            return ResponseEntity
+                    .status(response.statusCode())
+                    .body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, e.getMessage(), null, 500));
+        }
+    }
 }
 // uhiuhu uihiuh hjkj h8yiuhy uyg97 gfyugyugujnnnkjnn nkjnnkjn jihknk
-// hjkhjbhjbhjb hbjbhjb
+// hhiuiuo9ujkhjbhjbhjb hbjbhjb
+// jijuijiu joijioo jiuu9o8u9 iuui8u87yyu
+// hiuhuo8uo90ih09iju98unkjhuhuihhuyubjbuguygu guytutuyt

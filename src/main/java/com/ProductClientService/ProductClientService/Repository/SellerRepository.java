@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.DTO.AuthRequest;
 import com.ProductClientService.ProductClientService.Model.Seller;
-import com.ProductClientService.ProductClientService.Model.SellerAddress;
+import com.ProductClientService.ProductClientService.Model.Address;
 
 import java.util.UUID;
 import java.util.List;

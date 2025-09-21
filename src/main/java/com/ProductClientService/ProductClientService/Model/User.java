@@ -31,6 +31,10 @@ public class User {
     @Column(name = "image_url")
     private Set<String> images = new HashSet<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Address> addresses = new ArrayList<>();
+
     @Enumerated(EnumType.ORDINAL)
     @Column(nullable = false)
     private UserStatus status = UserStatus.PENDING_VERIFICATION;
