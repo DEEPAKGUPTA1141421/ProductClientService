@@ -61,16 +61,4 @@ must have smart shoppers
 
 in my app there are different shops if user had add product 
 from different shop then create as many booking  per shop and details of one order  detail in another table
-
-product_attribute_id	image_url
-1	bc7654af-02f4-44f7-bd08-cdcb51998fd0	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050496/bynvowaqu05h6kpzakae.png
-2	bc7654af-02f4-44f7-bd08-cdcb51998fd0	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050504/mq1upvbtd87olwy7ixqp.png
-3	4056ddd7-7baa-48ae-b462-5d6bce5c4021	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050512/hxmpbcport07yzz0ivzx.png
-4	4056ddd7-7baa-48ae-b462-5d6bce5c4021	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050527/fjns6cdryhhtmb0srvdm.png
-5	4cda6581-7c62-48fa-884b-1c40e8e04899	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050532/h9lxt9agyy6hc9hviras.png
-6	4cda6581-7c62-48fa-884b-1c40e8e04899	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050543/oaerjwr1lxyrw7c42cuc.png
-7	d0153eea-dd54-4c9e-b3e6-99c97ac38342	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050549/apqe06rt3lep63m2q0x2.png
-8	d0153eea-dd54-4c9e-b3e6-99c97ac38342	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050569/aqodyeckugyuykmxuh6b.png
-9	67eaee6b-7730-424d-ae62-8660254dd74d	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050584/cuyj0biylt4hwtussabe.png
-10	67eaee6b-7730-424d-ae62-8660254dd74d	http://res.cloudinary.com/dbmcqwakw/image/upload/v1757050593/kzq1v7xob8apgzwx2ccm.png
   
