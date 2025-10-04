@@ -2,15 +2,12 @@ package com.ProductClientService.ProductClientService.Service.seller;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.elasticsearch.client.RequestOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -23,11 +20,7 @@ import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CategoryAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
-import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeResponseDto;
-import com.ProductClientService.ProductClientService.DTO.seller.ProductFullResponseDto;
-import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
-import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Model.CategoryAttribute;
 import com.ProductClientService.ProductClientService.Model.Product;
@@ -35,7 +28,6 @@ import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.StandardProduct;
-import com.ProductClientService.ProductClientService.Model.listener.event.ProductUpdatedEvent;
 import com.ProductClientService.ProductClientService.Repository.AttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryAttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
@@ -49,11 +41,7 @@ import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
-import co.elastic.clients.elasticsearch.core.IndexResponse;
-import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.elasticsearch.core.search.Hit;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
@@ -80,7 +68,7 @@ public class SellerService {
     @PersistenceContext
     private EntityManager entityManager;
 
-    public ApiResponse<Object> addProduct(ProductDto dto) throws IOException {
+    public ApiResponse<Object> addProduct(ProductDto dto) {
         Product product = new Product();
         product.setName(dto.name());
         product.setDescription(dto.description());
@@ -480,5 +468,3 @@ public class SellerService {
         }
     }
 }
-
-// hihiy ugytubhjguy gyutubhgu nmbjgj uyjgtyt6yt6yu jhgu mknuh bvgu

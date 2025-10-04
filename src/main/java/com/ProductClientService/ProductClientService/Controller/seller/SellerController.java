@@ -51,18 +51,10 @@ public class SellerController {
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PrivateApi
     public ResponseEntity<?> addProduct(@Valid @ModelAttribute ProductDto productDto) {
-        try {
-            ApiResponse<Object> response = sellerService.addProduct(productDto);
-            return ResponseEntity
-                    .status(200)
-                    .body(response);
-        } catch (Exception e) {
-            ApiResponse<Object> response = new ApiResponse(false, e.getMessage(), null, 501);
-            System.out.println("messge" + e);
-            return ResponseEntity
-                    .status(response.statusCode())
-                    .body(response);
-        }
+        ApiResponse<Object> response = sellerService.addProduct(productDto);
+        return ResponseEntity
+                .status(200)
+                .body(response);
     }
 
     @PostMapping(value = "/load-attribute")

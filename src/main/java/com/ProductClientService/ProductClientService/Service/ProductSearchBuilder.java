@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 
 public class ProductSearchBuilder {
     private final ProductSearchCriteria criteria = new ProductSearchCriteria();
@@ -29,7 +30,8 @@ public class ProductSearchBuilder {
         return this;
     }
 
-    public List<Product> execute(ProductSearchRepository repo) {
+    public List<ProductSearchDto> execute(ProductSearchRepository repo) {
         return repo.search(criteria);
     }
 }
+// hyy7ed guyt67etd gyut67edt gutr7rde hgfyedgttedy biyh7uy8i gyutyu

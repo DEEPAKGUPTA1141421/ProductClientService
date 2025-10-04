@@ -80,6 +80,11 @@ public class Product {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 
+    @PreUpdate
+    public void setUpdatedAt() {
+        this.updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
+    }
+
     public enum Step {
         PRODUCT_NAME,
         PRODUCT_ATTRIBUTE,

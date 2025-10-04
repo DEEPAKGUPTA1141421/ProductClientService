@@ -8,10 +8,14 @@ import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.Service.AuthService;
 import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
+import com.google.zxing.WriterException;
 
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+
+import java.io.IOException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
@@ -43,7 +47,8 @@ public class AuthController {
 
     @PostMapping("/seller-basic-info")
     @PrivateApi
-    public ResponseEntity<?> sellerBasicInfo(@Valid @RequestBody SellerBasicInfo sellerrequest) {
+    public ResponseEntity<?> sellerBasicInfo(@Valid @RequestBody SellerBasicInfo sellerrequest)
+            throws WriterException, IOException {
         ApiResponse<Seller> response = authService.sellerBasicInfoVerify(sellerrequest);
         return ResponseEntity.status(response.statusCode()).body(response);
     }

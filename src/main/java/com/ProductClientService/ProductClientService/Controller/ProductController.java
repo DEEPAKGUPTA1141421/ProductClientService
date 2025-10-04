@@ -15,19 +15,19 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Section;
+import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 import com.ProductClientService.ProductClientService.Service.ProductService;
+
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/v1/product")
+@RequiredArgsConstructor
 public class ProductController {
     private final ProductService productService;
 
-    public ProductController(ProductService productService) {
-        this.productService = productService;
-    }
-
     @GetMapping("/products/search")
-    public List<Product> searchProducts(
+    public List<ProductSearchDto> searchProducts(
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) UUID brandId,
             @RequestParam(required = false) UUID sellerId,
@@ -37,9 +37,10 @@ public class ProductController {
     }
 
     @GetMapping("/category")
-    public ResponseEntity<?> getCategory() {
+    public ResponseEntity<?> getCategory(@RequestParam boolean includeChildItem,
+            @RequestParam Category.Level level) {
         try {
-            ApiResponse<Object> response = productService.getCategory();
+            ApiResponse<Object> response = productService.getCategory(includeChildItem, level);
             return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -83,6 +84,16 @@ public class ProductController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    @GetMapping("/search")
+    public ResponseEntity<?> searchProduct(@RequestParam String keyword) {
+        try {
+            ApiResponse<Object> response = productService.searchProducts(keyword);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
     // Get all ratings
     @GetMapping("/get-rating/{productId}")
     public ResponseEntity<?> getRatings(@PathVariable UUID productId) {
@@ -99,4 +110,6 @@ public class ProductController {
 }
 // ,mniuhiu nhg8iy hjguytu jhgutututtgttggttt fytftf huhuh mknihuih jhbyujhjuhju
 // hgjygjy hmgjygyjg hbjh mlhiuhn ihiuh hiuhihuibhnbhjnk hnknk hjioj nknjnh bjk
-// njjkhgi hjguyg hguy hjguy bjhg hjgjygnmbgjh khuhnkhib hh hh
+// njjjnkhiunm nihuif iujhiujourfhuhuir joiujiourflniuhuirf uijuiojiorf uhihiu
+// huihiurfiuhijbhuyud uiyi7yiiyhui mbhgyhiyu jgyutyuu7
+// huihyui hyiy7i hy7uy yuiuy78y gyutu gyutuy yugtgyu gyuguytgu

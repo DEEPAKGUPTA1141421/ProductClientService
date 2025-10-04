@@ -36,6 +36,12 @@ public class Category {
     @Column(name = "special_rules", columnDefinition = "TEXT")
     private String specialRules;
 
+    @Column(name = "priority")
+    private Integer priority;
+
+    @Column(name = "image_url")
+    private String imageUrl;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Category parent;
@@ -70,4 +76,4 @@ public class Category {
 
 }
 // hujhiukhuii huy huiyhu huyy hkuiyiu iukyiukj hou ,oi nlojoi oijuo khuouo
-// uuhuopo jioiponjkj jj jijo jij
+// uuhuopo jioiponjkj jj jijo jijnjkhu hihuihyui yhhuiyhui fvfg ggtgt

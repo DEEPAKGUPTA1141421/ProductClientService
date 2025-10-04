@@ -6,4 +6,8 @@ public interface CategoryProjection {
     UUID getId();
 
     String getName();
+
+    String getPriority();
+
+    String getImageUrl();
 }

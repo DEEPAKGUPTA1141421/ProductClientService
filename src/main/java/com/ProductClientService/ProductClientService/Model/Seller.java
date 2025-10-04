@@ -46,6 +46,9 @@ public class Seller {
     @OneToOne(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
     private Address address;
 
+    @Column(name = "qr_code_url")
+    private String qrCodeUrl;
+
     @Column(name = "shop_category")
     @Enumerated(EnumType.ORDINAL)
     private ShopCategory shopCategory;

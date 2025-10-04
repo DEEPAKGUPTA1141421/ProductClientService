@@ -49,14 +49,6 @@ public class GlobalExceptionHandler {
                 .body(new ApiResponse<>(false, message, null, 400));
     }
 
-    // Handle DB constraint violations (unique key, foreign key, etc.)
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiResponse<String>> handleDataIntegrity(DataIntegrityViolationException ex) {
-        String message = "Database error: " + ex.getMostSpecificCause().getMessage();
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ApiResponse<>(false, message, null, 409));
-    }
-
     // Handle invalid enum or type casting issues
     @ExceptionHandler(InvalidFormatException.class)
     public ResponseEntity<ApiResponse<String>> handleInvalidFormat(InvalidFormatException ex) {
@@ -70,5 +62,39 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<String>> handleGeneric(Exception ex) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ApiResponse<>(false, "Something went wrong: " + ex.getMessage(), null, 500));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<String>> handleDataIntegrity(DataIntegrityViolationException ex) {
+        String rawMessage = ex.getMostSpecificCause().getMessage();
+
+        // Extract clean DB error message
+        String cleanMessage = extractDbErrorMessage(rawMessage);
+
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiResponse<>(false, cleanMessage, null, 409));
+    }
+
+    public static String extractDbErrorMessage(String fullError) {
+        if (fullError == null || fullError.isEmpty()) {
+            return "Unknown database error";
+        }
+
+        int errorIndex = fullError.indexOf("ERROR:");
+        if (errorIndex != -1) {
+            return fullError.substring(errorIndex).trim();
+        }
+
+        return fullError; // fallback
+    }
+
+    public static boolean isDatabaseError(String fullError) {
+        if (fullError == null)
+            return false;
+
+        return fullError.contains("ERROR:")
+                || fullError.contains("violates foreign key constraint")
+                || fullError.contains("duplicate key")
+                || fullError.contains("SQL [");
     }
 }

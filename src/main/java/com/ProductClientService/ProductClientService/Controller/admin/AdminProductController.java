@@ -51,7 +51,7 @@ public class AdminProductController {
     }
 
     @GetMapping("/add-category-from-file")
-    @PrivateApi
+    // @PrivateApi
     public ResponseEntity<?> test() throws IOException {
         adminProductService.addCategoryFromJsonFile();
         return ResponseEntity.status(200).body("task Queued");
@@ -74,4 +74,4 @@ public class AdminProductController {
 
 }
 // fytdfugyuguhi yguyduhjbj jugguyge gyuguyduygjgyhguyjd gygd giyiudbhjgdiu
-// njhuikd kj.hikd, mkjhkuh huyhuihuiyhui yut7yut7ut yutu6tyjutut jhhiuhyiyu
+// jhikuhi huyiu yuu hyiuyui hyhuyiy7ui jkhuih hhiuhf huihiuhfhujj

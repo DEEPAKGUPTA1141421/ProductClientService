@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,7 @@ import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetor
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Seller.ONBOARDSTAGE;
 import com.ProductClientService.ProductClientService.Model.User;
+import com.ProductClientService.ProductClientService.Model.Otp.typeOfOtp;
 import com.ProductClientService.ProductClientService.Repository.OtpRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
@@ -26,9 +29,28 @@ import com.ProductClientService.ProductClientService.Service.GoogleMapsService.A
 import com.ProductClientService.ProductClientService.Utils.RateLimiter;
 import com.ProductClientService.ProductClientService.network.DeliveryInventoryClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import javax.imageio.ImageIO;
+import java.awt.*;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.WriterException;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+
+import org.springframework.stereotype.Service;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +66,7 @@ public class AuthService {
     private final ObjectProvider<GoogleMapsService> googleMapsProvider;
     private final DeliveryInventoryClient deliveryInventoryClient;
     private final UserRepojectory userRepojectory;
+    private final Cloudinary cloudinary;
 
     public ApiResponse<String> login(LoginRequest loginRequest) {
         // Check rate limit
@@ -74,6 +97,9 @@ public class AuthService {
 
     public ApiResponse<String> verify(AuthRequest authrequest) {
         boolean valid = otpRepository.checkOtpValidity(authrequest.phone(), authrequest.otp_code(), "login");
+        if (valid) {
+            otpRepository.markAsVerified(authrequest.phone(), authrequest.otp_code(), typeOfOtp.login);
+        }
         if (!valid)
             return new ApiResponse<>(false, "Otp is Invalid", null, 200);
         String token;
@@ -100,7 +126,7 @@ public class AuthService {
         return new ApiResponse<>(true, "Otp Verification Success", token, 200);
     }
 
-    public ApiResponse<Seller> sellerBasicInfoVerify(SellerBasicInfo inforequest) {
+    public ApiResponse<Seller> sellerBasicInfoVerify(SellerBasicInfo inforequest) throws WriterException, IOException {
         if (inforequest.stage_of_onboarding() == ONBOARDSTAGE.BASIC_INFO_NAME)
             return handleBasicNameInfo(inforequest);
         else if (inforequest.stage_of_onboarding() == ONBOARDSTAGE.LOCATION)
@@ -211,7 +237,7 @@ public class AuthService {
         return new ApiResponse<>(true, "Adhadhar Verification Complete", null, 200);
     }
 
-    private ApiResponse<Seller> handlePanCard(SellerBasicInfo inforequest) {
+    private ApiResponse<Seller> handlePanCard(SellerBasicInfo inforequest) throws WriterException, IOException {
         String phone = (String) request.getAttribute("phone");
         if (!sellerRepository.stageValidation(Seller.ONBOARDSTAGE.ADHADHAR_CARD, phone)) {
             return new ApiResponse<>(false, "Stage is Not Correct", null, 403);
@@ -226,11 +252,53 @@ public class AuthService {
         seller.setOnboardingStage(Seller.ONBOARDSTAGE.DOCUMENT_VERIFIED);
 
         sellerAddressRepository.saveOrUpdatePanAddress(seller, inforequest.pan_card());
+        // QR code text → redirect link
+
+        // Generate QR and upload
+        String qrUrl = generateAndUpload(seller.getId(), "src/main/resources/static/logo.png", 400, 400);
+        System.out.println("qrText" + qrUrl);
+        seller.setQrCodeUrl(qrUrl);
+        sellerRepository.save(seller);
         return new ApiResponse<>(true, "PanCard Verification Complete", null, 200);
     }
 
+    public String generateAndUpload(UUID id, String logoPath, int width, int height)
+            throws WriterException, IOException {
+        // 1. Setup error correction
+        Map<EncodeHintType, Object> hints = new HashMap<>();
+        hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.H);
+
+        // 2. Generate QR code matrix
+        BitMatrix bitMatrix = new MultiFormatWriter().encode(id.toString(), BarcodeFormat.QR_CODE, width, height,
+                hints);
+        BufferedImage qrImage = MatrixToImageWriter.toBufferedImage(bitMatrix);
+
+        // 3. Load logo
+        BufferedImage logo = ImageIO.read(new File(logoPath));
+
+        // Scale logo to fit inside QR (max ~20%)
+        int logoWidth = qrImage.getWidth() / 5;
+        int logoHeight = qrImage.getHeight() / 5;
+        Image scaledLogo = logo.getScaledInstance(logoWidth, logoHeight, Image.SCALE_SMOOTH);
+
+        // 4. Overlay logo at center
+        Graphics2D g = qrImage.createGraphics();
+        int x = (qrImage.getWidth() - logoWidth) / 2;
+        int y = (qrImage.getHeight() - logoHeight) / 2;
+        g.drawImage(scaledLogo, x, y, null);
+        g.dispose();
+
+        // 5. Write QR to byte stream
+        ByteArrayOutputStream os = new ByteArrayOutputStream();
+        ImageIO.write(qrImage, "png", os);
+
+        // 6. Upload to Cloudinary
+        Map uploadResult = cloudinary.uploader().upload(os.toByteArray(), ObjectUtils.emptyMap());
+        return uploadResult.get("url").toString();
+    }
 }
 
 // huyh hihi hyihi hyh huih huihu huj ggygggygggggg
 
-// njkhuiitgiugtuhug
+// njkhuiitgiugtuhug jhiuyi87y7r h8y7re8 uy87tr hyu7r8eyyhbjhkhku
+// jhkuijl hujijiijijlijijiijij bhkjhk jjiojioj jojij jijioj hbuguyg guyugugy

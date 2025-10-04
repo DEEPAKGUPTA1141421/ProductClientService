@@ -22,6 +22,7 @@ import com.ProductClientService.ProductClientService.Repository.CategoryReposito
 import com.ProductClientService.ProductClientService.Repository.ProductRatingRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 import com.ProductClientService.ProductClientService.Repository.SectionRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Repository.Projection.CategoryProjection;
@@ -48,7 +49,7 @@ public class ProductService {
 
     @Transactional(readOnly = true)
 
-    public List<Product> searchProducts(UUID categoryId, UUID brandId, UUID sellerId,
+    public List<ProductSearchDto> searchProducts(UUID categoryId, UUID brandId, UUID sellerId,
             String attributeName, String attributeValue) {
         ProductSearchBuilder builder = new ProductSearchBuilder();
 
@@ -65,33 +66,66 @@ public class ProductService {
         return builder.execute(productSearchRepository);
     }
 
-    public List<ProductElasticDto> searchProducts(String keyword) throws IOException {
+    public ApiResponse<Object> searchProducts(String keyword) throws IOException {
         // 🔍 Build search query
-        SearchResponse<ProductElasticDto> response = elasticsearchClient.search(s -> s
-                .index("products") // your ES index name
-                .query(q -> q
-                        .multiMatch(m -> m
-                                .fields("name", "description", "brandName", "categoryName", "sellerName") // fields to
-                                                                                                          // search
-                                .query(keyword)))
-                .size(20) // limit results
-                .from(0), // pagination start
-                ProductElasticDto.class);
-
-        List<ProductElasticDto> results = new ArrayList<>();
-        for (Hit<ProductElasticDto> hit : response.hits().hits()) {
-            results.add(hit.source());
-        }
-
-        return results;
-    }
-
-    public ApiResponse<Object> getCategory() {
         try {
-            List<CategoryProjection> categories = categoryRepository.findByCategoryLevel(Category.Level.SUPER_CATEGORY);
-            return new ApiResponse<>(true, "Get List", categories, 200);
+            SearchResponse<ProductElasticDto> response = elasticsearchClient.search(s -> s
+                    .index("products") // your ES index name
+                    .query(q -> q
+                            .multiMatch(m -> m
+                                    .fields("name", "description", "brandName", "categoryName", "sellerName") // fields
+                                                                                                              // to
+                                                                                                              // search
+                                    .query(keyword)))
+                    .size(20) // limit results
+                    .from(0), // pagination start
+                    ProductElasticDto.class);
+
+            List<ProductElasticDto> results = new ArrayList<>();
+            for (Hit<ProductElasticDto> hit : response.hits().hits()) {
+                results.add(hit.source());
+            }
+            return new ApiResponse<>(true, "Get Product", results, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
+        }
+    }
+
+    public ApiResponse<Object> getCategory(boolean includeChildItem, Category.Level level) {
+        try {
+            short lvl = (short) level.ordinal();
+            System.out.println("Condition check: " + includeChildItem);
+
+            Object categories;
+
+            if (includeChildItem) {
+                // Fetch top 10 parent categories with children
+                List<Map<String, Object>> parentCategoriesRaw = categoryRepository.findTop10ParentWith10Children(lvl);
+                List<Map<String, Object>> parentCategories = new ArrayList<>();
+
+                ObjectMapper objectMapper = new ObjectMapper();
+
+                for (Map<String, Object> parent : parentCategoriesRaw) {
+                    // Copy to a modifiable map
+                    Map<String, Object> modifiableParent = new HashMap<>(parent);
+
+                    Object children = modifiableParent.get("children");
+                    if (children instanceof String) {
+                        modifiableParent.put("children", objectMapper.readValue((String) children, List.class));
+                    }
+
+                    parentCategories.add(modifiableParent);
+                }
+                categories = parentCategories; // assign to outer variable
+            } else {
+                // Fetch top 10 categories without children
+                categories = categoryRepository.findTop10ByLevel(lvl);
+            }
+            return new ApiResponse<>(true, "Fetched categories successfully", categories, 200);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ApiResponse<>(false, "Error: " + e.getMessage(), null, 500);
         }
     }
 
@@ -194,4 +228,6 @@ public class ProductService {
 }
 
 /// bkhhkuhjhjkfhiuh hiujfik mbhuyg jhguky gfyugjyghvtfujyg hgvytfgmm hguygug
-/// jggug kjnhnhu jbuyhhihu khukhyuhy nmguyy uhh mknkjnknhj nb jhbjnm khkhkuhhku
+// y yiyi huiuyi yuyuhuhu huiuuhuuuyyyyythbvcertyuiolkjnhgfdrtyuio hkuhu iuu
+/// huiui iuyuiyuiyuhhhh hkhu huhu huuh huu uouuuiuoiiooiiub uu iouiu
+/// uiu8uuiiuiohkuuh huui uiuujujjujjjjhgghjk

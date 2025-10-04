@@ -3,6 +3,7 @@ package com.ProductClientService.ProductClientService.Service.user;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -11,29 +12,25 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.Model.Address;
 import com.ProductClientService.ProductClientService.Model.User;
+import com.ProductClientService.ProductClientService.Model.UserRecentSearch;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
+import com.ProductClientService.ProductClientService.Repository.UserRecentSearchRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class UserService {
     private final ObjectProvider<GoogleMapsService> googleMapsProvider;
     private final HttpServletRequest request;
     private final UserRepojectory userRepojectory;
     private final SellerAddressRepository sellerAddressRepository;
-
-    public UserService(ObjectProvider<GoogleMapsService> googleMapsProvider,
-            HttpServletRequest request, UserRepojectory userRepojectory,
-            SellerAddressRepository sellerAddressRepository) {
-        this.googleMapsProvider = googleMapsProvider;
-        this.request = request;
-        this.userRepojectory = userRepojectory;
-        this.sellerAddressRepository = sellerAddressRepository;
-    }
+    private final UserRecentSearchRepository repo;
 
     public ApiResponse<Object> handleLocaton(SellerBasicInfo inforequest) {
         String phone = (String) request.getAttribute("phone");
@@ -129,6 +126,39 @@ public class UserService {
         return found;
     }
 
+    @Transactional
+    public void saveSearch(String itemId, UserRecentSearch.ItemType itemType,
+            String title, String imageUrl, String meta) {
+        UUID userId = (UUID) request.getAttribute("id");
+        // Check if this item already exists
+        var existing = repo.findByUserIdAndItemIdAndItemType(userId, itemId, itemType);
+
+        if (existing.isPresent()) {
+            UserRecentSearch search = existing.get();
+            search.setCountOfSearch(search.getCountOfSearch() + 1);
+            repo.save(search);
+        } else {
+            UserRecentSearch newSearch = new UserRecentSearch();
+            newSearch.setUserId(userId);
+            newSearch.setItemId(itemId);
+            newSearch.setItemType(itemType);
+            newSearch.setTitle(title);
+            newSearch.setImageUrl(imageUrl);
+            newSearch.setMeta(meta);
+            repo.save(newSearch);
+        }
+
+        // Keep only last 10 searches
+        List<UserRecentSearch> last10 = repo.findTop10ByUserIdOrderByUpdatedAtDesc(userId);
+        List<UUID> last10Ids = last10.stream().map(UserRecentSearch::getId).collect(Collectors.toList());
+
+        repo.deleteByUserIdAndIdNotIn(userId, last10Ids);
+    }
+
+    public List<UserRecentSearch> getLastSearches() {
+        UUID userId = (UUID) request.getAttribute("id");
+        return repo.findTop10ByUserIdOrderByUpdatedAtDesc(userId);
+    }
 }
 
 // hhhhunhgj hvuyg yguy hjbjhh hbguj jhguygguhjhhnjhgyu yhfuhgfhj jhguyj

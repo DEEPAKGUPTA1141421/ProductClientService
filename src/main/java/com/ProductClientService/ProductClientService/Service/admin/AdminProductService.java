@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.kafka.common.protocol.types.Field.Str;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
@@ -35,23 +36,18 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class AdminProductService {
     private final HttpServletRequest request;
     private final CategoryRepository categoryRepository;
     private final AttributeRepository attributeRepository;
     private final CategoryAttributeRepository categoryAttributeRepository;
+    private final JdbcTemplate jdbcTemplate;
     @PersistenceContext
     private EntityManager entityManager;
-
-    public AdminProductService(HttpServletRequest request, CategoryRepository categoryRepository,
-            AttributeRepository attributeRepository, CategoryAttributeRepository categoryAttributeRepository) {
-        this.request = request;
-        this.categoryRepository = categoryRepository;
-        this.attributeRepository = attributeRepository;
-        this.categoryAttributeRepository = categoryAttributeRepository;
-    }
 
     public ApiResponse<Object> addCategory(CategoryDto categoryRequest) {
         // boolean isValid = addToCategory(categoryRequest);
@@ -92,6 +88,8 @@ public class AdminProductService {
 
         // Loop for super-category
         for (JsonNode item : itemsNode) {
+            if (true)
+                break;
             String type = item.get("type").asText();
             System.out.println("Step 5: Checking item type = " + type);
 
@@ -124,6 +122,8 @@ public class AdminProductService {
 
         // Loop for category
         for (JsonNode item : itemsNode) {
+            if (true)
+                break;
             String type = item.get("type").asText();
             JsonNode dataArray = item.get("data");
 
@@ -149,6 +149,8 @@ public class AdminProductService {
 
         // Loop for sub-category
         for (JsonNode item : itemsNode) {
+            if (true)
+                break;
             String type = item.get("type").asText();
             JsonNode dataArray = item.get("data");
 
@@ -176,29 +178,100 @@ public class AdminProductService {
         for (JsonNode item : itemsNode) {
             String type = item.get("type").asText();
             JsonNode dataArray = item.get("data");
-
             if ("sub-sub-category".equals(type)) {
                 System.out.println("Step 9: Found sub-sub-category with size = " + dataArray.size());
+                boolean flag = false;
+                List<Category> batch = new ArrayList<>();
+                int batchSize = 25;
+
                 for (JsonNode subsubcategoryData : dataArray) {
                     String childname = subsubcategoryData.get("name").asText();
                     String parent_name = subsubcategoryData.get("parent_name").asText();
                     Integer id = subsubcategoryData.get("id").asInt();
                     Integer parent_id = subsubcategoryData.get("parent_id").asInt();
-                    System.out.println("Step 9.1: Sub-sub-category name = " + childname + ", parent = " + parent_name);
 
-                    addToCategory(new CategoryDto(childname, parent_name), Category.Level.SUBSUBCATEGORY, id,
-                            parent_id);
-
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        System.out.println("Step 9.2: Thread interrupted while inserting sub-sub-category");
+                    if (id == 13383 && !flag) {
+                        flag = true;
+                        System.out.println("condition met at id 12686");
+                        continue;
                     }
+                    if (!flag)
+                        continue;
+
+                    // build Category (no save yet)
+                    Category category = buildCategory(new CategoryDto(childname, parent_name),
+                            Category.Level.SUBSUBCATEGORY,
+                            id, parent_id);
+
+                    if (category != null) {
+                        batch.add(category);
+                    }
+
+                    // Insert every 25 records
+                    if (batch.size() == batchSize) {
+                        insertBatch(batch);
+                        batch.clear();
+                        System.out.println("Inserted 25 sub-sub-categories");
+                    }
+                }
+
+                // Insert any leftovers
+                if (!batch.isEmpty()) {
+                    insertBatch(batch);
+                    System.out.println("Inserted remaining " + batch.size() + " sub-sub-categories");
                 }
             }
         }
 
         System.out.println("Step 10: Completed processing category.json");
+    }
+
+    private Category buildCategory(CategoryDto categoryRequest, Category.Level level,
+            Integer externalId, Integer parentExternalId) {
+        Category category = new Category();
+        category.setName(categoryRequest.category());
+
+        if (categoryRequest.parent() != null) {
+            Category.Level parentLevel = (level == Category.Level.CATEGORY) ? Category.Level.SUPER_CATEGORY
+                    : (level == Category.Level.SUBCATEGORY) ? Category.Level.CATEGORY
+                            : (level == Category.Level.SUBSUBCATEGORY) ? Category.Level.SUBCATEGORY : null;
+
+            Optional<Category> parentCategory = categoryRepository
+                    .findFirstByExternalIdAndCategoryLevel(parentExternalId, parentLevel);
+
+            if (parentCategory.isEmpty()) {
+                System.out.println("No Value in Db " + parentExternalId + " " + level);
+                return null; // skip
+            }
+            category.setParent(parentCategory.get());
+        }
+
+        category.setExternalId(externalId);
+        category.setCategoryLevel(level);
+        category.setMax_products(9);
+        category.setMin_products(1);
+        return category;
+    }
+
+    public void insertBatch(List<Category> categories) {
+
+        String sql = "INSERT INTO categories (id, name, external_id, category_level, parent_id, max_products, min_products) "
+                +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        jdbcTemplate.batchUpdate(sql, categories, 25, (ps, category) -> {
+            UUID id = UUID.randomUUID();
+            ps.setObject(1, id, java.sql.Types.OTHER); // for UUID in PostgreSQL
+            ps.setString(2, category.getName());
+            ps.setInt(3, category.getExternalId());
+            ps.setInt(4, category.getCategoryLevel().ordinal());
+            if (category.getParent() != null) {
+                ps.setObject(5, category.getParent().getId(), java.sql.Types.OTHER);
+            } else {
+                ps.setNull(5, java.sql.Types.BIGINT);
+            }
+            ps.setInt(6, category.getMax_products());
+            ps.setInt(7, category.getMin_products());
+        });
     }
 
     @Transactional
@@ -369,4 +442,7 @@ public class AdminProductService {
 }
 // hkiyfhgyui hiuydi hggdyu buhuf huiy78dhghuygujhgui hihuk igihuihhuiiu
 // khuiuhhuihi huhjniy gygyu hyhui gyuybyhiuyub yuiujuhiujn hjhu gyhhu huih huhj
-// hihui huhuhhuihiu ghhiuhuhuthe over is over and step is not over jkhkjkhujnkh
+// hihui huhuhhuihiu ghhiuhuhuthe overnkjhiuhu bhhihui nihjuijiujiuj hijuiji
+// njkhuih huihuihhihuihuiuhu iujiojioj hhyuhi huihui huihuih huhuih huiuji
+// hiuy78ifkuuii uhuyi hui huiyui huiyuiy huiyuiy hujhyuiyhiuh njkiuhui hiuyhiy
+// gyuyuyu ugyyuy
