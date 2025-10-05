@@ -26,5 +26,3 @@ public class ProductClientServiceApplication {
 	}
 
 }
-// niuhiuoujovjiouuufr89u
-// niuhiuyhui hihiuhuih hihihiud hkhu hyhy
