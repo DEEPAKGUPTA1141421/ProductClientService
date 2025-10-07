@@ -8,14 +8,14 @@ import com.ProductClientService.ProductClientService.DTO.RecentSearchRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 
 import com.ProductClientService.ProductClientService.Model.UserRecentSearch;
-
 import com.ProductClientService.ProductClientService.Service.user.UserService;
 import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
+
+import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,9 +26,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 @RestController
 @RequestMapping("/api/v1/user")
+@RequiredArgsConstructor
 public class UserController {
-    @Autowired
-    private UserService userService;
+
+    private final UserService userService;
 
     @PostMapping(value = "/update-address")
     @PrivateApi

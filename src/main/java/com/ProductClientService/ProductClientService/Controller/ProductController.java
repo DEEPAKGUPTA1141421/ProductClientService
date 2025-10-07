@@ -17,6 +17,7 @@ import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Section;
 import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 import com.ProductClientService.ProductClientService.Service.ProductService;
+import com.ProductClientService.ProductClientService.Service.Strategy.SearchHistoryStragecy.TrendingSearchStrategy;
 
 import lombok.RequiredArgsConstructor;
 
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ProductController {
     private final ProductService productService;
+    private final TrendingSearchStrategy trendingSearchStrategy;
 
     @GetMapping("/products/search")
     public List<ProductSearchDto> searchProducts(
@@ -107,9 +109,11 @@ public class ProductController {
         ApiResponse<Object> response = productService.getRatingSummary(productId);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
+
+    @GetMapping("/trending")
+    public ResponseEntity<?> getTrending() {
+        List<String> trending = trendingSearchStrategy.getTrending(10); // top 10
+        ApiResponse<Object> response = new ApiResponse<>(true, "Trending keywords fetched successfully", trending, 200);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
 }
-// ,mniuhiu nhg8iy hjguytu jhgutututtgttggttt fytftf huhuh mknihuih jhbyujhjuhju
-// hgjygjy hmgjygyjg hbjh mlhiuhn ihiuh hiuhihuibhnbhjnk hnknk hjioj nknjnh bjk
-// njjjnkhiunm nihuif iujhiujourfhuhuir joiujiourflniuhuirf uijuiojiorf uhihiu
-// huihiurfiuhijbhuyud uiyi7yiiyhui mbhgyhiyu jgyutyuu7
-// huihyui hyiy7i hy7uy yuiuy78y gyutu gyutuy yugtgyu gyuguytgu

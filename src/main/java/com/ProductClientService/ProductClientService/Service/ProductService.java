@@ -7,17 +7,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
+import com.ProductClientService.ProductClientService.DTO.ProductWithImagesDTO;
+import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.Model.Product;
+import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductRating;
 import com.ProductClientService.ProductClientService.Model.Section;
+import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Model.Category;
+import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRatingRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
@@ -42,6 +48,7 @@ public class ProductService {
     private final ElasticsearchClient elasticsearchClient;
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
+    private final BrandRepository brandRepository;
     private final SectionRepository sectionRepository;
     private final ProductRatingRepository productRatingRepository;
     private final UserRepojectory userRepojectory;
@@ -66,29 +73,26 @@ public class ProductService {
         return builder.execute(productSearchRepository);
     }
 
-    public ApiResponse<Object> searchProducts(String keyword) throws IOException {
-        // 🔍 Build search query
-        try {
-            SearchResponse<ProductElasticDto> response = elasticsearchClient.search(s -> s
-                    .index("products") // your ES index name
-                    .query(q -> q
-                            .multiMatch(m -> m
-                                    .fields("name", "description", "brandName", "categoryName", "sellerName") // fields
-                                                                                                              // to
-                                                                                                              // search
-                                    .query(keyword)))
-                    .size(20) // limit results
-                    .from(0), // pagination start
-                    ProductElasticDto.class);
+    public ApiResponse<Object> searchProducts(String keyword) {
 
-            List<ProductElasticDto> results = new ArrayList<>();
-            for (Hit<ProductElasticDto> hit : response.hits().hits()) {
-                results.add(hit.source());
-            }
-            return new ApiResponse<>(true, "Get Product", results, 200);
-        } catch (Exception e) {
-            return new ApiResponse<>(false, e.getMessage(), null, 501);
-        }
+        List<ProductWithImagesProjection> products = productRepository.searchProductsWithImages(keyword);
+
+        List<ProductWithImagesDTO> productList = products.stream()
+                .map(p -> new ProductWithImagesDTO(
+                        p.getId(),
+                        p.getName(),
+                        p.getDescription(),
+                        p.getImages()))
+                .toList();
+
+        // Fetch brands
+        List<Brand> brands = brandRepository.searchBrands(keyword);
+
+        // Build response
+        Map<String, Object> response = new HashMap<>();
+        response.put("products", productList);
+        response.put("brands", brands);
+        return new ApiResponse<>(true, "Fetched products and brands", response, 200);
     }
 
     public ApiResponse<Object> getCategory(boolean includeChildItem, Category.Level level) {
@@ -229,5 +233,4 @@ public class ProductService {
 
 /// bkhhkuhjhjkfhiuh hiujfik mbhuyg jhguky gfyugjyghvtfujyg hgvytfgmm hguygug
 // y yiyi huiuyi yuyuhuhu huiuuhuuuyyyyythbvcertyuiolkjnhgfdrtyuio hkuhu iuu
-/// huiui iuyuiyuiyuhhhh hkhu huhu huuh huu uouuuiuoiiooiiub uu iouiu
-/// uiu8uuiiuiohkuuh huui uiuujujjujjjjhgghjk
+/// huiui iuyuiyuiyuhhhh hkhu huhu huuh huu uouuuiuoiiooiiub uu iouiu hhuuhh

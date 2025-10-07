@@ -1,5 +1,6 @@
 package com.ProductClientService.ProductClientService.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
+import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Product.Step;
@@ -96,7 +98,27 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("select p.seller.id from Product p where p.id = :productId")
     UUID findSellerIdByProductId(@Param("productId") UUID productId);
 
+    @Query(value = """
+            SELECT
+                p.id AS id,
+                p.name AS name,
+                p.description AS description,
+                COALESCE(
+                    jsonb_agg(DISTINCT pa.images) FILTER (WHERE pa.images IS NOT NULL AND ca.is_image_attribute = true),
+                    '[]'::jsonb
+                ) AS images
+            FROM products p
+            LEFT JOIN product_attributes pa ON pa.product_id = p.id
+            LEFT JOIN category_attributes ca ON ca.id = pa.category_attribute_id
+            WHERE LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%'))
+            GROUP BY p.id
+            LIMIT 20
+            """, nativeQuery = true)
+    List<ProductWithImagesProjection> searchProductsWithImages(@Param("keyword") String keyword);
+
 }
 
 // khiu hgujygugtuytutyuhyujgy kjhiuhyiu jhguyg hjgkyuyhh nhku nghuyg mnhkj
-// hmgjh hjgjh hjgj
+// hmgjh hjgjh hjgjhuiui uhiuoi uiuiui iu8iy787y8y7y7bu8u8kjjiji hjujioj hiuuji
+// huhuihiuu kjhedioiorfuigutouiu uugtuiijuuiiuifvijhhhuuu
