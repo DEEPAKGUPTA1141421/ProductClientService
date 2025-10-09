@@ -104,7 +104,7 @@ public class ProductService {
 
             if (includeChildItem) {
                 // Fetch top 10 parent categories with children
-                List<Map<String, Object>> parentCategoriesRaw = categoryRepository.findTop10ParentWith10Children(lvl);
+                List<Map<String, Object>> parentCategoriesRaw = categoryRepository.findTop10ParentWithChildren(lvl);
                 List<Map<String, Object>> parentCategories = new ArrayList<>();
 
                 ObjectMapper objectMapper = new ObjectMapper();

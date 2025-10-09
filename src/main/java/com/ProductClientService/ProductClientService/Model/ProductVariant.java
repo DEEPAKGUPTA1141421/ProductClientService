@@ -26,6 +26,12 @@ public class ProductVariant {
     @Column(name = "price")
     private String price;
 
+    @Column(name = "discount_price")
+    private String discountPrice;
+
+    @Column(name = "discount_percentage")
+    private String discountPercentage;
+
     @Column(name = "stock", nullable = false)
     private int stock = 0;
 

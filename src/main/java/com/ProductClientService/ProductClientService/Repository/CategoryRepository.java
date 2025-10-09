@@ -37,18 +37,35 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
                 p.image_url AS imageUrl,
                 COALESCE(
                     (
-                        SELECT json_agg(child_data) :: jsonb
+                        SELECT json_agg(category_data)::jsonb
                         FROM (
                             SELECT
                                 c.id,
                                 c.name,
                                 c.priority,
-                                c.image_url AS imageUrl
+                                c.image_url AS imageUrl,
+                                COALESCE(
+                                    (
+                                        SELECT json_agg(sub_child_data)::jsonb
+                                        FROM (
+                                            SELECT
+                                                sc.id,
+                                                sc.name,
+                                                sc.priority,
+                                                sc.image_url AS imageUrl
+                                            FROM categories sc
+                                            WHERE sc.parent_id = c.id
+                                            ORDER BY sc.priority ASC
+                                            LIMIT 10
+                                        ) AS sub_child_data
+                                    ),
+                                    '[]'::jsonb
+                                ) AS children
                             FROM categories c
                             WHERE c.parent_id = p.id
                             ORDER BY c.priority ASC
                             LIMIT 10
-                        ) AS child_data
+                        ) AS category_data
                     ),
                     '[]'::jsonb
                 ) AS children
@@ -57,7 +74,7 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
             ORDER BY p.priority ASC
             LIMIT 10
             """, nativeQuery = true)
-    List<Map<String, Object>> findTop10ParentWith10Children(@Param("level") short level);
+    List<Map<String, Object>> findTop10ParentWithChildren(@Param("level") short level);
 
     @Query(value = """
             SELECT
@@ -76,4 +93,4 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
 /// hjuihui gyuhgyuy gyutguyu hyiuy unjj huijbhjgujhyhhihhuihhuihuhuihiuhhui
 /// guyyifrbhyif hyiyiufe ghiuyif hiuyif hiyyif yi7yifrhuiyhuyhiuyhuhuiufr
-/// hkhubbyyiyhhukuhuh gyybhuku huiuuuujhyyy
+/// hkhubbyyiyhhukuhuh gyybhuku huiuuuujhyyy khuhukuhhuu gyjhyuuy hiuhui
