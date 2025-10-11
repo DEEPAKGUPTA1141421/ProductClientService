@@ -16,6 +16,9 @@ public class CartItemDto {
     private int quantity;
     private double price;
     private UUID variantId;
+    private String name;
+    private String image;
+    private String description;
 }
 
-//huhyuyb byguy gytguy hggy jhhhh njkh
+// huhyuyb byguy gytguy hggy jhhhh njkh

@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.Service.cart;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
+import com.ProductClientService.ProductClientService.DTO.ProductDetailsDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.ApplyCouponRequest;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
@@ -9,7 +10,11 @@ import com.ProductClientService.ProductClientService.DTO.Cart.CouponResponseDto;
 import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Model.CartItem;
 import com.ProductClientService.ProductClientService.Model.Coupon;
+import com.ProductClientService.ProductClientService.Model.ProductAttribute;
+import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Repository.*;
+import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +35,8 @@ public class CartService {
     private final ProductRepository productRepository;
 
     private final ProductVariantRepository variantRepository;
+
+    private final ProductAttributeRepository productAttributeRepository;
 
     @Transactional
     public ApiResponse<Object> addItem(UUID userId, CartItemRequest req) {
@@ -74,6 +81,7 @@ public class CartService {
         }
     }
 
+    @Transactional
     public ApiResponse<Object> updateQuantity(UUID userId, UUID itemId, int qty) {
         try {
             Cart cart = mustGetActiveCart(userId);
@@ -109,7 +117,6 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public ApiResponse<Object> getCart(UUID userId) {
-
         System.out.println("we receive the call");
         // Find active cart for user
         try {
@@ -120,7 +127,6 @@ public class CartService {
                             .items(List.of())
                             .build());
             System.out.println("Cart" + cart.toString());
-
             // Convert CartItems -> CartItemDto
             List<CartItemDto> itemDtos = cart.getItems().stream()
                     .map(item -> {
@@ -128,6 +134,7 @@ public class CartService {
                         UUID shopId = productRepository.findSellerIdByProductId(item.getProductId());
                         System.out.println("shopId" + shopId);
                         UUID variantId = item.getVariantId();
+                        ProductDetailsDto productDetails = getProductDetails(item);
                         // String a = "0db8b4b7-69fd-4843-9904-8408ee1e77d8";
                         // UUID shopId = UUID.fromString(a);
                         return CartItemDto.builder()
@@ -137,6 +144,9 @@ public class CartService {
                                 .shopId(shopId)
                                 .quantity(item.getQuantity())
                                 .price(Double.parseDouble(getPriceFromVariant(variantId))) // convert paise to ₹
+                                .name(productDetails.getName())
+                                .description(productDetails.getDescription())
+                                .image(productDetails.getImageUrl())
                                 .build();
                     })
                     .toList();
@@ -169,6 +179,49 @@ public class CartService {
             System.out.println("Error mesaage" + e.getMessage());
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
+    }
+
+    private ProductDetailsDto getProductDetails(CartItem item) {
+        UUID variantId = item.getVariantId();
+        UUID productId = item.getProductId();
+
+        // 1. Fetch name and description (projection)
+        ProductSummaryProjection productSummary = productRepository.getProductNameAndDescription(productId);
+
+        if (productSummary == null) {
+            throw new RuntimeException("Product not found for ID: " + productId);
+        }
+
+        // 2. Fetch variant
+        ProductVariant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new RuntimeException("Variant not found for ID: " + variantId));
+
+        // 3. Determine image attribute from SKU (safe)
+        String[] skuParts = variant.getSku().split("-");
+        String imageAttribute = skuParts.length > 1 ? skuParts[1] : skuParts[0];
+
+        // 4. Fetch all image attributes for this product
+        List<ProductAttribute> attributes = productAttributeRepository.findImageAttributesByProductId(productId);
+
+        // 5. Find matching image URL
+        String imageUrl = null;
+        for (ProductAttribute pa : attributes) {
+            if (pa.getValue().equalsIgnoreCase(imageAttribute) && pa.getImages() != null && !pa.getImages().isEmpty()) {
+                imageUrl = pa.getImages().get(0);
+                break;
+            }
+        }
+
+        // 6. Fallback if no image found
+        if (imageUrl == null && !attributes.isEmpty() && !attributes.get(0).getImages().isEmpty()) {
+            imageUrl = attributes.get(0).getImages().get(0);
+        }
+
+        return ProductDetailsDto.builder()
+                .name(productSummary.getName())
+                .description(productSummary.getDescription())
+                .imageUrl(imageUrl)
+                .build();
     }
 
     @Transactional
@@ -407,6 +460,4 @@ public class CartService {
     }
 }
 // huyy jggyut nkh jhgjgy guuvu gugyu guyut gg ggyu ygug
-// iyhyi7yuyuiyuihuyhuyuhuhuh hyyui7 yuu uy7u8y gyutujt
-// y8t76 tutut67u 87y7u8y8 u7t67u7g yuty 6ut67vggtyuty tut6
-// uiuiu uu8uujui ujuuj hujuuj hiujuuj huuj huyhui gyyu ghyhijhuk
+// ojiuo iuuiu uiyuiuiujjkjuj

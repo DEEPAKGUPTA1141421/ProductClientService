@@ -18,6 +18,7 @@ import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Product.Step;
+import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
 
 import jakarta.transaction.Transactional;
 
@@ -81,7 +82,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                                               'is_required', ca.is_required,
                                               'is_image_attribute', ca.is_image_attribute,
                                               'is_variant_attribute', ca.is_variant_attribute,
-            'images', COALESCE(array_agg(DISTINCT pa.images) FILTER (WHERE pa.images IS NOT NULL), '{}'),
+            'images', COALESCE(array_agg(pa.images) FILTER (WHERE pa.images IS NOT NULL), '{}'),
                                               'values', array_agg(pa.value)
                                           ) AS attr_group
                                           FROM product_attributes pa
@@ -141,6 +142,13 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("avg") Double avgRating,
             @Param("count") Integer ratingCount);
 
+    @Query("""
+                SELECT p.name AS name, p.description AS description
+                FROM Product p
+                WHERE p.id = :id
+            """)
+    ProductSummaryProjection getProductNameAndDescription(@Param("id") UUID productId);
+
 }
 
 // khiu hgujygugtuytutyuhyujgy kjhiuhyiu jhguyg hjgkyuyhh nhku nghuyg mnhkj
@@ -148,3 +156,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 // huhuihiuu kjhedioiorfuigutouiu uugtuiijuuiiuifvijhhhuuu mjjij hujujnj juiju
 // huhuhhu hkuiuiu huiuiuuuuuuuuj hhui yugyu yuu yuy7uhyyuyuyhy njkui hiuyui
 // huyhyu gyuy jkjui huj hukhju jujujj jjuouuujioihuyh yiyiu uiyhuiyh
+
+// huiiui huiui huiyhiui hkuiuiour hukiiirfkuurfiuufrhrfhuhkhhgku
+
+// iuuujioujio uhiiiouio8gutu8onjkhui
