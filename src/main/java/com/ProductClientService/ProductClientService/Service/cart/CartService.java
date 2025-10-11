@@ -75,7 +75,7 @@ public class CartService {
 
             recompute(cart);
             cart = cartRepo.save(cart);
-            return new ApiResponse<>(true, "Added To Cart", cart, 201);
+            return getCart(userId);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
@@ -98,7 +98,8 @@ public class CartService {
                 item.setQuantity(qty);
             }
             recompute(cart);
-            return new ApiResponse<>(true, "Quantity Change", cartRepo.save(cart), 201);
+            cartRepo.save(cart);
+            return getCart(userId);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
@@ -112,7 +113,8 @@ public class CartService {
         cart.getItems().remove(item);
         itemRepo.delete(item);
         recompute(cart);
-        return new ApiResponse<>(true, "Removed Item from Cart", cartRepo.save(cart), 201);
+        cartRepo.save(cart);
+        return getCart(userId);
     }
 
     @Transactional(readOnly = true)
@@ -460,4 +462,4 @@ public class CartService {
     }
 }
 // huyy jggyut nkh jhgjgy guuvu gugyu guyut gg ggyu ygug
-// ojiuo iuuiu uiyuiuiujjkjuj
+// ojiuo iuuiu uiyuiuiujjkjuj hhyuyhyuyb hh huyhuu yuyuhu uyrfftt
