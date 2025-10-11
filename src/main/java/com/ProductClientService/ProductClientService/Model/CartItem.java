@@ -35,8 +35,6 @@ public class CartItem {
     @Column(nullable = false)
     private Integer quantity;
 
-    private String priceAtAddition; // gross per-unit price snapshot
-
     // optional applied coupon for this line
     @ManyToOne
     @JoinColumn(name = "applied_coupon_id")

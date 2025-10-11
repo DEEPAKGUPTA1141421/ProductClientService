@@ -14,4 +14,6 @@ public class ProductSearchCriteria {
     private UUID brandId;
     private UUID sellerId;
     private Map<String, String> attributes = new HashMap<>();
+    private String lowestPrice;
+    private String highestPrice;
 }

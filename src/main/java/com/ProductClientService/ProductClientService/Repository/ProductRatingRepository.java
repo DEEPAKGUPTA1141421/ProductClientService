@@ -24,6 +24,7 @@ public interface ProductRatingRepository extends JpaRepository<ProductRating, UU
 
     Optional<ProductRating> findByProductIdAndUserId(UUID productId, UUID userId);
 
-    @Query("SELECT AVG(pr.rating), COUNT(pr) FROM ProductRating pr WHERE pr.product.id = :productId")
-    Object[] findAvgAndCountByProductId(@Param("productId") UUID productId);
+    @Query("SELECT AVG(r.rating), COUNT(r) FROM ProductRating r WHERE r.product.id = :productId")
+    List<Object[]> findAvgAndCountByProductId(@Param("productId") UUID productId);
+
 }

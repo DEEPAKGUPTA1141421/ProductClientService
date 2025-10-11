@@ -1,6 +1,5 @@
 package com.ProductClientService.ProductClientService.Repository;
 
-import java.time.ZonedDateTime;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
@@ -17,22 +16,28 @@ public class ProductSearchRepository {
     private EntityManager entityManager;
 
     public List<ProductSearchDto> search(ProductSearchCriteria criteria) {
-
         StringBuilder sql = new StringBuilder("""
-                    SELECT p.id as product_id,
-                           p.name,
-                           p.description,
-                           p.is_standard,
-                           p.created_at,
-                           p.updated_at,
-                           pv.id as variant_id,
-                           pv.sku,
-                           pv.price,
-                           pv.stock,
-                           pv.created_at as variant_created_at,
-                           pv.updated_at as variant_updated_at
+                    SELECT
+                        p.id as product_id,
+                        p.name,
+                        p.description,
+                        p.is_standard,
+                        pv.id as variant_id,
+                        pv.sku,
+                        pv.price,
+                        pv.discount_price,
+                        pv.discount_percentage,
+                        pv.stock,
+                        (
+                            SELECT pa.images
+                            FROM product_attributes pa
+                            INNER JOIN category_attributes ca
+                                ON pa.category_attribute_id = ca.id
+                            WHERE pa.product_id = p.id
+                                AND ca.is_image_attribute = true
+                            LIMIT 1
+                        ) as image_url
                     FROM products p
-                    LEFT JOIN product_attributes pa ON p.id = pa.product_id
                     LEFT JOIN product_variants pv ON p.id = pv.product_id
                     WHERE 1=1
                 """);
@@ -54,30 +59,12 @@ public class ProductSearchRepository {
             params.put("sellerId", criteria.getSellerId());
         }
 
-        if (criteria.getAttributes() != null && !criteria.getAttributes().isEmpty()) {
-            int i = 0;
-            for (Map.Entry<String, String> entry : criteria.getAttributes().entrySet()) {
-                sql.append("""
-                        AND EXISTS (
-                            SELECT 1
-                            FROM product_attribute pa2
-                            JOIN attribute a2 ON pa2.attribute_id = a2.id
-                            WHERE pa2.product_id = p.id
-                            AND a2.name = :attrName""" + i +
-                        " AND pa2.value = :attrValue" + i + ")");
-                params.put("attrName" + i, entry.getKey());
-                params.put("attrValue" + i, entry.getValue());
-                i++;
-            }
-        }
-
         Query query = entityManager.createNativeQuery(sql.toString());
         params.forEach(query::setParameter);
 
         @SuppressWarnings("unchecked")
         List<Object[]> rows = query.getResultList();
 
-        // Group results by product
         Map<UUID, ProductSearchDtoBuilder> dtoMap = new LinkedHashMap<>();
 
         for (Object[] row : rows) {
@@ -85,21 +72,20 @@ public class ProductSearchRepository {
             String name = (String) row[1];
             String description = (String) row[2];
             Boolean isStandard = (Boolean) row[3];
-            // row[4] = product created_at, row[5] = product updated_at (if needed)
-
-            UUID variantId = (UUID) row[6];
-            String sku = (String) row[7];
-            String price = (String) row[8];
+            UUID variantId = (UUID) row[4];
+            String sku = (String) row[5];
+            String price = row[6] != null ? row[6].toString() : null;
+            String discountPrice = row[7] != null ? row[7].toString() : null;
+            String discountPercentage = row[8] != null ? row[8].toString() : null;
             Integer stock = row[9] != null ? ((Number) row[9]).intValue() : null;
-            // ZonedDateTime variantCreatedAt = (ZonedDateTime) row[10];
-            // ZonedDateTime variantUpdatedAt = (ZonedDateTime) row[11];
+            String imageUrl = (String) row[10];
 
             dtoMap.computeIfAbsent(productId,
-                    id -> new ProductSearchDtoBuilder(productId, name, description, isStandard));
+                    id -> new ProductSearchDtoBuilder(productId, name, description, isStandard, imageUrl));
 
             if (variantId != null) {
                 dtoMap.get(productId).addVariant(
-                        new VariantDto(variantId, sku, price, stock));
+                        new VariantDto(variantId, sku, price, discountPrice, discountPercentage, stock));
             }
         }
 
@@ -108,35 +94,43 @@ public class ProductSearchRepository {
                 .toList();
     }
 
-    // --- DTOs ---
+    // ===================== DTOs ======================
+
     public record ProductSearchDto(
             UUID id,
             String name,
             String description,
             Boolean isStandard,
-            List<VariantDto> variants) {
+            String image,
+            String price,
+            boolean stockAvailable,
+            VariantDto variant) {
     }
 
     public record VariantDto(
             UUID id,
             String sku,
             String price,
-            int stock) {
+            String discountPrice,
+            String discountPercentage,
+            Integer stock) {
     }
 
-    // --- Helper Builder for grouping ---
+    // ===================== Builder ======================
     private static class ProductSearchDtoBuilder {
         private final UUID id;
         private final String name;
         private final String description;
         private final Boolean isStandard;
+        private final String image;
         private final List<VariantDto> variants = new ArrayList<>();
 
-        ProductSearchDtoBuilder(UUID id, String name, String description, Boolean isStandard) {
+        ProductSearchDtoBuilder(UUID id, String name, String description, Boolean isStandard, String image) {
             this.id = id;
             this.name = name;
             this.description = description;
             this.isStandard = isStandard;
+            this.image = image;
         }
 
         void addVariant(VariantDto v) {
@@ -144,9 +138,36 @@ public class ProductSearchRepository {
         }
 
         ProductSearchDto build() {
-            return new ProductSearchDto(id, name, description, isStandard, variants);
+            if (variants.isEmpty()) {
+                return new ProductSearchDto(id, name, description, isStandard, image, null, false, null);
+            }
+
+            // Choose variant with minimum price (parse safely as Double)
+            VariantDto minPriceVariant = variants.stream()
+                    .filter(v -> v.price() != null)
+                    .min(Comparator.comparingDouble(v -> {
+                        try {
+                            return Double.parseDouble(v.price());
+                        } catch (NumberFormatException e) {
+                            return Double.MAX_VALUE;
+                        }
+                    }))
+                    .orElse(variants.get(0));
+
+            boolean stockAvailable = variants.stream()
+                    .anyMatch(v -> v.stock() != null && v.stock() > 0);
+
+            return new ProductSearchDto(
+                    id,
+                    name,
+                    description,
+                    isStandard,
+                    image,
+                    minPriceVariant.price(),
+                    stockAvailable,
+                    minPriceVariant);
         }
     }
 }
 
-// hhuihuihuih ihyuiyui kjnihuihiuihuiuyhihyiiojoilnjhiuj gyiuh jhhiuh gyiuh gyugyu ggyty
+//hiuhu hyhhuuhu

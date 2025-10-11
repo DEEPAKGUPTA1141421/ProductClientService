@@ -26,6 +26,9 @@ public class User {
     @Column(nullable = false, unique = true, length = 15)
     private String phone;
 
+    @Column(length = 255)
+    private String name;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "user_images", joinColumns = @JoinColumn(name = "user_id"))
     @Column(name = "image_url")

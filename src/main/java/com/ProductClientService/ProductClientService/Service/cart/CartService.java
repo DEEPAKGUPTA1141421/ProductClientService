@@ -5,6 +5,7 @@ import com.ProductClientService.ProductClientService.DTO.Cart.ApplyCouponRequest
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartResponseDto;
+import com.ProductClientService.ProductClientService.DTO.Cart.CouponResponseDto;
 import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Model.CartItem;
 import com.ProductClientService.ProductClientService.Model.Coupon;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -27,6 +29,8 @@ public class CartService {
 
     private final ProductRepository productRepository;
 
+    private final ProductVariantRepository variantRepository;
+
     @Transactional
     public ApiResponse<Object> addItem(UUID userId, CartItemRequest req) {
         try {
@@ -36,7 +40,11 @@ public class CartService {
                                     .userId(userId)
                                     .status(Cart.Status.ACTIVE)
                                     .build()));
-
+            List<CartItem> items = cart.getItems();
+            if (items == null) {
+                items = new ArrayList<>();
+                cart.setItems(items);
+            }
             // merge if same product+variant exists
             Optional<CartItem> existing = cart.getItems().stream()
                     .filter(i -> i.getProductId().equals(req.getProductId())
@@ -46,14 +54,12 @@ public class CartService {
             if (existing.isPresent()) {
                 CartItem it = existing.get();
                 it.setQuantity(it.getQuantity() + Math.max(1, req.getQuantity()));
-                it.setPriceAtAddition(req.getUnitPrice()); // ✅ req.getUnitPrice() must return String (paise)
             } else {
                 CartItem it = CartItem.builder()
                         .cart(cart)
                         .productId(req.getProductId())
                         .variantId(req.getVariantId())
                         .quantity(Math.max(1, req.getQuantity()))
-                        .priceAtAddition(req.getUnitPrice()) // ✅ ensure String paise
                         .metadata(req.getMetadata())
                         .lineDiscount("0") // ✅ always initialize as string
                         .build();
@@ -71,8 +77,12 @@ public class CartService {
     public ApiResponse<Object> updateQuantity(UUID userId, UUID itemId, int qty) {
         try {
             Cart cart = mustGetActiveCart(userId);
-            CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException("Item not in cart"));
+
+            CartItem item = cart.getItems().stream()
+                    .filter(i -> i.getId().equals(itemId))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Item not in cart"));
+
             if (qty <= 0) {
                 cart.getItems().remove(item);
                 itemRepo.delete(item);
@@ -87,14 +97,14 @@ public class CartService {
     }
 
     @Transactional
-    public Cart removeItem(UUID userId, UUID itemId) {
+    public ApiResponse<Object> removeItem(UUID userId, UUID itemId) {
         Cart cart = mustGetActiveCart(userId);
         CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Item not in cart"));
         cart.getItems().remove(item);
         itemRepo.delete(item);
         recompute(cart);
-        return cartRepo.save(cart);
+        return new ApiResponse<>(true, "Removed Item from Cart", cartRepo.save(cart), 201);
     }
 
     @Transactional(readOnly = true)
@@ -117,6 +127,7 @@ public class CartService {
                         System.out.println("Cart Item" + item.getProductId());
                         UUID shopId = productRepository.findSellerIdByProductId(item.getProductId());
                         System.out.println("shopId" + shopId);
+                        UUID variantId = item.getVariantId();
                         // String a = "0db8b4b7-69fd-4843-9904-8408ee1e77d8";
                         // UUID shopId = UUID.fromString(a);
                         return CartItemDto.builder()
@@ -125,7 +136,7 @@ public class CartService {
                                 .variantId(item.getVariantId())
                                 .shopId(shopId)
                                 .quantity(item.getQuantity())
-                                .price(Double.parseDouble(item.getPriceAtAddition())) // convert paise to ₹
+                                .price(Double.parseDouble(getPriceFromVariant(variantId))) // convert paise to ₹
                                 .build();
                     })
                     .toList();
@@ -197,16 +208,89 @@ public class CartService {
             case BRAND, CATEGORY, CART_ALL, CART_TOTAL -> {
                 /* accept (extend with brand/category lookups) */ }
         }
-
-        // compute discount for that item
-        BigDecimal base = new BigDecimal(item.getPriceAtAddition())
+        UUID variantId = item.getVariantId();
+        String priceStr = getPriceFromVariant(variantId);
+        BigDecimal base = new BigDecimal(priceStr)
                 .multiply(BigDecimal.valueOf(item.getQuantity()));
+
         BigDecimal disc = computeDiscount(base, coupon.getDiscountType(), coupon.getDiscountValue());
         item.setAppliedCoupon(coupon);
         item.setLineDiscount(disc.toPlainString());
 
         recompute(cart);
+
         return cartRepo.save(cart);
+    }
+
+    @Transactional(readOnly = true)
+    public ApiResponse<Object> getApplicableCoupons(UUID userId) {
+        Cart cart = mustGetActiveCart(userId);
+
+        if (cart.getItems() == null || cart.getItems().isEmpty()) {
+            return new ApiResponse<>(true, "No items in cart", List.of(), 200);
+        }
+
+        BigDecimal subTotal = cart.getItems().stream()
+                .map(i -> new BigDecimal(getPriceFromVariant(i.getVariantId()))
+                        .multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<Coupon> activeCoupons = couponRepo.findByActiveTrue();
+
+        // Compute discount for each coupon
+        List<CouponResponseDto> applicable = activeCoupons.stream()
+                .filter(c -> {
+                    try {
+                        validateCouponWindow(c);
+                        if (c.getScope() == Coupon.Scope.ITEM) {
+                            // At least one item matches
+                            return cart.getItems().stream().anyMatch(i -> switch (c.getApplicability()) {
+                                case PRODUCT -> i.getProductId().equals(c.getProductId());
+                                case BRAND, CATEGORY, CART_ALL, CART_TOTAL, ITEM -> true;
+                            });
+                        } else {
+                            // Cart coupon: check min total
+                            if (c.getApplicability() == Coupon.Applicability.CART_TOTAL
+                                    && c.getMinCartTotal() != null
+                                    && subTotal.compareTo(c.getMinCartTotal()) < 0)
+                                return false;
+                            return true;
+                        }
+                    } catch (Exception e) {
+                        return false;
+                    }
+                })
+                .map(c -> {
+                    BigDecimal discountAmount;
+                    if (c.getScope() == Coupon.Scope.ITEM) {
+                        // Apply to matching items
+                        discountAmount = cart.getItems().stream()
+                                .filter(i -> switch (c.getApplicability()) {
+                                    case PRODUCT -> i.getProductId().equals(c.getProductId());
+                                    case BRAND, CATEGORY, CART_ALL, CART_TOTAL, ITEM -> true;
+                                })
+                                .map(i -> new BigDecimal(getPriceFromVariant(i.getVariantId()))
+                                        .multiply(BigDecimal.valueOf(i.getQuantity())))
+                                .map(lineBase -> computeDiscount(lineBase, c.getDiscountType(), c.getDiscountValue()))
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    } else {
+                        discountAmount = computeDiscount(subTotal, c.getDiscountType(), c.getDiscountValue());
+                    }
+
+                    return CouponResponseDto.builder()
+                            .id(c.getId())
+                            .code(c.getCode())
+                            .scope(c.getScope().name())
+                            .applicability(c.getApplicability().name())
+                            .discountType(c.getDiscountType().name())
+                            .discountValue(c.getDiscountValue())
+                            .computedDiscount(discountAmount)
+                            .build();
+                })
+                .sorted((a, b) -> b.getComputedDiscount().compareTo(a.getComputedDiscount())) // descending
+                .toList();
+
+        return new ApiResponse<>(true, "Applicable coupons", applicable, 200);
     }
 
     @Transactional
@@ -276,42 +360,53 @@ public class CartService {
     }
 
     private void recompute(Cart cart) {
+        if (cart.getItems() == null)
+            cart.setItems(new ArrayList<>());
+        if (cart.getAppliedCartCoupons() == null)
+            cart.setAppliedCartCoupons(new HashSet<>());
+
         BigDecimal sub = BigDecimal.ZERO;
         BigDecimal itemDisc = BigDecimal.ZERO;
 
         for (CartItem it : cart.getItems()) {
-            // Convert stored string (paise) to BigDecimal
-            BigDecimal price = new BigDecimal(it.getPriceAtAddition() == null ? "0" : it.getPriceAtAddition());
+            UUID variantId = it.getVariantId();
+            BigDecimal price = new BigDecimal(getPriceFromVariant(variantId)); // already in paise
             BigDecimal lineBase = price.multiply(BigDecimal.valueOf(it.getQuantity()));
-
             sub = sub.add(lineBase);
 
             BigDecimal lineDiscount = new BigDecimal(it.getLineDiscount() == null ? "0" : it.getLineDiscount());
             itemDisc = itemDisc.add(lineDiscount);
         }
 
-        // cart-level coupons applied on (sub - itemDisc)
         BigDecimal cartBase = sub.subtract(itemDisc);
         BigDecimal cartDisc = BigDecimal.ZERO;
+
         for (Coupon c : cart.getAppliedCartCoupons()) {
-            cartDisc = cartDisc.add(
-                    computeDiscount(cartBase, c.getDiscountType(), c.getDiscountValue()));
+            cartDisc = cartDisc.add(computeDiscount(cartBase, c.getDiscountType(), c.getDiscountValue()));
         }
 
         BigDecimal taxable = cartBase.subtract(cartDisc).max(BigDecimal.ZERO);
-        BigDecimal tax = taxable.multiply(new BigDecimal("0.18")); // example 18% GST
 
-        // Store back as strings (paise)
-        cart.setSubTotal(sub.toPlainString());
-        cart.setItemLevelDiscount(itemDisc.toPlainString());
-        cart.setCartLevelDiscount(cartDisc.toPlainString());
-        cart.setTax(tax.toPlainString());
-        cart.setGrandTotal(taxable.add(tax).toPlainString());
+        // ✅ Tax in paise (integer arithmetic)
+        // (taxable * 18) / 100 → both are integers, so result is integer paise
+        BigDecimal tax = taxable.multiply(BigDecimal.valueOf(18))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN)
+                .setScale(0, RoundingMode.UNNECESSARY);
+
+        cart.setSubTotal(sub.stripTrailingZeros().toPlainString());
+        cart.setItemLevelDiscount(itemDisc.stripTrailingZeros().toPlainString());
+        cart.setCartLevelDiscount(cartDisc.stripTrailingZeros().toPlainString());
+        cart.setTax(tax.stripTrailingZeros().toPlainString());
+        cart.setGrandTotal(taxable.add(tax).stripTrailingZeros().toPlainString());
+    }
+
+    private String getPriceFromVariant(UUID variantId) {
+        return variantRepository.findById(variantId)
+                .map(v -> v.getPrice())
+                .orElse("0");
     }
 }
 // huyy jggyut nkh jhgjgy guuvu gugyu guyut gg ggyu ygug
-
-// huihfr huihu gut tyrj6tvtytu hygytyuu gtt6ut6
-// kjhikhiihyuyuiuuhu,iyuiyiyikyiyiiuyiyui
-
-// nhuihyui jgyu hggtuuyuuiuiuihuhuyhinkjkh hbyhg gug ggygyug hgh
+// iyhyi7yuyuiyuihuyhuyuhuhuh hyyui7 yuu uy7u8y gyutujt
+// y8t76 tutut67u 87y7u8y8 u7t67u7g yuty 6ut67vggtyuty tut6
+// uiuiu uu8uujui ujuuj hujuuj hiujuuj huuj huyhui gyyu ghyhijhuk

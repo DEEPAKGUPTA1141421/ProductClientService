@@ -10,10 +10,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import com.ProductClientService.ProductClientService.DTO.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
+import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Product.Step;
 
@@ -25,6 +27,8 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Transactional
     @Query("UPDATE Product p SET p.step = :step WHERE p.id = :productId")
     int updateStatusById(@Param("productId") UUID productId, @Param("step") Step step);
+
+    boolean existsById(UUID id);
 
     @Query("SELECT DISTINCT p FROM Product p " +
             "LEFT JOIN FETCH p.productAttributes pa " +
@@ -117,8 +121,30 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             """, nativeQuery = true)
     List<ProductWithImagesProjection> searchProductsWithImages(@Param("keyword") String keyword);
 
+    @Query(value = """
+            SELECT a.*
+            FROM categories c
+            JOIN category_attributes ca
+                ON ca.category_id = c.id
+            JOIN category_attribute_mapping cam
+                ON cam.category_attribute_id = ca.id
+            JOIN attributes a
+                ON a.id = cam.attribute_id
+            WHERE c.id = :categoryId
+            """, nativeQuery = true)
+    List<AttributeDto> findFiltersByCategoryId(@Param("categoryId") UUID categoryId);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Product p SET p.averageRating = :avg, p.ratingCount = :count WHERE p.id = :id")
+    int updateProductRating(@Param("id") UUID productId,
+            @Param("avg") Double avgRating,
+            @Param("count") Integer ratingCount);
+
 }
 
 // khiu hgujygugtuytutyuhyujgy kjhiuhyiu jhguyg hjgkyuyhh nhku nghuyg mnhkj
 // hmgjh hjgjh hjgjhuiui uhiuoi uiuiui iu8iy787y8y7y7bu8u8kjjiji hjujioj hiuuji
-// huhuihiuu kjhedioiorfuigutouiu uugtuiijuuiiuifvijhhhuuu
+// huhuihiuu kjhedioiorfuigutouiu uugtuiijuuiiuifvijhhhuuu mjjij hujujnj juiju
+// huhuhhu hkuiuiu huiuiuuuuuuuuj hhui yugyu yuu yuy7uhyyuyuyhy njkui hiuyui
+// huyhyu gyuy jkjui huj hukhju jujujj jjuouuujioihuyh yiyiu uiyhuiyh

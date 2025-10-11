@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.Service.seller;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -190,9 +191,9 @@ public class SellerService {
                 ProductVariant variant = new ProductVariant();
                 variant.setSku(dto.skus().get(i));
                 variant.setStock(Integer.parseInt(dto.stock().get(i)));
-                variant.setPrice(dto.price().get(i));
+                double multipliedPrice = 100 * Double.parseDouble(dto.price().get(i));
+                variant.setPrice(String.valueOf(multipliedPrice));
                 variant = productVariantRepository.save(variant); // Save to get ID
-
                 product.getVariants().add(variant);
             }
             productRepository.save(product); // Update step

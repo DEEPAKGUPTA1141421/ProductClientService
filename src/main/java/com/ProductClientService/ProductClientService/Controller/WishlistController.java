@@ -4,7 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.Service.cart.WishlistService;
+import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.UUID;
 
@@ -13,40 +17,32 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WishlistController {
     private final WishlistService wishlistService;
+    private final HttpServletRequest request;
 
-    private UUID resolveUser(String userId) {
-        return UUID.fromString(userId);
-    }
-
-    @PostMapping("/items")
-    public ResponseEntity<?> add(@RequestHeader("X-User-Id") String userId,
-            @RequestParam UUID productId,
+    @PostMapping("/items/{productId}")
+    @PrivateApi
+    public ResponseEntity<?> add(
+            @PathVariable UUID productId,
             @RequestParam(required = false) UUID variantId) {
-        try {
-            var wl = wishlistService.add(resolveUser(userId), productId, variantId);
-            return ResponseEntity.status(200).body(wl);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
+
+        UUID userId = (UUID) request.getAttribute("id");
+        return ResponseEntity.ok(wishlistService.add(userId, productId, variantId));
     }
 
-    @DeleteMapping("/items/{itemId}")
-    public ResponseEntity<?> remove(@RequestHeader("X-User-Id") String userId, @PathVariable UUID itemId) {
-        try {
-            var wl = wishlistService.remove(resolveUser(userId), itemId);
-            return ResponseEntity.status(200).body(wl);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
+    @DeleteMapping("/items/{productId}")
+    @PrivateApi
+    public ResponseEntity<?> remove(@PathVariable UUID productId) {
+        UUID userId = (UUID) request.getAttribute("id");
+        return ResponseEntity.ok(wishlistService.remove(userId, productId));
     }
 
     @GetMapping
-    public ResponseEntity<?> get(@RequestHeader("X-User-Id") String userId) {
-        try {
-            var wl = wishlistService.get(resolveUser(userId));
-            return ResponseEntity.status(200).body(wl);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
+    @PrivateApi
+    public ResponseEntity<?> get() {
+        UUID userId = (UUID) request.getAttribute("id");
+        return ResponseEntity.ok(wishlistService.get(userId));
     }
 }
+
+// uiujiuiujhukujihuhuihuhui huu hh gyhbhjhu huhu hhuhuhuhhj hhyuiyhui
+// gyuyguvggtygtyhuuuu iuuiujiujijkkj

@@ -7,9 +7,11 @@ import lombok.Setter;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.UUID;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 @Entity
 @Table(name = "product_ratings")
@@ -23,6 +25,7 @@ public class ProductRating {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
+    @JsonIgnore // Prevent infinite recursion
     private Product product;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -44,4 +47,4 @@ public class ProductRating {
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
 
-// jhkuh hjgy yjgyggyhjj
+// jhkuh hjgy yjgyggyhjj njkjju huuhu iuui uiyuiyu huhhuhu

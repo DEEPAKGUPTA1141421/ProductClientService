@@ -60,6 +60,10 @@ public class Coupon {
     }
 
     public enum Applicability {
-        PRODUCT, BRAND, CATEGORY, CART_ALL, CART_TOTAL
+        PRODUCT, BRAND, CATEGORY, CART_ALL, CART_TOTAL, ITEM
     }
 }
+
+// iuji juujibhkhuibkjojuuu
+
+// hyiuu90eipnkjuiou uuoi9 jioi.oi9oiufrhuhgv

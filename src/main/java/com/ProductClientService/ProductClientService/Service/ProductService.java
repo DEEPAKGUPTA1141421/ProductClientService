@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.Service;
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -13,7 +14,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
+import com.ProductClientService.ProductClientService.DTO.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
+import com.ProductClientService.ProductClientService.DTO.ProductRatingDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
@@ -21,8 +24,10 @@ import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductRating;
 import com.ProductClientService.ProductClientService.Model.Section;
+import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Model.Category;
+import com.ProductClientService.ProductClientService.Repository.AttributeRepositoryImpl;
 import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRatingRepository;
@@ -37,6 +42,7 @@ import com.ProductClientService.ProductClientService.Model.User;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.transaction.annotation.Transactional;
@@ -53,11 +59,13 @@ public class ProductService {
     private final ProductRatingRepository productRatingRepository;
     private final UserRepojectory userRepojectory;
     private final ObjectMapper objectMapper;
+    private final AttributeRepositoryImpl attributeRepositoryImpl;
+    private final HttpServletRequest request;
 
     @Transactional(readOnly = true)
 
-    public List<ProductSearchDto> searchProducts(UUID categoryId, UUID brandId, UUID sellerId,
-            String attributeName, String attributeValue) {
+    public ApiResponse<Object> searchProducts(UUID categoryId, UUID brandId, UUID sellerId,
+            String attributeName, String attributeValue, boolean includeFilter) {
         ProductSearchBuilder builder = new ProductSearchBuilder();
 
         if (categoryId != null)
@@ -70,7 +78,17 @@ public class ProductService {
             builder.attribute(attributeName, attributeValue);
         }
 
-        return builder.execute(productSearchRepository);
+        List<ProductSearchDto> products = builder.execute(productSearchRepository);
+        Map<String, Object> response = new HashMap<>();
+        response.put("products", products);
+        if (includeFilter) {
+            System.out.println("Category ID for filters: " + categoryId);
+            List<AttributeDto> filters = attributeRepositoryImpl.findFiltersByCategoryId(categoryId);
+            response.put("filters", filters);
+            System.out.println("Filters: " + filters);
+        }
+        return new ApiResponse<>(true, "Fetched products and brands", response, 200);
+
     }
 
     public ApiResponse<Object> searchProducts(String keyword) {
@@ -161,54 +179,74 @@ public class ProductService {
     }
 
     // add rating
-    public ApiResponse<Object> createOrUpdateRating(UUID productId, UUID userId, int rating, String review) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+    public ApiResponse<Object> createOrUpdateRating(UUID productId, int rating, String review) {
+        System.out.println("in service function");
 
+        UUID userId = (UUID) request.getAttribute("id");
+        System.out.println("in service function now productId" + userId);
+        boolean exists = productRepository.existsById(productId);
+        if (!exists) {
+            throw new RuntimeException("Product not found");
+        }
+
+        Product productRef = new Product();
+        productRef.setId(productId);
         User user = userRepojectory.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-
+        System.out.println("user found" + user);
         // Check if rating already exists
         Optional<ProductRating> existingRating = productRatingRepository
                 .findByProductIdAndUserId(productId, userId);
-
+        System.out.println("Rating found" + existingRating);
         if (existingRating.isPresent()) {
             ProductRating pr = existingRating.get();
             pr.setRating(rating);
             pr.setReview(review);
             productRatingRepository.save(pr);
+            System.out.println("Updated");
             updateProductRatingSummary(productId);
             return new ApiResponse(true, "Review Updated", null, 201);
         } else {
             ProductRating pr = new ProductRating();
-            pr.setProduct(product);
+            pr.setProduct(productRef);
             pr.setUser(user);
             pr.setRating(rating);
             pr.setReview(review);
             productRatingRepository.save(pr); // new insert
+            System.out.println("Saved");
             updateProductRatingSummary(productId);
             return new ApiResponse(true, "Review Added", null, 201);
         }
     }
 
+    @Transactional
     @Async
     private void updateProductRatingSummary(UUID productId) {
-        Object[] avgAndCount = productRatingRepository.findAvgAndCountByProductId(productId);
-        Double avgRating = avgAndCount[0] != null ? (Double) avgAndCount[0] : 0.0;
-        Long ratingCount = avgAndCount[1] != null ? (Long) avgAndCount[1] : 0L;
+        List<Object[]> results = productRatingRepository.findAvgAndCountByProductId(productId);
+        Double avgRating = 0.0;
+        Integer ratingCount = 0;
 
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-        product.setAverageRating(avgRating);
-        product.setRatingCount(ratingCount.intValue());
-        productRepository.save(product);
+        if (!results.isEmpty()) {
+            Object[] row = results.get(0);
+            avgRating = row[0] != null ? ((Number) row[0]).doubleValue() : 0.0;
+            ratingCount = row[1] != null ? ((Number) row[1]).intValue() : 0;
+        }
+
+        if (!productRepository.existsById(productId)) {
+            throw new RuntimeException("Product not found");
+        }
+        productRepository.updateProductRating(productId, avgRating, ratingCount);
     }
 
     // Get ratings list
     public ApiResponse<Object> getRatingsByProduct(UUID productId) {
         try {
             List<ProductRating> ratings = productRatingRepository.findByProductId(productId);
-            return new ApiResponse<>(true, "Get Ratings", ratings, 200);
+
+            List<ProductRatingDTO> dtos = ratings.stream()
+                    .map(ProductRatingDTO::fromEntity)
+                    .toList();
+            return new ApiResponse<>(true, "Get Ratings", dtos, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
@@ -233,4 +271,5 @@ public class ProductService {
 
 /// bkhhkuhjhjkfhiuh hiujfik mbhuyg jhguky gfyugjyghvtfujyg hgvytfgmm hguygug
 // y yiyi huiuyi yuyuhuhu huiuuhuuuyyyyythbvcertyuiolkjnhgfdrtyuio hkuhu iuu
-/// huiui iuyuiyuiyuhhhh hkhu huhu huuh huu uouuuiuoiiooiiub uu iouiu hhuuhh
+// gyir yiyuir u88r yuiuiruu jiiopo jiiki jioii jioi jioio hiuuoiii
+/// nhhbhjmhbjhbjhjbhjhbjhbhbhbbhb jkhu,uiyuyu78 yuuy7y ttyuyuu yy

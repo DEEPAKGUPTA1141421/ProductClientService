@@ -3,7 +3,6 @@ package com.ProductClientService.ProductClientService.Service;
 import java.util.List;
 import java.util.UUID;
 
-import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 

@@ -52,6 +52,9 @@ public class ProductAttribute {
     @Convert(converter = CommaSeparatedConverter.class)
     private List<String> images = new ArrayList<>();
 
+    @Column(name = "is_primary_image")
+    private boolean isPrimaryImage = false;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt;

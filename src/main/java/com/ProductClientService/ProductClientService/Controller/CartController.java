@@ -10,6 +10,8 @@ import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.Service.cart.CartService;
 import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.util.UUID;
 
 @RestController
@@ -17,15 +19,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CartController {
     private final CartService cartService;
-
-    private UUID resolveUser(String userId) {
-        return UUID.fromString(userId);
-    }
+    private final HttpServletRequest request;
 
     @PostMapping("/items")
-    public ResponseEntity<?> addItem(@RequestHeader("X-User-Id") String userId, @RequestBody CartItemRequest req) {
+    @PrivateApi
+    public ResponseEntity<?> addItem(@RequestBody CartItemRequest req) {
         try {
-            ApiResponse<Object> response = cartService.addItem(resolveUser(userId), req);
+            UUID userId = (UUID) request.getAttribute("id");
+            ApiResponse<Object> response = cartService.addItem(userId, req);
             return ResponseEntity.status(201).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -33,10 +34,12 @@ public class CartController {
     }
 
     @PutMapping("/items/{itemId}")
-    public ResponseEntity<?> updateQty(@RequestHeader("X-User-Id") String userId,
+    @PrivateApi
+    public ResponseEntity<?> updateQty(
             @PathVariable UUID itemId, @RequestParam int qty) {
         try {
-            ApiResponse<Object> response = cartService.updateQuantity(resolveUser(userId), itemId, qty);
+            UUID userId = (UUID) request.getAttribute("id");
+            ApiResponse<Object> response = cartService.updateQuantity(userId, itemId, qty);
             return ResponseEntity.status(200).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -44,19 +47,23 @@ public class CartController {
     }
 
     @DeleteMapping("/items/{itemId}")
-    public ResponseEntity<?> removeItem(@RequestHeader("X-User-Id") String userId, @PathVariable UUID itemId) {
+    @PrivateApi
+    public ResponseEntity<?> removeItem(@PathVariable UUID itemId) {
         try {
-            var cart = cartService.removeItem(resolveUser(userId), itemId);
-            return ResponseEntity.status(200).body(cart);
+            UUID userId = (UUID) request.getAttribute("id");
+            ApiResponse<Object> response = cartService.removeItem(userId, itemId);
+            return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
         }
     }
 
     @GetMapping("/get-cart")
-    public ResponseEntity<?> getCart(@RequestHeader("X-User-Id") String userId) {
+    @PrivateApi
+    public ResponseEntity<?> getCart() {
         try {
-            var cart = cartService.getCart(resolveUser(userId));
+            UUID userId = (UUID) request.getAttribute("id");
+            var cart = cartService.getCart(userId);
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -64,9 +71,11 @@ public class CartController {
     }
 
     @DeleteMapping
-    public ResponseEntity<?> clear(@RequestHeader("X-User-Id") String userId) {
+    @PrivateApi
+    public ResponseEntity<?> clear() {
         try {
-            var cart = cartService.clearCart(resolveUser(userId));
+            UUID userId = (UUID) request.getAttribute("id");
+            var cart = cartService.clearCart(userId);
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -75,10 +84,12 @@ public class CartController {
 
     // ---- Coupons ----
     @PostMapping("/items/{itemId}/coupon/{code}")
-    public ResponseEntity<?> applyItemCoupon(@RequestHeader("X-User-Id") String userId,
+    @PrivateApi
+    public ResponseEntity<?> applyItemCoupon(
             @PathVariable UUID itemId, @PathVariable String code) {
         try {
-            var cart = cartService.applyItemCoupon(resolveUser(userId),
+            UUID userId = (UUID) request.getAttribute("id");
+            var cart = cartService.applyItemCoupon(userId,
                     new ApplyCouponRequest() {
                         {
                             setItemId(itemId);
@@ -92,10 +103,12 @@ public class CartController {
     }
 
     @DeleteMapping("/items/{itemId}/coupon")
-    public ResponseEntity<?> removeItemCoupon(@RequestHeader("X-User-Id") String userId,
+    @PrivateApi
+    public ResponseEntity<?> removeItemCoupon(
             @PathVariable UUID itemId) {
         try {
-            var cart = cartService.removeItemCoupon(resolveUser(userId), itemId);
+            UUID userId = (UUID) request.getAttribute("id");
+            var cart = cartService.removeItemCoupon(userId, itemId);
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -103,19 +116,29 @@ public class CartController {
     }
 
     @PostMapping("/coupons/{code}")
-    public ResponseEntity<?> applyCartCoupon(@RequestHeader("X-User-Id") String userId, @PathVariable String code) {
+    @PrivateApi
+    public ResponseEntity<?> applyCartCoupon(@PathVariable String code) {
         try {
-            var cart = cartService.applyCartCoupon(resolveUser(userId), code);
+            UUID userId = (UUID) request.getAttribute("id");
+            var cart = cartService.applyCartCoupon(userId, code);
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
         }
     }
 
+    @GetMapping("/coupons")
+    public ResponseEntity<?> getApplicableCoupons(HttpServletRequest request) {
+        UUID userId = (UUID) request.getAttribute("id");
+        return ResponseEntity.ok(cartService.getApplicableCoupons(userId));
+    }
+
     @DeleteMapping("/coupons/{code}")
-    public ResponseEntity<?> removeCartCoupon(@RequestHeader("X-User-Id") String userId, @PathVariable String code) {
+    @PrivateApi
+    public ResponseEntity<?> removeCartCoupon(@PathVariable String code) {
         try {
-            var cart = cartService.removeCartCoupon(resolveUser(userId), code);
+            UUID userId = (UUID) request.getAttribute("id");
+            var cart = cartService.removeCartCoupon(userId, code);
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -125,4 +148,4 @@ public class CartController {
 
 // jmjfnnfnfnfnfnfn nfjfnrnrnfnfn njjv jvjfjfjfjfj
 
-// nhkhu huihu jj njnjhh hhh 
+// nhkhu huihu jj njnjhh hhhhiuuihui gyuyhyyhyuhyuhyuhy

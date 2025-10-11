@@ -18,6 +18,7 @@ import com.ProductClientService.ProductClientService.Model.Section;
 import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 import com.ProductClientService.ProductClientService.Service.ProductService;
 import com.ProductClientService.ProductClientService.Service.Strategy.SearchHistoryStragecy.TrendingSearchStrategy;
+import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,13 +30,16 @@ public class ProductController {
     private final TrendingSearchStrategy trendingSearchStrategy;
 
     @GetMapping("/products/search")
-    public List<ProductSearchDto> searchProducts(
+    public ResponseEntity<?> searchProducts(
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) UUID brandId,
             @RequestParam(required = false) UUID sellerId,
             @RequestParam(required = false) String attributeName,
-            @RequestParam(required = false) String attributeValue) {
-        return productService.searchProducts(categoryId, brandId, sellerId, attributeName, attributeValue);
+            @RequestParam(required = false) String attributeValue,
+            @RequestParam(required = false) boolean includeFilter) {
+        ApiResponse<Object> response = productService.searchProducts(categoryId, brandId, sellerId, attributeName,
+                attributeValue, includeFilter);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @GetMapping("/category")
@@ -77,12 +81,13 @@ public class ProductController {
 
     // Add rating
     @PostMapping("/add-rating/{productId}")
+    @PrivateApi
     public ResponseEntity<?> addRating(
             @PathVariable UUID productId,
-            @RequestParam UUID userId,
             @RequestParam int rating,
             @RequestParam(required = false) String review) {
-        ApiResponse<Object> response = productService.createOrUpdateRating(productId, userId, rating, review);
+        System.out.println("we are here to test ");
+        ApiResponse<Object> response = productService.createOrUpdateRating(productId, rating, review);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
@@ -117,3 +122,5 @@ public class ProductController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 }
+
+// hyhu gtutu tutyutgygyyg nkhjujuju huihhu iujuu
