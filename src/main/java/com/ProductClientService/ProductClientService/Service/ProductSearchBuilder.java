@@ -29,6 +29,10 @@ public class ProductSearchBuilder {
         return this;
     }
 
+    public ProductSearchBuilder discount(String discountType, Integer discount) {
+        criteria.getDiscount().put(discountType, discount);
+        return this;
+    }
     public List<ProductSearchDto> execute(ProductSearchRepository repo) {
         return repo.search(criteria);
     }
