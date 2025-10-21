@@ -6,7 +6,6 @@ import com.ProductClientService.ProductClientService.DTO.Cart.ApplyCouponRequest
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartResponseDto;
-import com.ProductClientService.ProductClientService.DTO.Cart.CouponResponseDto;
 import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Model.CartItem;
 import com.ProductClientService.ProductClientService.Model.Coupon;
@@ -285,67 +284,18 @@ public class CartService {
             return new ApiResponse<>(true, "No items in cart", List.of(), 200);
         }
 
-        BigDecimal subTotal = cart.getItems().stream()
-                .map(i -> new BigDecimal(getPriceFromVariant(i.getVariantId()))
-                        .multiply(BigDecimal.valueOf(i.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String subTotal = cart.getSubTotal();
+        List<Coupon> eligibleCoupons = couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
+                Coupon.Applicability.CART_TOTAL,
+                String.valueOf(subTotal) // paise
+        );
 
+        // Sort by discount descending
+        eligibleCoupons.stream()
+                .max(Comparator.comparingLong(c -> calculateDiscount(c, (long) subTotal)));
         List<Coupon> activeCoupons = couponRepo.findByActiveTrue();
 
-        // Compute discount for each coupon
-        List<CouponResponseDto> applicable = activeCoupons.stream()
-                .filter(c -> {
-                    try {
-                        validateCouponWindow(c);
-                        if (c.getScope() == Coupon.Scope.ITEM) {
-                            // At least one item matches
-                            return cart.getItems().stream().anyMatch(i -> switch (c.getApplicability()) {
-                                case PRODUCT -> i.getProductId().equals(c.getProductId());
-                                case BRAND, CATEGORY, CART_ALL, CART_TOTAL, ITEM -> true;
-                            });
-                        } else {
-                            // Cart coupon: check min total
-                            if (c.getApplicability() == Coupon.Applicability.CART_TOTAL
-                                    && c.getMinCartTotal() != null
-                                    && subTotal.compareTo(c.getMinCartTotal()) < 0)
-                                return false;
-                            return true;
-                        }
-                    } catch (Exception e) {
-                        return false;
-                    }
-                })
-                .map(c -> {
-                    BigDecimal discountAmount;
-                    if (c.getScope() == Coupon.Scope.ITEM) {
-                        // Apply to matching items
-                        discountAmount = cart.getItems().stream()
-                                .filter(i -> switch (c.getApplicability()) {
-                                    case PRODUCT -> i.getProductId().equals(c.getProductId());
-                                    case BRAND, CATEGORY, CART_ALL, CART_TOTAL, ITEM -> true;
-                                })
-                                .map(i -> new BigDecimal(getPriceFromVariant(i.getVariantId()))
-                                        .multiply(BigDecimal.valueOf(i.getQuantity())))
-                                .map(lineBase -> computeDiscount(lineBase, c.getDiscountType(), c.getDiscountValue()))
-                                .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    } else {
-                        discountAmount = computeDiscount(subTotal, c.getDiscountType(), c.getDiscountValue());
-                    }
-
-                    return CouponResponseDto.builder()
-                            .id(c.getId())
-                            .code(c.getCode())
-                            .scope(c.getScope().name())
-                            .applicability(c.getApplicability().name())
-                            .discountType(c.getDiscountType().name())
-                            .discountValue(c.getDiscountValue())
-                            .computedDiscount(discountAmount)
-                            .build();
-                })
-                .sorted((a, b) -> b.getComputedDiscount().compareTo(a.getComputedDiscount())) // descending
-                .toList();
-
-        return new ApiResponse<>(true, "Applicable coupons", applicable, 200);
+        return new ApiResponse<>(true, "Applicable coupons", "applicable", 200);
     }
 
     @Transactional
@@ -459,6 +409,15 @@ public class CartService {
         return variantRepository.findById(variantId)
                 .map(v -> v.getPrice())
                 .orElse("0");
+    }
+
+    public static long calculateDiscount(Coupon coupon, long cartAmount) {
+        if (coupon.getDiscountType() == Coupon.DiscountType.FLAT) {
+            return Long.parseLong(coupon.getDiscountValue()); // stored in paise
+        } else { // PERCENT
+            double percent = Double.parseDouble(coupon.getDiscountValue());
+            return Math.round(cartAmount * percent / 100.0);
+        }
     }
 }
 // huyy jggyut nkh jhgjgy guuvu gugyu guyut gg ggyu ygug

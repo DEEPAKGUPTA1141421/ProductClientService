@@ -11,4 +11,8 @@ public interface CouponRepository extends JpaRepository<Coupon, UUID> {
     Optional<Coupon> findByCodeIgnoreCaseAndActiveTrue(String code);
 
     List<Coupon> findByActiveTrue();
+
+    List<Coupon> findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
+            Coupon.Applicability applicability,
+            String cartAmount);
 }

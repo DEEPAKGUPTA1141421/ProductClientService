@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.*;
@@ -25,12 +26,12 @@ public class Address {
 
     @OneToOne
     @JoinColumn(name = "seller_id", referencedColumnName = "id", nullable = true)
-    @JsonIgnore
+    @JsonBackReference
     private Seller seller;
 
     @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = true)
-    @JsonIgnore
+    @JsonBackReference
     private User user;
 
     @Column(name = "kind", nullable = false)

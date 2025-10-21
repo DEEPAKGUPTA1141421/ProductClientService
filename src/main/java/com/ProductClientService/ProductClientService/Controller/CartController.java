@@ -128,6 +128,7 @@ public class CartController {
     }
 
     @GetMapping("/coupons")
+    @PrivateApi
     public ResponseEntity<?> getApplicableCoupons(HttpServletRequest request) {
         UUID userId = (UUID) request.getAttribute("id");
         return ResponseEntity.ok(cartService.getApplicableCoupons(userId));
