@@ -3,17 +3,33 @@ package com.ProductClientService.ProductClientService.DTO.Cart;
 import lombok.Builder;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
 @Data
 @Builder
 public class CouponResponseDto {
-    private UUID id;
-    private String code;
-    private String applicability;
-    private String scope;
-    private String discountType;
-    private BigDecimal discountValue; // in paise
-    private BigDecimal computedDiscount; // discount this coupon would give on this cart
+    class BestCoupon {
+        private UUID id;
+        private String code;
+        private String leftParagraph;
+        private String saveDescription;
+        private String description;
+    }
+
+    class CashBackCoupon {
+        private UUID id;
+        private String code;
+        private String leftParagraph;
+        private String saveDescription;
+        private String description;
+    }
+
+    class MoreCoupon {
+        private UUID id;
+        private String code;
+        private String AddMoreDescription;
+        private String subDescription;
+        private String leftParagraph;
+        private String description;
+    }
 }

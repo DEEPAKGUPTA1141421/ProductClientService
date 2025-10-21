@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -44,6 +46,7 @@ public class Seller {
     private ONBOARDSTAGE onboardingStage = ONBOARDSTAGE.RESGISTER;
 
     @OneToOne(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
     private Address address;
 
     @Column(name = "qr_code_url")

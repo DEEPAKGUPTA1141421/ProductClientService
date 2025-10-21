@@ -174,7 +174,7 @@ public class AuthService {
     private ApiResponse<Seller> handleBasicNameInfo(SellerBasicInfo inforequest) {
         String phone = (String) request.getAttribute("phone");
         Seller seller = sellerRepository.saveBasicInfo(phone, inforequest.display_name(), inforequest.legal_name(),
-                inforequest.email());
+                inforequest.email(), inforequest.category());
         System.out.println("seller details" + seller + phone);
         return new ApiResponse<>(true, "Basic Info Saved", seller, 200);
     }

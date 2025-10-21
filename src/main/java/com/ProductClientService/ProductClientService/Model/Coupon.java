@@ -29,8 +29,7 @@ public class Coupon {
     @Column(nullable = false)
     private DiscountType discountType; // PERCENT or FLAT
 
-    @Column(nullable = false, scale = 2, precision = 18)
-    private BigDecimal discountValue;
+    private String discountValue;
 
     // applicability (nullable depending on type)
     @Enumerated(EnumType.STRING)
@@ -41,9 +40,7 @@ public class Coupon {
     private UUID brandId; // when Applicability=BRAND
     private UUID categoryId; // when Applicability=CATEGORY
 
-    // min cart total for CART_TOTAL or CART_ALL gating
-    @Column(scale = 2, precision = 18)
-    private BigDecimal minCartTotal;
+    private String minCartTotal;
 
     private ZonedDateTime startsAt;
     private ZonedDateTime endsAt;

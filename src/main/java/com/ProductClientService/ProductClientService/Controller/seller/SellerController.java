@@ -202,6 +202,12 @@ public class SellerController {
         }
     }
 
+    @GetMapping("/search-shop")
+    public ResponseEntity<?> searchShop(@RequestParam String keyword) {
+        ApiResponse<Object> response = sellerService.searchShop(keyword);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/nearest")
     public ResponseEntity<?> getNearestShops(@RequestParam double lat,
             @RequestParam double lon,

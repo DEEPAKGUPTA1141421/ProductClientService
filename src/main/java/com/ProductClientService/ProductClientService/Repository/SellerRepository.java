@@ -23,12 +23,13 @@ public interface SellerRepository extends JpaRepository<Seller, UUID> {
 
     Optional<Seller> findByPhone(String phone);
 
+    List<Seller> findByAddress_CityAndShopCategory(String city, Seller.ShopCategory shopCategory);
+
     // 1. List of shop categories
     @Query("SELECT DISTINCT s.shopCategory FROM Seller s")
     List<Seller.ShopCategory> findAllShopCategories();
 
     // 2. List of shops by city and category
-    List<Seller> findByAddress_CityAndShopCategory(String city, Seller.ShopCategory category);
 
     // 3. List of shops by city
     List<Seller> findByAddress_City(String city);
@@ -61,7 +62,8 @@ public interface SellerRepository extends JpaRepository<Seller, UUID> {
         });
     }
 
-    default Seller saveBasicInfo(String phone, String display_name, String legal_name, String email) {
+    default Seller saveBasicInfo(String phone, String display_name, String legal_name, String email,
+            Seller.ShopCategory category) {
         Optional<Seller> optionalSeller = findByPhone(phone);
         if (optionalSeller.isEmpty()) {
             return null;
@@ -71,8 +73,8 @@ public interface SellerRepository extends JpaRepository<Seller, UUID> {
         seller.setDisplayName(display_name);
         seller.setLegalName(legal_name);
         seller.setEmail(email);
+        seller.setShopCategory(category);
         seller.setOnboardingStage(Seller.ONBOARDSTAGE.BASIC_INFO_NAME);
-
         return save(seller);
     }
 

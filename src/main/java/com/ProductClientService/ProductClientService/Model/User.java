@@ -10,6 +10,8 @@ import java.util.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
 @Entity
 @Table(name = "users")
 @Getter
@@ -36,6 +38,7 @@ public class User {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
     private List<Address> addresses = new ArrayList<>();
 
     @Enumerated(EnumType.ORDINAL)

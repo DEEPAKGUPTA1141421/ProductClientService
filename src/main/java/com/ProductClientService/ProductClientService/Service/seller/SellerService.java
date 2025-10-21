@@ -432,6 +432,15 @@ public class SellerService {
         }
     }
 
+    public ApiResponse<Object> searchShop(String keyword) {
+        try {
+            List<Seller.ShopCategory> categories = sellerRepository.findAllShopCategories();
+            return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
+        }
+    }
+
     public ApiResponse<Object> getShopsByCity(String city) {
         try {
             List<Seller> shops = sellerRepository.findByAddress_City(city);
@@ -442,21 +451,13 @@ public class SellerService {
     }
 
     public ApiResponse<Object> getShopsByCityAndCategory(String city, Seller.ShopCategory category) {
-        try {
-            List<Seller> shops = sellerRepository.findByAddress_CityAndShopCategory(city, category);
-            return new ApiResponse<>(true, "Shops fetched by city and category", shops, 200);
-        } catch (Exception e) {
-            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
-        }
+        List<Seller> shops = sellerRepository.findByAddress_CityAndShopCategory(city, category);
+        return new ApiResponse<>(true, "Shops fetched by city and category", shops, 200);
     }
 
     public ApiResponse<Object> getNearestShops(double lat, double lon, int limit) {
-        try {
-            List<Seller> shops = sellerRepository.findNearestShops(lat, lon, limit);
-            return new ApiResponse<>(true, "Nearest shops fetched", shops, 200);
-        } catch (Exception e) {
-            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
-        }
+        List<Seller> shops = sellerRepository.findNearestShops(lat, lon, limit);
+        return new ApiResponse<>(true, "Nearest shops fetched", shops, 200);
     }
 
     public ApiResponse<Object> getNearestShopsByCategory(double lat, double lon, Seller.ShopCategory category,
@@ -469,3 +470,4 @@ public class SellerService {
         }
     }
 }
+// huuiuo huuioj
