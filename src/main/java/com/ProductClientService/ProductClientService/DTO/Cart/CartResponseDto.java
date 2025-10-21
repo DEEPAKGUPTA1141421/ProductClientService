@@ -22,4 +22,6 @@ public class CartResponseDto {
     private double deliveryCharge;
     private double gstCharge;
     private double grandTotal;
+    private String cartCoupon;
+    private String CartLineDiscount;
 }

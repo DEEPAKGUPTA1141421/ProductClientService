@@ -15,4 +15,6 @@ public interface CouponRepository extends JpaRepository<Coupon, UUID> {
     List<Coupon> findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
             Coupon.Applicability applicability,
             String cartAmount);
+    List<Coupon> findByActiveTrueAndApplicabilityAndMinCartTotalGreaterThan(Coupon.Applicability applicability,
+            String cartAmount);
 }

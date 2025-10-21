@@ -6,9 +6,11 @@ import lombok.Data;
 import java.util.UUID;
 
 @Data
-@Builder
 public class CouponResponseDto {
-    class BestCoupon {
+
+    @Data
+    @Builder
+    public static class BestCoupon {
         private UUID id;
         private String code;
         private String leftParagraph;
@@ -16,7 +18,9 @@ public class CouponResponseDto {
         private String description;
     }
 
-    class CashBackCoupon {
+    @Data
+    @Builder
+    public static class CashBackCoupon {
         private UUID id;
         private String code;
         private String leftParagraph;
@@ -24,12 +28,16 @@ public class CouponResponseDto {
         private String description;
     }
 
-    class MoreCoupon {
+    @Data
+    @Builder
+    public static class MoreCoupon {
         private UUID id;
         private String code;
-        private String AddMoreDescription;
+        private String addMoreDescription;
         private String subDescription;
         private String leftParagraph;
         private String description;
     }
 }
+
+

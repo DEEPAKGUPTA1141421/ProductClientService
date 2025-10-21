@@ -31,6 +31,8 @@ public class Coupon {
 
     private String discountValue;
 
+    private String uptoAmount;
+
     // applicability (nullable depending on type)
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -57,7 +59,7 @@ public class Coupon {
     }
 
     public enum Applicability {
-        PRODUCT, BRAND, CATEGORY, CART_ALL, CART_TOTAL, ITEM
+        PRODUCT, BRAND, CATEGORY, CART_TOTAL, ITEM
     }
 }
 

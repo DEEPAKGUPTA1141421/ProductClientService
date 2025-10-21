@@ -117,14 +117,9 @@ public class CartController {
 
     @PostMapping("/coupons/{code}")
     @PrivateApi
-    public ResponseEntity<?> applyCartCoupon(@PathVariable String code) {
-        try {
-            UUID userId = (UUID) request.getAttribute("id");
-            var cart = cartService.applyCartCoupon(userId, code);
-            return ResponseEntity.status(200).body(cart);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
+    public ResponseEntity<ApiResponse<Object>> applyCartCoupon(@PathVariable String code) {
+        UUID userId = (UUID) request.getAttribute("id");
+        return ResponseEntity.status(200).body(cartService.applyCartCoupon(userId, code));
     }
 
     @GetMapping("/coupons")
@@ -137,16 +132,9 @@ public class CartController {
     @DeleteMapping("/coupons/{code}")
     @PrivateApi
     public ResponseEntity<?> removeCartCoupon(@PathVariable String code) {
-        try {
-            UUID userId = (UUID) request.getAttribute("id");
-            var cart = cartService.removeCartCoupon(userId, code);
-            return ResponseEntity.status(200).body(cart);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
+        UUID userId = (UUID) request.getAttribute("id");
+        return ResponseEntity.status(200).body(cartService.removeCartCoupon(userId, code));
     }
 }
 
-// jmjfnnfnfnfnfnfn nfjfnrnrnfnfn njjv jvjfjfjfjfj
 
-// nhkhu huihu jj njnjhh hhhhiuuihui gyuyhyyhyuhyuhyuhy

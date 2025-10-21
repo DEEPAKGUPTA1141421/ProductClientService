@@ -3,6 +3,8 @@ package com.ProductClientService.ProductClientService.Controller;
 import com.ProductClientService.ProductClientService.DTO.Cart.CouponDto;
 import com.ProductClientService.ProductClientService.Service.cart.CouponService;
 import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
+
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +20,7 @@ public class CouponController {
 
     @PostMapping
     @PrivateApi
-    public ResponseEntity<?> create(@RequestBody CouponDto dto) {
+    public ResponseEntity<?> create(@RequestBody @Valid CouponDto dto) {
         return ResponseEntity.ok(couponService.create(dto));
     }
 

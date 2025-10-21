@@ -32,10 +32,10 @@ public class Cart {
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<CartItem> items = new ArrayList<>();
 
-    // keep applied cart-level coupons (can be many)
-    @ManyToMany
-    @JoinTable(name = "cart_applied_coupons", joinColumns = @JoinColumn(name = "cart_id"), inverseJoinColumns = @JoinColumn(name = "coupon_id"))
-    private Set<Coupon> appliedCartCoupons = new HashSet<>();
+    @ManyToOne
+    @JoinColumn(name = "applied_cart_coupon_id")
+    private Coupon appliedCartCoupon;
+
 
     private String subTotal = "0";
     private String itemLevelDiscount = "0";

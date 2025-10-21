@@ -19,6 +19,9 @@ public class CartItemDto {
     private String name;
     private String image;
     private String description;
+    private String appliedCoupon;       // lowercase
+    private String discountLineAmount;  // lowercase
 }
 
 // huhyuyb byguy gytguy hggy jhhhh njkh
+

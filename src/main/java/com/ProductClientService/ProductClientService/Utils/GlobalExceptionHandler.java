@@ -25,6 +25,13 @@ public class GlobalExceptionHandler {
                 .body(new ApiResponse<>(false, message, null, 400));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<String>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiResponse<>(false, ex.getMessage(), null, 400));
+    }
+
+
     // Handle validation errors thrown directly (like @Validated at method level)
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<String>> handleConstraintViolation(ConstraintViolationException ex) {
