@@ -3,11 +3,14 @@ package com.ProductClientService.ProductClientService.Model;
 import java.util.UUID;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Setter;
+import lombok.Getter;
+
 
 @Entity
 @Table(name = "stock_notifications")
-@Data
+@Getter
+@Setter
 public class StockNotification {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

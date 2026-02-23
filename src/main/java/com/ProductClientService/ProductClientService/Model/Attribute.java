@@ -4,12 +4,13 @@ import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.*;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
 @Table(name = "attributes")
-@Data
+@Getter
+@Setter
 public class Attribute {
 
     @Id
@@ -19,18 +20,20 @@ public class Attribute {
     @Column(nullable = false, unique = true)
     private String name;
 
-    @Enumerated(EnumType.STRING)  // ✅ Save enum as String in DB
+    @Enumerated(EnumType.STRING) // ✅ Save enum as String in DB
     private FEILDTYPE field_type;
 
     private Boolean is_required = true;
 
     private List<String> options;
 
+    private Boolean isRadio = false;
+
     public enum FEILDTYPE {
         STRING,
         NUMBER,
-        ENUMERATION,   // ✅ renamed, not "enum"
-        BOOLEAN_TYPE,  // ✅ renamed, not "boolean"
+        ENUMERATION, // ✅ renamed, not "enum"
+        BOOLEAN_TYPE, // ✅ renamed, not "boolean"
         DATE
     }
 }

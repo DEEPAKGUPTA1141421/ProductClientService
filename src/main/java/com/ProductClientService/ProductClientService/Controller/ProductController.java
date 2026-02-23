@@ -13,10 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.Model.Category;
-import com.ProductClientService.ProductClientService.Model.Product;
-import com.ProductClientService.ProductClientService.Model.Section;
-import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 import com.ProductClientService.ProductClientService.Service.ProductService;
+import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.Strategy.SearchHistoryStragecy.TrendingSearchStrategy;
 import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
@@ -28,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 public class ProductController {
     private final ProductService productService;
     private final TrendingSearchStrategy trendingSearchStrategy;
+    private final TagService tagService;
 
     @GetMapping("/products/search")
     public ResponseEntity<?> searchProducts(
@@ -38,18 +37,16 @@ public class ProductController {
             @RequestParam(required = false) String attributeValue,
             @RequestParam(required = false) boolean includeFilter,
             @RequestParam(required = false) String discounttype,
-            @RequestParam(required = false) Integer discount
-            ) {
+            @RequestParam(required = false) Integer discount) {
         ApiResponse<Object> response = productService.searchProducts(categoryId, brandId, sellerId, attributeName,
-                attributeValue, includeFilter, discounttype,discount);
+                attributeValue, includeFilter, discounttype, discount);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @GetMapping("/category")
-    public ResponseEntity<?> getCategory(@RequestParam boolean includeChildItem,
-            @RequestParam Category.Level level) {
+    public ResponseEntity<?> getCategory() {
         try {
-            ApiResponse<Object> response = productService.getCategory(includeChildItem, level);
+            ApiResponse<Object> response = productService.getFullCategoryTree();
             return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -97,8 +94,8 @@ public class ProductController {
     @GetMapping("/search")
     public ResponseEntity<?> searchProduct(@RequestParam String keyword) {
         try {
-            ApiResponse<Object> response = productService.searchProducts(keyword);
-            return ResponseEntity.status(response.statusCode()).body(response);
+
+            return ResponseEntity.status(200).body(tagService.search(keyword));
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
         }
@@ -127,3 +124,4 @@ public class ProductController {
 }
 
 // hyhu gtutu tutyutgygyyg nkhjujuju huihhu iujuu
+// hjujij hjuouj uhujio uiui huiujiiu

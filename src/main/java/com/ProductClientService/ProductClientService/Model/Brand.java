@@ -1,7 +1,8 @@
 package com.ProductClientService.ProductClientService.Model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.ZonedDateTime;
 import java.util.UUID;
@@ -10,34 +11,36 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
-@Table(name = "brands")
-@Data
+@Table(name = "brands", uniqueConstraints = @UniqueConstraint(columnNames = { "normalisedName", "category_id" }))
+@Getter
+@Setter
 public class Brand {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
+    @Column(nullable = false)
     public String name;
+    @Column(nullable = false)
+    public String normalisedName;
+
     public String description;
     public String logoUrl;
     public String website;
+
+    @Column(nullable = false)
+    private Boolean approved = false;
+
+    @Column(nullable = false)
+    private Boolean active = true;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 
     @Column(name = "category_id", nullable = false)
-    private UUID categoryId; // 👈 new column
+    private UUID categoryId;
 
     @UpdateTimestamp
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
-
-    public ZonedDateTime getCreatedAt() {
-        return createdAt.withZoneSameInstant(ZoneId.of("Asia/Kolkata"));
-    }
-
-    public ZonedDateTime getUpdatedAt() {
-        return updatedAt.withZoneSameInstant(ZoneId.of("Asia/Kolkata"));
-    }
 }

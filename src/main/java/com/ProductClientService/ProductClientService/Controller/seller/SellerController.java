@@ -6,16 +6,20 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
+import com.ProductClientService.ProductClientService.DTO.seller.ProductTagRequestDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Service.ImageUploadService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
+import com.ProductClientService.ProductClientService.Service.SuggestionGeneratorService;
+import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerService;
 import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,6 +51,9 @@ public class SellerController {
     private final S3Service s3Service;
     private final ProductRepository productRepository;
     private final ImageUploadService imageUploadService;
+    private final TagService tagService;
+
+    private final SuggestionGeneratorService suggestionGeneratorService;
 
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PrivateApi
@@ -74,17 +81,44 @@ public class SellerController {
     }
 
     @GetMapping("/getall-category-attribute/{categoryId}")
-    @PrivateApi
+    // @PrivateApi
     public ResponseEntity<?> getAttributesByCategory(@PathVariable UUID categoryId) {
+        System.out.println("Category ID: " + categoryId); // Debug log
         ApiResponse<Object> response = sellerService.getAttributesByCategoryId(categoryId);
         return ResponseEntity
                 .status(response.statusCode())
                 .body(response);
     }
 
-    @PostMapping("/create-product-attribute")
+    @PostMapping(value = "/create-product-attribute", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PrivateApi
     public ResponseEntity<?> addProductAttribute(@RequestBody ProductAttributeDto request) {
         ApiResponse<Object> response = sellerService.addProductAttribute(request);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PostMapping("/add-tag")
+    // @PrivateApi
+    public ResponseEntity<?> addTag(@Valid @RequestBody ProductTagRequestDto request) {
+        tagService.AddProductTag(request);
+        ApiResponse<Object> response = new ApiResponse<>(true, "Tags added successfully", null, 200);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @DeleteMapping("/{productId}/tags/{tagId}")
+    public ResponseEntity<?> removeTag(
+            @PathVariable UUID productId,
+            @PathVariable UUID tagId) {
+
+        tagService.removeTagFromProduct(productId, tagId);
+        ApiResponse<Object> response = new ApiResponse<>(true, "Tag removed successfully", null, 200);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @GetMapping("/test")
+    public ResponseEntity<?> test() {
+        suggestionGeneratorService.generateCompositeSuggestions();
+        ApiResponse<Object> response = new ApiResponse<>(true, "Test completed", null, 200);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
@@ -232,7 +266,7 @@ public class SellerController {
             return ResponseEntity.status(501).body(e.getMessage());
         }
     }
+
 }
 // jhiu jhuiyuiu huymnkjnkhkihiyh nbuygyu bgyg bvytg mkj9oi fjnhk jhbh
-
-// khguygu hjgjuy bnvyhtfghg hgfhty mniuhiu
+// kiyui nhuihu uihyiu hjh nhjhj hjhj bhjhj hkhu hyihu hjhj hjhiujnjnjnn

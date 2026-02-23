@@ -298,10 +298,13 @@ public class AdminProductService {
                 categoryAttribute.getAttributes()
                         .stream()
                         .map(attr -> new AttributeDto(
+                                attr.getId(),
                                 attr.getName(),
                                 attr.getField_type(),
                                 attr.getIs_required(),
-                                attr.getOptions()))
+                                attr.getOptions(),
+                                attr.getIsRadio(),
+                                null, null, null, null))
                         .toList());
 
         return new ApiResponse<>(true, "Added Successfully", dto, 201);
@@ -441,8 +444,4 @@ public class AdminProductService {
     }
 }
 // hkiyfhgyui hiuydi hggdyu buhuf huiy78dhghuygujhgui hihuk igihuihhuiiu
-// khuiuhhuihi huhjniy gygyu hyhui gyuybyhiuyub yuiujuhiujn hjhu gyhhu huih huhj
-// hihui huhuhhuihiu ghhiuhuhuthe overnkjhiuhu bhhihui nihjuijiujiuj hijuiji
-// njkhuih huihuihhihuihuiuhu iujiojioj hhyuhi huihui huihuih huhuih huiuji
-// hiuy78ifkuuii uhuyi hui huiyui huiyuiy huiyuiy hujhyuiyhiuh njkiuhui hiuyhiy
-// gyuyuyu ugyyuy
+// khuiuhhuihi huhjniy gygyu hyhui gyuybyhiuyu

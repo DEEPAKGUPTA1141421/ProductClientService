@@ -8,13 +8,14 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Setter;
+import lombok.Getter;
 
 @Entity
 @Table(name = "product_variants")
-@Data
+@Getter
+@Setter
 public class ProductVariant {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

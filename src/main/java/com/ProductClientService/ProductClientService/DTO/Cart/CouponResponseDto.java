@@ -1,14 +1,16 @@
 package com.ProductClientService.ProductClientService.DTO.Cart;
 
 import lombok.Builder;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
 import java.util.UUID;
 
-@Data
+@Setter
+@Getter
 public class CouponResponseDto {
 
-    @Data
+    @Getter
+    @Setter
     @Builder
     public static class BestCoupon {
         private UUID id;
@@ -18,7 +20,8 @@ public class CouponResponseDto {
         private String description;
     }
 
-    @Data
+    @Setter
+    @Getter
     @Builder
     public static class CashBackCoupon {
         private UUID id;
@@ -28,7 +31,8 @@ public class CouponResponseDto {
         private String description;
     }
 
-    @Data
+    @Setter
+    @Getter
     @Builder
     public static class MoreCoupon {
         private UUID id;
@@ -39,5 +43,3 @@ public class CouponResponseDto {
         private String description;
     }
 }
-
-

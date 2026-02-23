@@ -4,8 +4,9 @@ import java.util.List;
 import java.util.UUID;
 
 public record ProductAttributeResponseDto(
-                UUID id,
-                String name,
-                String value,
-                List<ProductVariantResponseDto> variants) {
+        UUID id,
+        UUID categoryAttributeId,
+        String name,
+        String value,
+        List<ProductVariantResponseDto> variants) {
 }

@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -17,5 +18,15 @@ public interface BrandRepository extends JpaRepository<Brand, UUID> {
     @Query("SELECT b FROM Brand b WHERE LOWER(b.name) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
             "OR LOWER(b.description) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<Brand> searchBrands(@Param("keyword") String keyword);
+
+    List<Brand> findByApprovedFalse();
+
+    Optional<Brand> findByNormalisedNameAndCategoryId(
+            String normalisedName,
+            UUID categoryId);
+
+    List<Brand> findTop10ByCategoryIdAndApprovedTrueAndActiveTrueAndNormalisedNameContaining(
+            UUID categoryId,
+            String normalisedName);
 }
 // y788uut6t67y78y8 87y78 y7y78 y7i8y78 yi7y8i

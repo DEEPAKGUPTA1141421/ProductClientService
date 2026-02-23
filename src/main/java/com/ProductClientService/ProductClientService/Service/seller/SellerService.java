@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -21,6 +22,8 @@ import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CategoryAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
+import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeResponseDto;
+import com.ProductClientService.ProductClientService.DTO.seller.ProductFullResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Model.CategoryAttribute;
@@ -28,6 +31,7 @@ import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Model.Seller;
+import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.StandardProduct;
 import com.ProductClientService.ProductClientService.Repository.AttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryAttributeRepository;
@@ -48,6 +52,8 @@ import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 @RequiredArgsConstructor
@@ -69,8 +75,13 @@ public class SellerService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    private static Logger logger = LoggerFactory.getLogger(SellerService.class);
+
     public ApiResponse<Object> addProduct(ProductDto dto) {
         Product product = new Product();
+        if (dto.productId() != null) {
+            product.setId(dto.productId());
+        }
         product.setName(dto.name());
         product.setDescription(dto.description());
         product.setStep(Product.Step.valueOf(dto.step()));
@@ -80,7 +91,7 @@ public class SellerService {
             Category categoryRef = entityManager.getReference(Category.class, (UUID) dto.category());
             product.setCategory(categoryRef);
         }
-        List<String> imageUrls = new ArrayList<>();
+        // List<String> imageUrls = new ArrayList<>();
         // if (dto.images() != null && !dto.images().isEmpty()) {
         // imageUrls = s3Service.uploadFiles(dto.images());
         // }
@@ -88,10 +99,12 @@ public class SellerService {
         // if (!imageUrls.isEmpty())
         // product.setProductImage(imageUrls);
 
-        boolean isSaved = productRepository.save(product) != null;
-        if (!isSaved)
+        UUID savedProductId = productRepository.save(product).getId();
+        Map<String, Object> responseData = Map.of("productId", savedProductId);
+        if (savedProductId == null) {
             return new ApiResponse<>(false, "Step Not Completed", null, 200);
-        return new ApiResponse<>(true, "Step Completed", null, 200);
+        }
+        return new ApiResponse<>(true, "Step Completed", responseData, 200);
     }
 
     public ApiResponse<Object> loadAttribute(UUID id) {
@@ -99,67 +112,129 @@ public class SellerService {
     }
 
     public ApiResponse<Object> getAttributesByCategoryId(UUID categoryId) {
-        System.out.println("we are calling " + categoryId);
 
-        Optional<CategoryAttribute> categoryAttributes = categoryAttributeRepository.findByCategoryId(categoryId);
+        List<CategoryAttribute> categoryAttributes = categoryAttributeRepository.findAllByCategoryId(categoryId);
 
-        if (categoryAttributes.isPresent()) {
-            CategoryAttribute categoryAttribute = categoryAttributes.get();
-
-            CategoryAttributeDto dto = new CategoryAttributeDto(
-                    categoryAttribute.getId(),
-                    categoryAttribute.getCategory().getId(),
-                    categoryAttribute.getAttributes()
-                            .stream()
-                            .map(attr -> new AttributeDto(
-                                    attr.getName(),
-                                    attr.getField_type(), // assuming FEILDTYPE is an enum in Attribute
-                                    attr.getIs_required(),
-                                    attr.getOptions()))
-                            .toList());
-
-            return new ApiResponse<>(true, "fetch data", dto, 200);
-        } else {
-            return new ApiResponse<>(false, "No attributes found for this category", null, 404);
+        if (categoryAttributes.isEmpty()) {
+            return new ApiResponse<>(false,
+                    "No attributes found for this category",
+                    null,
+                    200);
         }
+
+        List<AttributeDto> attributeDtos = categoryAttributes.stream()
+                .flatMap(ca -> ca.getAttributes().stream()
+                        .map(attr -> new AttributeDto(
+                                ca.getId(), // ✅ categoryAttributeId
+                                attr.getName(),
+                                attr.getField_type(),
+                                attr.getIs_required(),
+                                attr.getOptions(),
+                                attr.getIsRadio(),
+                                ca.getIs_Required(),
+                                ca.getIsImageAttribute(),
+                                ca.getIsVariantAttribute(),
+                                ca.getIsAdditionalAttribute())))
+                .toList();
+
+        CategoryAttributeDto dto = new CategoryAttributeDto(
+                null,
+                categoryId,
+                attributeDtos);
+
+        return new ApiResponse<>(true, "fetch data", dto, 200);
     }
 
     public ApiResponse<Object> addProductAttribute(ProductAttributeDto dto) {
         try {
-            saveAllAttributes(dto);
-            return new ApiResponse<>(true, "Saved In The Db", null, 201);
+            List<ProductAttributeResponseDto> productAttributeResponseDtos = saveAllAttributes(dto);
+            return new ApiResponse<>(true, "Saved In The Db", productAttributeResponseDtos, 201);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
     }
 
     @Transactional
-    public void saveAllAttributes(ProductAttributeDto dto) {
-        // ✅ Fetch existing product
+    public List<ProductAttributeResponseDto> saveAllAttributes(ProductAttributeDto dto) {
+
+        if (dto.categoryAttributeId() == null || dto.values() == null) {
+            throw new RuntimeException("Invalid request");
+        }
+
+        if (dto.categoryAttributeId().size() != dto.values().size()) {
+            throw new RuntimeException("Attribute and value size mismatch");
+        }
+
         Product product = productRepository.findById(dto.productId())
                 .orElseThrow(() -> new RuntimeException("Product not found"));
+
         product.setStep(Product.Step.valueOf(dto.step()));
-        // ✅ Build product attributes
+
         for (int i = 0; i < dto.categoryAttributeId().size(); i++) {
-            UUID attrId = dto.categoryAttributeId().get(i);
+
+            UUID categoryAttrId = dto.categoryAttributeId().get(i);
             List<String> vals = dto.values().get(i);
 
-            for (String val : vals) {
-                ProductAttribute pa = new ProductAttribute();
+            if (vals == null || vals.isEmpty()) {
+                continue;
+            }
 
-                CategoryAttribute category_attribute = new CategoryAttribute();
-                category_attribute.setId(attrId);
-                pa.setCategoryAttribute(category_attribute);
-                pa.setProduct(product);
-                pa.setValue(val);
+            UUID productAttributeId = null;
+            if (dto.productAttributeIds() != null
+                    && dto.productAttributeIds().size() > i
+                    && dto.productAttributeIds().get(i) != null) {
 
-                product.getProductAttributes().add(pa);
+                productAttributeId = dto.productAttributeIds().get(i);
+            }
+
+            CategoryAttribute categoryAttribute = categoryAttributeRepository.getReferenceById(categoryAttrId);
+
+            // Since productAttributeIds is 1D, we assume ONE value per categoryAttribute
+            String value = vals.get(0);
+
+            if (productAttributeId != null) {
+
+                // ✅ UPDATE existing entity
+                ProductAttribute existing = productAttributeRepository.findById(productAttributeId)
+                        .orElseThrow(() -> new RuntimeException("ProductAttribute not found"));
+
+                existing.setValue(value);
+
+            } else {
+
+                // ✅ CREATE new entity
+                ProductAttribute newAttribute = new ProductAttribute();
+                newAttribute.setProduct(product);
+                newAttribute.setCategoryAttribute(categoryAttribute);
+                newAttribute.setValue(value);
+
+                product.getProductAttributes().add(newAttribute);
             }
         }
 
-        productRepository.save(product);
-    }
+        Product savedProduct = productRepository.save(product);
 
+        return savedProduct.getProductAttributes()
+                .stream()
+                .map(pa -> {
+
+                    CategoryAttribute ca = pa.getCategoryAttribute();
+
+                    String attributeName = ca.getAttributes()
+                            .stream()
+                            .findFirst()
+                            .map(Attribute::getName)
+                            .orElse(null);
+
+                    return new ProductAttributeResponseDto(
+                            pa.getId(),
+                            ca.getId(),
+                            attributeName,
+                            pa.getValue(),
+                            List.of());
+                })
+                .toList();
+    }
     // public ApiResponse<Object> getProductAttributes(UUID productId) {
     // try {
     // List<ProductAttribute> attributes =
@@ -470,4 +545,8 @@ public class SellerService {
         }
     }
 }
-// huuiuo huuioj
+// huuiuo huuioj nkjhu huhu huhu huju huuhkj huhuj huiuia
+// bhkhuid nhuofn huogr nkkhuogt khkirgtjk bkihrikbnbkr mnbkiuhreioj
+// njkhui bnyu gyuyu bngyu ugyg nbguy njkj mbhknjk mnhjkjilk
+// ijuij hnujfnkjjuiojrg hojgruoitg hojigot nj mbhkih nhkhiu bhjjhukkjjk
+// hyuh gyuy78 gyyui ghuihyui hkhu hkuihui huhj

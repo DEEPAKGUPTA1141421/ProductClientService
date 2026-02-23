@@ -11,8 +11,11 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.DTO.AttributeDto;
+import com.ProductClientService.ProductClientService.DTO.ProductAttributeSuggestionProjection;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
+import com.ProductClientService.ProductClientService.DTO.ProductPriceSuggestionProjection;
+import com.ProductClientService.ProductClientService.DTO.ProductSuggestionProjection;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.Model.Attribute;
@@ -149,14 +152,57 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             """)
     ProductSummaryProjection getProductNameAndDescription(@Param("id") UUID productId);
 
+    @Query("""
+                SELECT
+                    p.id as id,
+                    c.name as categoryName,
+                    b.name as brandName,
+                    b.id as brandId,
+                    p.searchIntentCreated as searchIntentCreated
+                FROM Product p
+                LEFT JOIN p.category c
+                LEFT JOIN p.brand b
+                WHERE p.searchIntentCreated = false
+            """)
+    List<ProductSuggestionProjection> findProductsForSuggestion();
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Product p SET p.searchIntentCreated = true WHERE p.id = :id")
+    void markSearchIntentCreated(@Param("id") UUID id);
+
+    @Query("""
+                SELECT
+                    p.id as productId,
+                    c.name as categoryName,
+                    a.name as attributeName,
+                    pa.value as attributeValue
+                FROM Product p
+                JOIN p.category c
+                JOIN p.productAttributes pa
+                JOIN pa.categoryAttribute ca
+                JOIN ca.attributes a
+                WHERE p.searchIntentCreated = false
+            """)
+    List<ProductAttributeSuggestionProjection> findAttributeSuggestions();
+
+    @Query("""
+                SELECT
+                    p.id as productId,
+                    c.name as categoryName,
+                    MIN(v.price) as minPrice
+                FROM Product p
+                JOIN p.category c
+                JOIN p.variants v
+                WHERE p.searchIntentCreated = false
+                GROUP BY p.id, c.name
+            """)
+    List<ProductPriceSuggestionProjection> findPriceSuggestions();
+
+    @Modifying
+    @Query("UPDATE Product p SET p.searchIntentCreated = true WHERE p.searchIntentCreated = false")
+    void markAllSearchIntentCreated();
+
 }
 
-// khiu hgujygugtuytutyuhyujgy kjhiuhyiu jhguyg hjgkyuyhh nhku nghuyg mnhkj
-// hmgjh hjgjh hjgjhuiui uhiuoi uiuiui iu8iy787y8y7y7bu8u8kjjiji hjujioj hiuuji
-// huhuihiuu kjhedioiorfuigutouiu uugtuiijuuiiuifvijhhhuuu mjjij hujujnj juiju
-// huhuhhu hkuiuiu huiuiuuuuuuuuj hhui yugyu yuu yuy7uhyyuyuyhy njkui hiuyui
-// huyhyu gyuy jkjui huj hukhju jujujj jjuouuujioihuyh yiyiu uiyhuiyh
-
-// huiiui huiui huiyhiui hkuiuiour hukiiirfkuurfiuufrhrfhuhkhhgku
-
-// iuuujioujio uhiiiouio8gutu8onjkhui
+// hyuhk khui huih iui huiu

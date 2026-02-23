@@ -36,7 +36,7 @@ public class AdminProductController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
-    @PostMapping("/add-attribute1")
+    @PostMapping("/add-attribute")
     public ResponseEntity<?> addAttribute(@Valid @RequestBody AttributeDto attributerequest) {
         System.out.println("Dto Matched");
         ApiResponse<Object> response = adminProductService.addAttribute(attributerequest);
@@ -75,3 +75,4 @@ public class AdminProductController {
 }
 // fytdfugyuguhi yguyduhjbj jugguyge gyuguyduygjgyhguyjd gygd giyiudbhjgdiu
 // jhikuhi huyiu yuu hyiuyui hyhuyiy7ui jkhuih hhiuhf huihiuhfhujj
+// jkjuju huhuih hkhu

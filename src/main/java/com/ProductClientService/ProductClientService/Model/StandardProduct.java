@@ -9,12 +9,15 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import jakarta.persistence.*;
-import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 @Entity
 @Table(name = "standard_products")
-@Data
+@Getter
+@Setter 
 public class StandardProduct {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -32,6 +35,7 @@ public class StandardProduct {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)
+    @JsonIgnore
     private Category category;
 
     @ManyToOne(fetch = FetchType.LAZY)

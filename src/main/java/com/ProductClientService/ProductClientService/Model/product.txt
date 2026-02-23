@@ -1,0 +1,21 @@
+product has id, Name, description
+product has Many tags Added By Seller ManyToManyRelationship
+product Has Many Attributes called product_attributes
+product has many variants
+product is a Standard product
+product has a category category itself has parent child realationship
+product has a brand
+
+"product_id", "category_attribute_id", "value" should be unique
+
+
+ProductAttribute has a CategoryAttribute
+ProductAttribute has a value
+ProductAttribute has a list of image
+
+CategoryAttribute has a category 
+and one join table which is category_attribute_mapping
+
+means category_attribute is mapped with Attributes
+attribute is like Size color material fabric type
+

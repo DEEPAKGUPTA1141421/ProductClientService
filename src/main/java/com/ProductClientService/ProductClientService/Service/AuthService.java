@@ -6,6 +6,9 @@ import java.util.UUID;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -67,6 +70,7 @@ public class AuthService {
     private final DeliveryInventoryClient deliveryInventoryClient;
     private final UserRepojectory userRepojectory;
     private final Cloudinary cloudinary;
+    private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
 
     public ApiResponse<String> login(LoginRequest loginRequest) {
         // Check rate limit
@@ -143,7 +147,7 @@ public class AuthService {
     public void sendOtpAsync(String phone, String type) {
         String otpCode = generateOtp(); // Implement your OTP generation logic
         otpRepository.CreateOtp(phone, type, otpCode);
-        System.out.println("OTP created asynchronously for phone: " + phone);
+        logger.info("OTP created asynchronously for phone: {} and Otp: {} ", phone, otpCode);
         NotificationRequest request = createNotificationBody(
                 "Login Otp",
                 "Otp For Login Is" + otpCode + " Please Do not share with anyone",
@@ -299,6 +303,4 @@ public class AuthService {
 }
 
 // huyh hihi hyihi hyh huih huihu huj ggygggygggggg
-
-// njkhuiitgiugtuhug jhiuyi87y7r h8y7re8 uy87tr hyu7r8eyyhbjhkhku
-// jhkuijl hujijiijijlijijiijij bhkjhk jjiojioj jojij jijioj hbuguyg guyugugy
+// kjj juji hukjiij hju

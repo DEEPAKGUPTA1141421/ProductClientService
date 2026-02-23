@@ -1,22 +1,26 @@
 package com.ProductClientService.ProductClientService.Model;
 
 import jakarta.persistence.*;
-import lombok.Data;
 
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import lombok.Getter;
+import lombok.Setter;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 @Entity
 @Table(name = "category_attributes")
-@Data
+@Getter
+@Setter
 public class CategoryAttribute {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @OneToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)
+    @JsonManagedReference
     private Category category;
 
     @ManyToMany(fetch = FetchType.EAGER)
@@ -27,4 +31,6 @@ public class CategoryAttribute {
     Boolean is_Required = false;
     Boolean isImageAttribute = false;
     Boolean isVariantAttribute = false;
+    Boolean isAdditionalAttribute = false;
 }
+// jjijjmjj kjkjk

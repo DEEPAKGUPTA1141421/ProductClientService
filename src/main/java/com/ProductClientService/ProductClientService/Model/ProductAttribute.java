@@ -11,10 +11,10 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.ProductClientService.ProductClientService.Utils.CommaSeparatedConverter;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -46,6 +46,7 @@ public class ProductAttribute {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false) // FK lives here
+    @JsonBackReference
     private Product product;
 
     @Column(length = 2000)

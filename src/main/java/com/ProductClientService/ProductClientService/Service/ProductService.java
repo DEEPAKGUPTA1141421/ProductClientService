@@ -15,11 +15,13 @@ import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.AttributeDto;
+import com.ProductClientService.ProductClientService.DTO.CategoryTreeDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.ProductRatingDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
+import com.ProductClientService.ProductClientService.DTO.Cart.CategoryTreeProjection;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductRating;
@@ -65,7 +67,7 @@ public class ProductService {
     @Transactional(readOnly = true)
 
     public ApiResponse<Object> searchProducts(UUID categoryId, UUID brandId, UUID sellerId,
-            String attributeName, String attributeValue, boolean includeFilter, String discounttype,Integer discount) {
+            String attributeName, String attributeValue, boolean includeFilter, String discounttype, Integer discount) {
         ProductSearchBuilder builder = new ProductSearchBuilder();
 
         if (categoryId != null)
@@ -77,7 +79,7 @@ public class ProductService {
         if (attributeName != null && attributeValue != null) {
             builder.attribute(attributeName, attributeValue);
         }
-        if(discounttype!=null && discount!=null){
+        if (discounttype != null && discount != null) {
             builder.discount(discounttype, discount);
         }
 
@@ -116,41 +118,59 @@ public class ProductService {
         return new ApiResponse<>(true, "Fetched products and brands", response, 200);
     }
 
-    public ApiResponse<Object> getCategory(boolean includeChildItem, Category.Level level) {
+    public ApiResponse<Object> getFullCategoryTree() {
+
         try {
-            short lvl = (short) level.ordinal();
-            System.out.println("Condition check: " + includeChildItem);
 
-            Object categories;
+            List<CategoryTreeProjection> allCategories = categoryRepository.fetchCategoryTreeData();
 
-            if (includeChildItem) {
-                // Fetch top 10 parent categories with children
-                List<Map<String, Object>> parentCategoriesRaw = categoryRepository.findTop10ParentWithChildren(lvl);
-                List<Map<String, Object>> parentCategories = new ArrayList<>();
+            Map<UUID, CategoryTreeDTO> categoryMap = new HashMap<>();
+            List<CategoryTreeDTO> rootCategories = new ArrayList<>();
 
-                ObjectMapper objectMapper = new ObjectMapper();
+            // Convert projection → DTO and put in map
+            for (CategoryTreeProjection p : allCategories) {
 
-                for (Map<String, Object> parent : parentCategoriesRaw) {
-                    // Copy to a modifiable map
-                    Map<String, Object> modifiableParent = new HashMap<>(parent);
+                CategoryTreeDTO dto = new CategoryTreeDTO(
+                        p.getId(),
+                        p.getName(),
+                        p.getImageUrl(),
+                        p.getCategoryLevel(),
+                        new ArrayList<>());
 
-                    Object children = modifiableParent.get("children");
-                    if (children instanceof String) {
-                        modifiableParent.put("children", objectMapper.readValue((String) children, List.class));
+                categoryMap.put(dto.getId(), dto);
+            }
+
+            // Build tree
+            for (CategoryTreeProjection p : allCategories) {
+
+                CategoryTreeDTO current = categoryMap.get(p.getId());
+
+                if (p.getParent_Id() != null) {
+
+                    CategoryTreeDTO parent = categoryMap.get(p.getParent_Id());
+
+                    if (parent != null) {
+                        parent.getChildren().add(current);
                     }
 
-                    parentCategories.add(modifiableParent);
+                } else {
+                    rootCategories.add(current);
                 }
-                categories = parentCategories; // assign to outer variable
-            } else {
-                // Fetch top 10 categories without children
-                categories = categoryRepository.findTop10ByLevel(lvl);
             }
-            return new ApiResponse<>(true, "Fetched categories successfully", categories, 200);
+
+            return new ApiResponse<>(
+                    true,
+                    "Full category tree fetched successfully",
+                    rootCategories,
+                    200);
 
         } catch (Exception e) {
-            e.printStackTrace();
-            return new ApiResponse<>(false, "Error: " + e.getMessage(), null, 500);
+
+            return new ApiResponse<>(
+                    false,
+                    e.getMessage(),
+                    null,
+                    500);
         }
     }
 
