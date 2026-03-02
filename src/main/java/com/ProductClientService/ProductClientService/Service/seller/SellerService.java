@@ -78,33 +78,102 @@ public class SellerService {
     private static Logger logger = LoggerFactory.getLogger(SellerService.class);
 
     public ApiResponse<Object> addProduct(ProductDto dto) {
-        Product product = new Product();
+
+        Product product;
+
+        // =============================
+        // UPDATE FLOW
+        // =============================
         if (dto.productId() != null) {
-            product.setId(dto.productId());
+
+            product = productRepository.findById(dto.productId())
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+
         }
+        // =============================
+        // CREATE FLOW
+        // =============================
+        else {
+            product = new Product();
+        }
+
+        // Common fields
         product.setName(dto.name());
         product.setDescription(dto.description());
         product.setStep(Product.Step.valueOf(dto.step()));
-        Seller sellerRef = entityManager.getReference(Seller.class, (UUID) request.getAttribute("id"));
+
+        Seller sellerRef = entityManager.getReference(
+                Seller.class,
+                (UUID) request.getAttribute("id"));
         product.setSeller(sellerRef);
+
         if (dto.category() != null) {
-            Category categoryRef = entityManager.getReference(Category.class, (UUID) dto.category());
+            Category categoryRef = entityManager.getReference(
+                    Category.class,
+                    (UUID) dto.category());
             product.setCategory(categoryRef);
         }
-        // List<String> imageUrls = new ArrayList<>();
-        // if (dto.images() != null && !dto.images().isEmpty()) {
-        // imageUrls = s3Service.uploadFiles(dto.images());
-        // }
-
-        // if (!imageUrls.isEmpty())
-        // product.setProductImage(imageUrls);
 
         UUID savedProductId = productRepository.save(product).getId();
+
         Map<String, Object> responseData = Map.of("productId", savedProductId);
-        if (savedProductId == null) {
-            return new ApiResponse<>(false, "Step Not Completed", null, 200);
+
+        return new ApiResponse<>(
+                true,
+                dto.productId() == null ? "Product Created" : "Product Updated",
+                responseData,
+                200);
+    }
+
+    public ApiResponse<Object> getLatestDraftProduct() {
+        UUID sellerId = (UUID) request.getAttribute("id");
+        Optional<Product> draftProduct = productRepository
+                .findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
+                        sellerId,
+                        Product.Step.LIVE);
+        if (draftProduct.isEmpty()) {
+            return new ApiResponse<>(false, "No Draft Product Found", null, 200);
         }
-        return new ApiResponse<>(true, "Step Completed", responseData, 200);
+        // ProductFullResponseDto responseDto = new ProductFullResponseDto(
+        // draftProduct.get().getId(),
+        // draftProduct.get().getName(),
+        // draftProduct.get().getDescription(),
+        // draftProduct.get().getProductAttributes().stream()
+        // .map(pa -> new ProductAttributeResponseDto(
+        // pa.getId(),
+        // pa.getCategoryAttribute().getId(),
+        // pa.getCategoryAttribute().getAttributes().stream()
+        // .findFirst()
+        // .map(Attribute::getName)
+        // .orElse(null),
+        // pa.getValue(),
+        // pa.getVariants().stream()
+        // .map(variant -> new ProductVariantResponseDto(
+        // variant.getId(),
+        // variant.getSku(),
+        // variant.getPrice(),
+        // variant.getStock())
+        // )
+        // .toList());
+        return new ApiResponse<>(true, "Latest Draft Product Found", "responseDto", 200);
+    }
+
+    public ApiResponse<Object> discardDraftProduct() {
+
+        UUID sellerId = (UUID) request.getAttribute("id");
+
+        Optional<Product> draftProduct = productRepository
+                .findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
+                        sellerId,
+                        Product.Step.LIVE);
+
+        if (draftProduct.isEmpty()) {
+            return new ApiResponse<>(false, "No Draft Product Found", null, 200);
+        }
+
+        productRepository.delete(draftProduct.get());
+
+        return new ApiResponse<>(true, "Draft discarded successfully", null, 200);
     }
 
     public ApiResponse<Object> loadAttribute(UUID id) {
@@ -278,7 +347,14 @@ public class SellerService {
             return new ApiResponse<>(false, e.getMessage(), null, 500);
         }
     }
-
+    ApiResponse<Object> (String keyword) {
+        try {
+            List<Seller.ShopCategory> categories = sellerRepository.findAllShopCategories();
+            return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
+        }
+    }
     // public ApiResponse<Object> getProductWithAttributesAndVariants(UUID
     // productId) {
     // try {
@@ -546,7 +622,4 @@ public class SellerService {
     }
 }
 // huuiuo huuioj nkjhu huhu huhu huju huuhkj huhuj huiuia
-// bhkhuid nhuofn huogr nkkhuogt khkirgtjk bkihrikbnbkr mnbkiuhreioj
-// njkhui bnyu gyuyu bngyu ugyg nbguy njkj mbhknjk mnhjkjilk
-// ijuij hnujfnkjjuiojrg hojgruoitg hojigot nj mbhkih nhkhiu bhjjhukkjjk
-// hyuh gyuy78 gyyui ghuihyui hkhu hkuihui huhj
+// juujji uhjiji kjhjij jj njji jj bkhhk hbb jhbhj hbjj hjbhj

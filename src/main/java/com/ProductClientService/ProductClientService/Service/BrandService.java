@@ -1,39 +1,36 @@
 package com.ProductClientService.ProductClientService.Service;
 
+import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.CreateBrandRequest;
 import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
-
+import lombok.RequiredArgsConstructor;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class BrandService {
     private final BrandRepository brandRepository;
 
-    public BrandService(BrandRepository brandRepository) {
-        this.brandRepository = brandRepository;
+    public ApiResponse<Object> getBrandsByCategory(UUID categoryId) {
+        List<Brand> brands = brandRepository.findByCategoryId(categoryId);
+        return new ApiResponse<>(true, "Brands fetched", brands, 200);
     }
 
-    public List<Brand> getBrandsByCategory(UUID categoryId) {
-        return brandRepository.findByCategoryId(categoryId);
-    }
-
-    public List<Brand> search(String keyword, UUID categoryId) {
-
+    public ApiResponse<Object> search(String keyword, UUID categoryId) {
         String normalized = normalize(keyword);
 
-        return brandRepository
+        List<Brand> result = brandRepository
                 .findTop10ByCategoryIdAndApprovedTrueAndActiveTrueAndNormalisedNameContaining(
                         categoryId, normalized);
+
+        return new ApiResponse<>(true, "Search results", result, 200);
     }
 
-    public Brand createBrand(CreateBrandRequest request) {
-
+    public ApiResponse<Object> createBrand(CreateBrandRequest request) {
         String normalized = normalize(request.getName());
 
         Optional<Brand> existing = brandRepository.findByNormalisedNameAndCategoryId(
@@ -41,7 +38,7 @@ public class BrandService {
                 request.getCategoryId());
 
         if (existing.isPresent()) {
-            return existing.get();
+            return new ApiResponse<>(true, "Brand already exists", existing.get(), 200);
         }
 
         Brand brand = new Brand();
@@ -50,23 +47,27 @@ public class BrandService {
         brand.setCategoryId(request.getCategoryId());
         brand.setApproved(false); // Seller created → needs approval
 
-        return brandRepository.save(brand);
+        Brand saved = brandRepository.save(brand);
+        return new ApiResponse<>(true, "Brand created", saved, 201);
     }
 
-    public List<Brand> pending() {
-        return brandRepository.findByApprovedFalse();
+    public ApiResponse<Object> pending() {
+        List<Brand> pending = brandRepository.findByApprovedFalse();
+        return new ApiResponse<>(true, "Pending brands fetched", pending, 200);
     }
 
-    public void delete(UUID id) {
+    public ApiResponse<Object> delete(UUID id) {
         Brand brand = brandRepository.findById(id).orElseThrow();
         brand.setActive(false);
         brandRepository.save(brand);
+        return new ApiResponse<>(true, "Brand deactivated", null, 200);
     }
 
-    public void approve(UUID id) {
+    public ApiResponse<Object> approve(UUID id) {
         Brand brand = brandRepository.findById(id).orElseThrow();
         brand.setApproved(true);
         brandRepository.save(brand);
+        return new ApiResponse<>(true, "Brand approved", null, 200);
     }
 
     private String normalize(String input) {

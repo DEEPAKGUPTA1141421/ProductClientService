@@ -11,7 +11,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
-@Table(name = "brands", uniqueConstraints = @UniqueConstraint(columnNames = { "normalisedName", "category_id" }))
+@Table(name = "brands", uniqueConstraints = @UniqueConstraint(columnNames = { "normalised_name", "category_id" }))
 @Getter
 @Setter
 public class Brand {
@@ -44,3 +44,6 @@ public class Brand {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
+
+// kjljl n jnjl jnnjkfn jnjkf njnjgt njnt ntg ngtgt m gt
+// mkmkf jrfkkm mlmklt m,, m

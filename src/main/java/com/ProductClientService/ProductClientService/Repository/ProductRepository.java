@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -203,6 +204,13 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("UPDATE Product p SET p.searchIntentCreated = true WHERE p.searchIntentCreated = false")
     void markAllSearchIntentCreated();
 
+    @EntityGraph(attributePaths = {
+            "productAttributes",
+            "productAttributes.categoryAttribute"
+    })
+    Optional<Product> findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
+            UUID sellerId,
+            Product.Step step);
 }
 
 // hyuhk khui huih iui huiu

@@ -64,6 +64,35 @@ public class SellerController {
                 .body(response);
     }
 
+    @PostMapping("/attach-brand")
+    @PrivateApi
+    public ResponseEntity<?> AttachBrandToProduct(
+        @RequestParam UUID productId,
+        @RequestParam UUID brandId) {
+        ApiResponse<Object> response = sellerService.attachBrandToProduct(productId, brandId);
+        return ResponseEntity
+                .status(200)
+                .body(response);
+    }
+
+    @GetMapping("/draft-product")
+    @PrivateApi
+    public ResponseEntity<?> draftProduct() {
+        ApiResponse<Object> response = sellerService.getLatestDraftProduct();
+        return ResponseEntity
+                .status(200)
+                .body(response);
+    }
+
+    @DeleteMapping("/discard-draft-product")
+    @PrivateApi
+    public ResponseEntity<?> discardDraftProduct() {
+        ApiResponse<Object> response = sellerService.discardDraftProduct();
+        return ResponseEntity
+                .status(200)
+                .body(response);
+    }
+
     @PostMapping(value = "/load-attribute")
     public ResponseEntity<?> loadAttribute(@RequestParam UUID id) {
         try {
