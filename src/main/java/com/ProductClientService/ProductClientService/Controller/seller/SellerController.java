@@ -64,16 +64,18 @@ public class SellerController {
                 .body(response);
     }
 
-    @PostMapping("/attach-brand")
-    @PrivateApi
-    public ResponseEntity<?> AttachBrandToProduct(
-        @RequestParam UUID productId,
-        @RequestParam UUID brandId) {
-        ApiResponse<Object> response = sellerService.attachBrandToProduct(productId, brandId);
-        return ResponseEntity
-                .status(200)
-                .body(response);
-    }
+    // @PostMapping("/attach-brand")
+    // @PrivateApi
+    // public ResponseEntity<?> AttachBrandToProduct(
+    // @RequestParam UUID productId,
+    // @RequestParam UUID brandId) {
+    // ApiResponse<Object> response = sellerService.attachBrandToProduct(productId,
+    // brandId);
+    // return ResponseEntity
+    // .status(200)
+
+    // .body(response);
+    // }
 
     @GetMapping("/draft-product")
     @PrivateApi

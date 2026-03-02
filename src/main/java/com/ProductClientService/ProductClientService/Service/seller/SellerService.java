@@ -347,14 +347,17 @@ public class SellerService {
             return new ApiResponse<>(false, e.getMessage(), null, 500);
         }
     }
-    ApiResponse<Object> (String keyword) {
-        try {
-            List<Seller.ShopCategory> categories = sellerRepository.findAllShopCategories();
-            return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
-        } catch (Exception e) {
-            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
-        }
-    }
+    // ApiResponse<Object> (String keyword) {
+    // try {
+    // List<Seller.ShopCategory> categories =
+    // sellerRepository.findAllShopCategories();
+    // return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
+    // } catch (Exception e) {
+    // return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(),
+    // null, 501);
+    // }
+    // }
+
     // public ApiResponse<Object> getProductWithAttributesAndVariants(UUID
     // productId) {
     // try {
