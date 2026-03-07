@@ -64,18 +64,18 @@ public class SellerController {
                 .body(response);
     }
 
-    // @PostMapping("/attach-brand")
-    // @PrivateApi
-    // public ResponseEntity<?> AttachBrandToProduct(
-    // @RequestParam UUID productId,
-    // @RequestParam UUID brandId) {
-    // ApiResponse<Object> response = sellerService.attachBrandToProduct(productId,
-    // brandId);
-    // return ResponseEntity
-    // .status(200)
+    @PostMapping("/attach-brand")
+    @PrivateApi
+    public ResponseEntity<?> AttachBrandToProduct(
+            @RequestParam UUID productId,
+            @RequestParam UUID brandId) {
+        ApiResponse<Object> response = sellerService.attachBrandToProduct(productId,
+                brandId);
+        return ResponseEntity
+                .status(200)
 
-    // .body(response);
-    // }
+                .body(response);
+    }
 
     @GetMapping("/draft-product")
     @PrivateApi
@@ -301,3 +301,4 @@ public class SellerController {
 }
 // jhiu jhuiyuiu huymnkjnkhkihiyh nbuygyu bgyg bvytg mkj9oi fjnhk jhbh
 // kiyui nhuihu uihyiu hjh nhjhj hjhj bhjhj hkhu hyihu hjhj hjhiujnjnjnn
+// hyuihu huihk khiurf guihrfbk hukhur jhbrkf fgrtt tgte tggrrerehjjuhyh

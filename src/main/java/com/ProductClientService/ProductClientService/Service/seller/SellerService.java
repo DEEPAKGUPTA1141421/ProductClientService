@@ -31,9 +31,11 @@ import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Model.Seller;
+import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.StandardProduct;
 import com.ProductClientService.ProductClientService.Repository.AttributeRepository;
+import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryAttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductAttributeRepository;
@@ -72,6 +74,7 @@ public class SellerService {
     private final StandardProductRepository standardProductRepository;
     private final Cloudinary cloudinary;
     private final SellerRepository sellerRepository;
+    private final BrandRepository brandRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -347,16 +350,22 @@ public class SellerService {
             return new ApiResponse<>(false, e.getMessage(), null, 500);
         }
     }
-    // ApiResponse<Object> (String keyword) {
-    // try {
-    // List<Seller.ShopCategory> categories =
-    // sellerRepository.findAllShopCategories();
-    // return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
-    // } catch (Exception e) {
-    // return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(),
-    // null, 501);
-    // }
-    // }
+
+    public ApiResponse<Object> attachBrandToProduct(UUID productId, UUID brandId) {
+        try {
+            logger.info("Attaching brand {} to product {}", brandId, productId);
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            Brand brand = brandRepository.findById(brandId)
+                    .orElseThrow(() -> new RuntimeException("Brand not found"));
+            product.setBrand(brand);
+            productRepository.save(product);
+            return new ApiResponse<>(true, "Brand attached to product successfully", null, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(),
+                    null, 501);
+        }
+    }
 
     // public ApiResponse<Object> getProductWithAttributesAndVariants(UUID
     // productId) {
@@ -626,3 +635,4 @@ public class SellerService {
 }
 // huuiuo huuioj nkjhu huhu huhu huju huuhkj huhuj huiuia
 // juujji uhjiji kjhjij jj njji jj bkhhk hbb jhbhj hbjj hjbhj
+// juouio huiuhi nlghuy ihuhiu hhuh hkhu hkhu jkjk
