@@ -65,3 +65,8 @@ from different shop then create as many booking  per shop and details of one ord
 
 
 // search shop 
+
+
+@RestController
+@RequestMapping("/api/v1/seller/product")
+@PostMapping("/attach-brand")

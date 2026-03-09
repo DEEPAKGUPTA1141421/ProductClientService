@@ -65,5 +65,3 @@ public class User {
         PENDING_VERIFICATION
     }
 }
-
-// gygugyh

@@ -44,12 +44,4 @@ public class AuthController {
         ApiResponse<String> response = authService.verify(request);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
-
-    @PostMapping("/seller-basic-info")
-    @PrivateApi
-    public ResponseEntity<?> sellerBasicInfo(@Valid @RequestBody SellerBasicInfo sellerrequest)
-            throws WriterException, IOException {
-        ApiResponse<Seller> response = authService.sellerBasicInfoVerify(sellerrequest);
-        return ResponseEntity.status(response.statusCode()).body(response);
-    }
 }

@@ -130,19 +130,6 @@ public class AuthService {
         return new ApiResponse<>(true, "Otp Verification Success", token, 200);
     }
 
-    public ApiResponse<Seller> sellerBasicInfoVerify(SellerBasicInfo inforequest) throws WriterException, IOException {
-        if (inforequest.stage_of_onboarding() == ONBOARDSTAGE.BASIC_INFO_NAME)
-            return handleBasicNameInfo(inforequest);
-        else if (inforequest.stage_of_onboarding() == ONBOARDSTAGE.LOCATION)
-            return handleLocaton(inforequest);
-        else if (inforequest.stage_of_onboarding() == ONBOARDSTAGE.ADHADHAR_CARD)
-            return handleAdhadharCard(inforequest);
-        else if (inforequest.stage_of_onboarding() == ONBOARDSTAGE.PAN_CARD)
-            return handlePanCard(inforequest);
-        else
-            return new ApiResponse<>(false, null, null, 403);
-    }
-
     @Async
     public void sendOtpAsync(String phone, String type) {
         String otpCode = generateOtp(); // Implement your OTP generation logic
@@ -173,54 +160,6 @@ public class AuthService {
         request.setBody(body);
         request.setType(type);
         return request;
-    }
-
-    private ApiResponse<Seller> handleBasicNameInfo(SellerBasicInfo inforequest) {
-        String phone = (String) request.getAttribute("phone");
-        Seller seller = sellerRepository.saveBasicInfo(phone, inforequest.display_name(), inforequest.legal_name(),
-                inforequest.email(), inforequest.category());
-        System.out.println("seller details" + seller + phone);
-        return new ApiResponse<>(true, "Basic Info Saved", seller, 200);
-    }
-
-    private ApiResponse<Seller> handleLocaton(SellerBasicInfo inforequest) {
-        String phone = (String) request.getAttribute("phone");
-        if (!sellerRepository.stageValidation(Seller.ONBOARDSTAGE.BASIC_INFO_NAME, phone)) {
-            return new ApiResponse<>(false, "Stage is Not Correct", null, 403);
-        }
-        System.out.println("calling google service and test" + inforequest.latitude().getClass()
-                + inforequest.longitude().getClass() + "hello and say");
-        GoogleMapsService googleMapsService = googleMapsProvider.getObject();
-        AddressResponse addressDetails = googleMapsService.getAddressFromLatLng(
-                inforequest.latitude(),
-                inforequest.longitude());
-        System.out.println("we are calling repo");
-        boolean isSaved = saveAddress(addressDetails, phone, inforequest.latitude(),
-                inforequest.longitude());
-        if (!isSaved)
-            return new ApiResponse<>(false, "Location Info Not Saved", null, 500);
-        return new ApiResponse<>(true, "Location Info Saved", null, 200);
-    }
-
-    private boolean saveAddress(AddressResponse addressDetails, String phone, BigDecimal lat, BigDecimal longi) {
-        Optional<Seller> optionalSeller = sellerRepository.findByPhone(phone);
-        if (optionalSeller.isEmpty()) {
-            return false;
-        }
-
-        Seller seller = optionalSeller.get();
-        seller.setOnboardingStage(Seller.ONBOARDSTAGE.LOCATION);
-
-        sellerAddressRepository.saveOrUpdateLocationAddress(
-                seller,
-                addressDetails.line1(),
-                addressDetails.city(),
-                addressDetails.state(),
-                addressDetails.country(),
-                addressDetails.pincode(),
-                lat,
-                longi);
-        return true;
     }
 
     private ApiResponse<Seller> handleAdhadharCard(SellerBasicInfo inforequest) {

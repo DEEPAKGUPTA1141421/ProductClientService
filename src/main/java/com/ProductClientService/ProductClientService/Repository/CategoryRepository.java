@@ -25,6 +25,8 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     List<CategoryProjection> findByCategoryLevel(Category.Level level);
 
+    Optional<Category> findByIdAndCategoryLevel(UUID Id, Category.Level level);
+
     // Use parent.id directly (because parent is a Category object)
     List<Category> findByParentIdIn(List<UUID> parentIds);
 
@@ -41,4 +43,5 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
 /// hjuihui gyuhgyuy gyutguyu hyiuy unjj huijbhjgujhyhhihhuihhuihuhuihiuhhui
 /// guyyifrbhyif hyiyiufe ghiuyif hiuyif hiyyif yi7yifrhuiyhuyhiuyhuhuiufr
-/// hkhubbyyiyhhukuhuh gyybhuku huiuuuujhyyy khuhukuhhuu gyjhyuuy hiuhui
+/// hkhubbyyiyhhukuhuh gyybhuku huiuuuujhyyy khuhukuhhuu gyjhyuuy hiuhui huhuj
+/// hgbj bhh mkbhj jhbbh bhknhjk bknnjnj

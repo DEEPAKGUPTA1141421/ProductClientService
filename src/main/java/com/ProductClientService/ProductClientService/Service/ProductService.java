@@ -174,6 +174,15 @@ public class ProductService {
         }
     }
 
+    public ApiResponse<Object> getCategoryLevelWise(Category.Level level) {
+        try {
+            List<CategoryProjection> categories = categoryRepository.findByCategoryLevel(level);
+            return new ApiResponse<>(true, "Categories fetched successfully", categories, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 500);
+        }
+    }
+
     public List<Category> getCategoriesByParentIds(List<UUID> parentIds) {
         return categoryRepository.findByParentIdIn(parentIds);
     }
@@ -293,6 +302,4 @@ public class ProductService {
 }
 
 /// bkhhkuhjhjkfhiuh hiujfik mbhuyg jhguky gfyugjyghvtfujyg hgvytfgmm hguygug
-// y yiyi huiuyi yuyuhuhu huiuuhuuuyyyyythbvcertyuiolkjnhgfdrtyuio hkuhu iuu
-// gyir yiyuir u88r yuiuiruu jiiopo jiiki jioii jioi jioio hiuuoiii
-/// nhhbhjmhbjhbjhjbhjhbjhbhbhbbhb jkhu,uiyuyu78 yuuy7y ttyuyuu yy
+// jjuj huhu huhu jujn njjn

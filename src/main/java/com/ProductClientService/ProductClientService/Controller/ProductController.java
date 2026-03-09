@@ -53,6 +53,16 @@ public class ProductController {
         }
     }
 
+    @GetMapping("/categorylevelwise")
+    public ResponseEntity<?> getCategoryLevelWise(@RequestParam(required = false) Category.Level level) {
+        try {
+            ApiResponse<Object> response = productService.getCategoryLevelWise(level);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
     @GetMapping("/by-parents")
     public List<Category> getCategoriesByParentIds(@RequestParam List<UUID> parentIds) {
         return productService.getCategoriesByParentIds(parentIds);
@@ -125,3 +135,4 @@ public class ProductController {
 
 // hyhu gtutu tutyutgygyyg nkhjujuju huihhu iujuu
 // hjujij hjuouj uhujio uiui huiujiiu
+// hyuyu ghy hihu iuujf ji juou hiuui huhu

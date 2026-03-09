@@ -256,16 +256,17 @@ public class SellerController {
         }
     }
 
-    @GetMapping("/by-city-category")
-    public ResponseEntity<?> getShopsByCityAndCategory(@RequestParam String city,
-            @RequestParam Seller.ShopCategory category) {
-        try {
-            ApiResponse<Object> response = sellerService.getShopsByCityAndCategory(city, category);
-            return ResponseEntity.status(response.statusCode()).body(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
-    }
+    // @GetMapping("/by-city-category")
+    // public ResponseEntity<?> getShopsByCityAndCategory(@RequestParam String city,
+    // @RequestParam Seller.ShopCategory category) {
+    // try {
+    // ApiResponse<Object> response = sellerService.getShopsByCityAndCategory(city,
+    // category);
+    // return ResponseEntity.status(response.statusCode()).body(response);
+    // } catch (Exception e) {
+    // return ResponseEntity.status(501).body(e.getMessage());
+    // }
+    // }
 
     @GetMapping("/search-shop")
     public ResponseEntity<?> searchShop(@RequestParam String keyword) {
@@ -285,18 +286,19 @@ public class SellerController {
         }
     }
 
-    @GetMapping("/nearest-by-category")
-    public ResponseEntity<?> getNearestShopsByCategory(@RequestParam double lat,
-            @RequestParam double lon,
-            @RequestParam Seller.ShopCategory category,
-            @RequestParam(defaultValue = "4") int limit) {
-        try {
-            ApiResponse<Object> response = sellerService.getNearestShopsByCategory(lat, lon, category, limit);
-            return ResponseEntity.status(response.statusCode()).body(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(501).body(e.getMessage());
-        }
-    }
+    // @GetMapping("/nearest-by-category")
+    // public ResponseEntity<?> getNearestShopsByCategory(@RequestParam double lat,
+    // @RequestParam double lon,
+    // @RequestParam Seller.ShopCategory category,
+    // @RequestParam(defaultValue = "4") int limit) {
+    // try {
+    // ApiResponse<Object> response = sellerService.getNearestShopsByCategory(lat,
+    // lon, category, limit);
+    // return ResponseEntity.status(response.statusCode()).body(response);
+    // } catch (Exception e) {
+    // return ResponseEntity.status(501).body(e.getMessage());
+    // }
+    // }
 
 }
 // jhiu jhuiyuiu huymnkjnkhkihiyh nbuygyu bgyg bvytg mkj9oi fjnhk jhbh

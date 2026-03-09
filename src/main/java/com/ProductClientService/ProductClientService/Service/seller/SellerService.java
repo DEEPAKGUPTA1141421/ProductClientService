@@ -588,8 +588,9 @@ public class SellerService {
 
     public ApiResponse<Object> getShopCategories() {
         try {
-            List<Seller.ShopCategory> categories = sellerRepository.findAllShopCategories();
-            return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
+            // List<Seller.ShopCategory> categories =
+            // sellerRepository.findAllShopCategories();
+            return new ApiResponse<>(true, "Shop Categories fetched", "categories", 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
         }
@@ -597,8 +598,9 @@ public class SellerService {
 
     public ApiResponse<Object> searchShop(String keyword) {
         try {
-            List<Seller.ShopCategory> categories = sellerRepository.findAllShopCategories();
-            return new ApiResponse<>(true, "Shop Categories fetched", categories, 200);
+            // List<Seller.ShopCategory> categories =
+            // sellerRepository.findAllShopCategories();
+            return new ApiResponse<>(true, "Shop Categories fetched", "categories", 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
         }
@@ -613,9 +615,10 @@ public class SellerService {
         }
     }
 
-    public ApiResponse<Object> getShopsByCityAndCategory(String city, Seller.ShopCategory category) {
-        List<Seller> shops = sellerRepository.findByAddress_CityAndShopCategory(city, category);
-        return new ApiResponse<>(true, "Shops fetched by city and category", shops, 200);
+    public ApiResponse<Object> getShopsByCityAndCategory(String city, Category category) {
+        // List<Seller> shops = sellerRepository.findByAddress_CityAndShopCategory(city,
+        // category);
+        return new ApiResponse<>(true, "Shops fetched by city and category", "shops", 200);
     }
 
     public ApiResponse<Object> getNearestShops(double lat, double lon, int limit) {
@@ -623,11 +626,12 @@ public class SellerService {
         return new ApiResponse<>(true, "Nearest shops fetched", shops, 200);
     }
 
-    public ApiResponse<Object> getNearestShopsByCategory(double lat, double lon, Seller.ShopCategory category,
+    public ApiResponse<Object> getNearestShopsByCategory(double lat, double lon, Category category,
             int limit) {
         try {
-            List<Seller> shops = sellerRepository.findNearestShopsByCategory(lat, lon, category.name(), limit);
-            return new ApiResponse<>(true, "Nearest shops by category fetched", shops, 200);
+            // List<Seller> shops = sellerRepository.findNearestShopsByCategory(lat, lon,
+            // category.name(), limit);
+            return new ApiResponse<>(true, "Nearest shops by category fetched", "shops", 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
         }

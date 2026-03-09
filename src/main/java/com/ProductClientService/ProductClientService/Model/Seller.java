@@ -49,12 +49,11 @@ public class Seller {
     @JsonManagedReference
     private Address address;
 
+    @OneToOne
+    private Category category;
+
     @Column(name = "qr_code_url")
     private String qrCodeUrl;
-
-    @Column(name = "shop_category")
-    @Enumerated(EnumType.ORDINAL)
-    private ShopCategory shopCategory;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -72,17 +71,7 @@ public class Seller {
         PAN_CARD,
         DOCUMENT_VERIFIED
     }
-
-    public enum ShopCategory {
-        GROCERY,
-        PHARMA,
-        CLOTHES,
-        MENS_FASHION,
-        WOMENS_FASHION,
-        ELECTRONICS
-        // add more as needed
-    }
-
 }
 
-// skihyiyhhiujhuyjhjhjbgj mlnjjhjhh
+// skihyiyhhiujhhuhuyjhjhjbgj mlnjjhjhh jji hkuuojui kihuihui kjhj bhhu
+// khlhju hkhu bhu ghhui ghyuyui ghih ggyfg hjhj
