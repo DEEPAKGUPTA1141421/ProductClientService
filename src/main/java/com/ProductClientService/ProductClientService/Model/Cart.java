@@ -36,7 +36,6 @@ public class Cart {
     @JoinColumn(name = "applied_cart_coupon_id")
     private Coupon appliedCartCoupon;
 
-
     private String subTotal = "0";
     private String itemLevelDiscount = "0";
     private String cartLevelDiscount = "0";
@@ -53,5 +52,4 @@ public class Cart {
         ACTIVE, ORDERED, ABANDONED
     }
 }
-
 // kniuhyuh hgytgug huihuiunjhhhhjhjubhh

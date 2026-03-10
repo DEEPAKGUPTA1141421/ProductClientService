@@ -7,7 +7,7 @@ import com.ProductClientService.ProductClientService.DTO.AuthRequest;
 import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.Service.AuthService;
-import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
+
 import com.google.zxing.WriterException;
 
 import org.springframework.web.bind.annotation.PostMapping;

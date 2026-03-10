@@ -2,15 +2,13 @@ package com.ProductClientService.ProductClientService.Controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.Service.cart.WishlistService;
-import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
-
-import jakarta.servlet.http.HttpServletRequest;
-
 import java.util.UUID;
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/v1/wishlist")
@@ -20,27 +18,25 @@ public class WishlistController {
     private final HttpServletRequest request;
 
     @PostMapping("/items/{productId}")
-    @PrivateApi
     public ResponseEntity<?> add(
             @PathVariable UUID productId,
             @RequestParam(required = false) UUID variantId) {
 
-        UUID userId = (UUID) request.getAttribute("id");
-        return ResponseEntity.ok(wishlistService.add(userId, productId, variantId));
+        return ResponseEntity.ok(wishlistService.add(getUserId(), productId, variantId));
     }
 
     @DeleteMapping("/items/{productId}")
-    @PrivateApi
     public ResponseEntity<?> remove(@PathVariable UUID productId) {
-        UUID userId = (UUID) request.getAttribute("id");
-        return ResponseEntity.ok(wishlistService.remove(userId, productId));
+        return ResponseEntity.ok(wishlistService.remove(getUserId(), productId));
     }
 
     @GetMapping
-    @PrivateApi
     public ResponseEntity<?> get() {
-        UUID userId = (UUID) request.getAttribute("id");
-        return ResponseEntity.ok(wishlistService.get(userId));
+        return ResponseEntity.ok(wishlistService.get(getUserId()));
+    }
+
+    private UUID getUserId() {
+        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
     }
 }
 

@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
@@ -46,7 +47,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -214,8 +215,7 @@ public class ProductService {
     public ApiResponse<Object> createOrUpdateRating(UUID productId, int rating, String review) {
         System.out.println("in service function");
 
-        UUID userId = (UUID) request.getAttribute("id");
-        System.out.println("in service function now productId" + userId);
+        System.out.println("in service function now productId" + getUserId());
         boolean exists = productRepository.existsById(productId);
         if (!exists) {
             throw new RuntimeException("Product not found");
@@ -223,12 +223,12 @@ public class ProductService {
 
         Product productRef = new Product();
         productRef.setId(productId);
-        User user = userRepojectory.findById(userId)
+        User user = userRepojectory.findById(getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
         System.out.println("user found" + user);
         // Check if rating already exists
         Optional<ProductRating> existingRating = productRatingRepository
-                .findByProductIdAndUserId(productId, userId);
+                .findByProductIdAndUserId(productId, getUserId());
         System.out.println("Rating found" + existingRating);
         if (existingRating.isPresent()) {
             ProductRating pr = existingRating.get();
@@ -298,6 +298,10 @@ public class ProductService {
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
+    }
+
+    private UUID getUserId() {
+        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
     }
 }
 

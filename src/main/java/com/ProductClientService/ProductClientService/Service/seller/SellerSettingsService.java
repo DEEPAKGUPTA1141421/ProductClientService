@@ -155,7 +155,7 @@ public class SellerSettingsService {
 
         seller.setLegalName(dto.businessName());
         Category category = CategoryRepository
-                .findByIdAndcategoryLevel(dto.businessCategory(), Category.Level.SUPER_CATEGORY)
+                .findByIdAndCategoryLevel(dto.businessCategory(), Category.Level.SUPER_CATEGORY)
                 .orElseThrow(() -> new RuntimeException("Invalid category"));
         seller.setCategory(category);
         // Store GST/PAN if your model has these fields

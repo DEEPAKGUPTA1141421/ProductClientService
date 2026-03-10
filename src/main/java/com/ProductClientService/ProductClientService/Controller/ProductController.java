@@ -16,7 +16,6 @@ import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Service.ProductService;
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.Strategy.SearchHistoryStragecy.TrendingSearchStrategy;
-import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
 import lombok.RequiredArgsConstructor;
 
@@ -91,7 +90,7 @@ public class ProductController {
 
     // Add rating
     @PostMapping("/add-rating/{productId}")
-    @PrivateApi
+
     public ResponseEntity<?> addRating(
             @PathVariable UUID productId,
             @RequestParam int rating,

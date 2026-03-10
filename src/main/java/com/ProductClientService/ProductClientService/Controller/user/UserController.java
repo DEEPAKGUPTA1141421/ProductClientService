@@ -9,7 +9,6 @@ import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 
 import com.ProductClientService.ProductClientService.Model.UserRecentSearch;
 import com.ProductClientService.ProductClientService.Service.user.UserService;
-import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
 import lombok.RequiredArgsConstructor;
 
@@ -32,7 +31,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping(value = "/update-address")
-    @PrivateApi
+
     public ResponseEntity<?> updateAddress(@RequestBody SellerBasicInfo infoRequest) {
         try {
             ApiResponse<Object> response = userService.handleLocaton(infoRequest);
@@ -65,7 +64,7 @@ public class UserController {
     }
 
     @GetMapping(value = "/get-user")
-    @PrivateApi
+
     public ResponseEntity<?> getUser() {
         try {
             ApiResponse<Object> response = userService.getUser();
@@ -82,7 +81,7 @@ public class UserController {
     }
 
     @PutMapping("/set-default/{addressId}")
-    @PrivateApi
+
     public ResponseEntity<ApiResponse<Object>> setDefaultAddress(@PathVariable UUID addressId) {
         try {
             ApiResponse<Object> response = userService.setDefaultAddress(addressId);
@@ -96,7 +95,7 @@ public class UserController {
     }
 
     @PostMapping("/save")
-    @PrivateApi
+
     public ResponseEntity<?> saveSearch(@RequestBody RecentSearchRequest request) {
         userService.saveSearch(request.itemId(), request.itemType(), request.title(),
                 request.imageUrl(), request.meta());
@@ -106,7 +105,7 @@ public class UserController {
     }
 
     @GetMapping("/last")
-    @PrivateApi
+
     public ResponseEntity<?> getLastSearches() {
         List<UserRecentSearch> searches = userService.getLastSearches();
         return ResponseEntity

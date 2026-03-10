@@ -13,7 +13,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
-
 @Configuration
 public class SecurityConfig {
     private final UserDetailsService userDetailsService;
@@ -42,14 +41,21 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
         http
-            .csrf(csrf -> csrf.disable())
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("**").permitAll()  // allow login & verify endpoints
-                .anyRequest().authenticated()                    // other endpoints require auth
-            )
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
-    
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/api/v1/auth/**",
+                                "/api/v1/products/**",
+                                "/api/v1/health",
+                                "/api/v1/docs/**")
+                        .permitAll() // public APIs
+
+                        .anyRequest().authenticated() // protected APIs
+                );
+
         return http.build();
     }
 }

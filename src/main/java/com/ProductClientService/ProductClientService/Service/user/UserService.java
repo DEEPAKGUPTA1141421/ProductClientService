@@ -6,6 +6,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
@@ -18,7 +19,7 @@ import com.ProductClientService.ProductClientService.Repository.UserRecentSearch
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
-
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -90,8 +91,7 @@ public class UserService {
     public ApiResponse<Object> setDefaultAddress(UUID addressId) {
         try {
             // Get current user from request attribute
-            UUID id = (UUID) request.getAttribute("id");
-            User user = userRepojectory.findById(id)
+            User user = userRepojectory.findById(getUserId())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
             if (!addressBelongToUser(user, addressId)) {
@@ -129,9 +129,8 @@ public class UserService {
     @Transactional
     public void saveSearch(String itemId, UserRecentSearch.ItemType itemType,
             String title, String imageUrl, String meta) {
-        UUID userId = (UUID) request.getAttribute("id");
         // Check if this item already exists
-        var existing = repo.findByUserIdAndItemIdAndItemType(userId, itemId, itemType);
+        var existing = repo.findByUserIdAndItemIdAndItemType(getUserId(), itemId, itemType);
 
         if (existing.isPresent()) {
             UserRecentSearch search = existing.get();
@@ -139,7 +138,7 @@ public class UserService {
             repo.save(search);
         } else {
             UserRecentSearch newSearch = new UserRecentSearch();
-            newSearch.setUserId(userId);
+            newSearch.setUserId(getUserId());
             newSearch.setItemId(itemId);
             newSearch.setItemType(itemType);
             newSearch.setTitle(title);
@@ -149,18 +148,21 @@ public class UserService {
         }
 
         // Keep only last 10 searches
-        List<UserRecentSearch> last10 = repo.findTop10ByUserIdOrderByUpdatedAtDesc(userId);
+        List<UserRecentSearch> last10 = repo.findTop10ByUserIdOrderByUpdatedAtDesc(getUserId());
         List<UUID> last10Ids = last10.stream().map(UserRecentSearch::getId).collect(Collectors.toList());
 
-        repo.deleteByUserIdAndIdNotIn(userId, last10Ids);
+        repo.deleteByUserIdAndIdNotIn(getUserId(), last10Ids);
     }
 
     public List<UserRecentSearch> getLastSearches() {
-        UUID userId = (UUID) request.getAttribute("id");
-        return repo.findTop10ByUserIdOrderByUpdatedAtDesc(userId);
+        return repo.findTop10ByUserIdOrderByUpdatedAtDesc(getUserId());
+    }
+
+    private UUID getUserId() {
+        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
     }
 }
 
 // hhhhunhgj hvuyg yguy hjbjhh hbguj jhguygguhjhhnjhgyu yhfuhgfhj jhguyj
 // gjubhjguhn kjnkjnkjnknikhiuhyi7y
-// huiy8i9u hiyikjhiuhihhuiiojioju
+// huiy8i9u hiyikjhiuhihhuiiojiojukjknj bhkj bh

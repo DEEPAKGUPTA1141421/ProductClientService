@@ -22,7 +22,6 @@ import com.ProductClientService.ProductClientService.DTO.Settings.PersonalInfoDt
 import com.ProductClientService.ProductClientService.DTO.Settings.PreferencesDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.SecurityQuestionsDto;
 import com.ProductClientService.ProductClientService.Service.seller.SellerSettingsService;
-import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
 
 @RestController
 @RequestMapping("/api/v1/seller/settings")
@@ -35,7 +34,7 @@ public class SellerSettingsController {
     // GET: Fetch all settings (profile, business, bank, notifications, preferences)
     // ─────────────────────────────────────────────
     @GetMapping("/all")
-    @PrivateApi
+
     public ResponseEntity<?> getAllSettings() {
         ApiResponse<Object> response = sellerSettingsService.getAllSettings();
         return ResponseEntity.status(200).body(response);
@@ -45,14 +44,14 @@ public class SellerSettingsController {
     // PERSONAL INFO
     // ─────────────────────────────────────────────
     @GetMapping("/personal")
-    @PrivateApi
+
     public ResponseEntity<?> getPersonalInfo() {
         ApiResponse<Object> response = sellerSettingsService.getPersonalInfo();
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping(value = "/personal", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PrivateApi
+
     public ResponseEntity<?> updatePersonalInfo(@Valid @ModelAttribute PersonalInfoDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updatePersonalInfo(dto);
         return ResponseEntity.status(200).body(response);
@@ -62,14 +61,14 @@ public class SellerSettingsController {
     // BUSINESS DETAILS
     // ─────────────────────────────────────────────
     @GetMapping("/business")
-    @PrivateApi
+
     public ResponseEntity<?> getBusinessDetails() {
         ApiResponse<Object> response = sellerSettingsService.getBusinessDetails();
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping("/business")
-    @PrivateApi
+
     public ResponseEntity<?> updateBusinessDetails(@Valid @RequestBody BusinessDetailsDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updateBusinessDetails(dto);
         return ResponseEntity.status(200).body(response);
@@ -79,14 +78,14 @@ public class SellerSettingsController {
     // BANK ACCOUNT
     // ─────────────────────────────────────────────
     @GetMapping("/bank")
-    @PrivateApi
+
     public ResponseEntity<?> getBankDetails() {
         ApiResponse<Object> response = sellerSettingsService.getBankDetails();
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping("/bank")
-    @PrivateApi
+
     public ResponseEntity<?> updateBankDetails(@Valid @RequestBody BankDetailsDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updateBankDetails(dto);
         return ResponseEntity.status(200).body(response);
@@ -96,14 +95,14 @@ public class SellerSettingsController {
     // NOTIFICATIONS
     // ─────────────────────────────────────────────
     @GetMapping("/notifications")
-    @PrivateApi
+
     public ResponseEntity<?> getNotificationPreferences() {
         ApiResponse<Object> response = sellerSettingsService.getNotificationPreferences();
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping("/notifications")
-    @PrivateApi
+
     public ResponseEntity<?> updateNotificationPreferences(@Valid @RequestBody NotificationPreferencesDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updateNotificationPreferences(dto);
         return ResponseEntity.status(200).body(response);
@@ -113,28 +112,28 @@ public class SellerSettingsController {
     // SECURITY
     // ─────────────────────────────────────────────
     @PutMapping("/security/password")
-    @PrivateApi
+
     public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordDto dto) {
         ApiResponse<Object> response = sellerSettingsService.changePassword(dto);
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping("/security/questions")
-    @PrivateApi
+
     public ResponseEntity<?> updateSecurityQuestions(@Valid @RequestBody SecurityQuestionsDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updateSecurityQuestions(dto);
         return ResponseEntity.status(200).body(response);
     }
 
     @GetMapping("/security/sessions")
-    @PrivateApi
+
     public ResponseEntity<?> getActiveSessions() {
         ApiResponse<Object> response = sellerSettingsService.getActiveSessions();
         return ResponseEntity.status(200).body(response);
     }
 
     @DeleteMapping("/security/sessions/{sessionId}")
-    @PrivateApi
+
     public ResponseEntity<?> revokeSession(@PathVariable String sessionId) {
         ApiResponse<Object> response = sellerSettingsService.revokeSession(sessionId);
         return ResponseEntity.status(200).body(response);
@@ -144,14 +143,14 @@ public class SellerSettingsController {
     // PREFERENCES
     // ─────────────────────────────────────────────
     @GetMapping("/preferences")
-    @PrivateApi
+
     public ResponseEntity<?> getPreferences() {
         ApiResponse<Object> response = sellerSettingsService.getPreferences();
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping("/preferences")
-    @PrivateApi
+
     public ResponseEntity<?> updatePreferences(@Valid @RequestBody PreferencesDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updatePreferences(dto);
         return ResponseEntity.status(200).body(response);

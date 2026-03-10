@@ -15,7 +15,7 @@ import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.SuggestionGeneratorService;
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerService;
-import com.ProductClientService.ProductClientService.Utils.annotation.PrivateApi;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.MultiValueMap;
 
 import jakarta.validation.Valid;
@@ -56,7 +57,7 @@ public class SellerController {
     private final SuggestionGeneratorService suggestionGeneratorService;
 
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PrivateApi
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> addProduct(@Valid @ModelAttribute ProductDto productDto) {
         ApiResponse<Object> response = sellerService.addProduct(productDto);
         return ResponseEntity
@@ -65,7 +66,7 @@ public class SellerController {
     }
 
     @PostMapping("/attach-brand")
-    @PrivateApi
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> AttachBrandToProduct(
             @RequestParam UUID productId,
             @RequestParam UUID brandId) {
@@ -78,7 +79,6 @@ public class SellerController {
     }
 
     @GetMapping("/draft-product")
-    @PrivateApi
     public ResponseEntity<?> draftProduct() {
         ApiResponse<Object> response = sellerService.getLatestDraftProduct();
         return ResponseEntity
@@ -87,7 +87,6 @@ public class SellerController {
     }
 
     @DeleteMapping("/discard-draft-product")
-    @PrivateApi
     public ResponseEntity<?> discardDraftProduct() {
         ApiResponse<Object> response = sellerService.discardDraftProduct();
         return ResponseEntity
@@ -112,7 +111,6 @@ public class SellerController {
     }
 
     @GetMapping("/getall-category-attribute/{categoryId}")
-    // @PrivateApi
     public ResponseEntity<?> getAttributesByCategory(@PathVariable UUID categoryId) {
         System.out.println("Category ID: " + categoryId); // Debug log
         ApiResponse<Object> response = sellerService.getAttributesByCategoryId(categoryId);
@@ -122,14 +120,14 @@ public class SellerController {
     }
 
     @PostMapping(value = "/create-product-attribute", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PrivateApi
+
     public ResponseEntity<?> addProductAttribute(@RequestBody ProductAttributeDto request) {
         ApiResponse<Object> response = sellerService.addProductAttribute(request);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @PostMapping("/add-tag")
-    // @PrivateApi
+    //
     public ResponseEntity<?> addTag(@Valid @RequestBody ProductTagRequestDto request) {
         tagService.AddProductTag(request);
         ApiResponse<Object> response = new ApiResponse<>(true, "Tags added successfully", null, 200);
@@ -160,6 +158,7 @@ public class SellerController {
     // }
 
     @PostMapping("/add-variants")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> addVariants(@Valid @RequestBody ProductVariantsDto dto) {
         try {
             ApiResponse<Object> response = sellerService.addProductVariants(dto);
@@ -175,6 +174,7 @@ public class SellerController {
     // }
 
     @GetMapping("/make-product-live/{productId}")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> MakeProductLive(@PathVariable UUID productId) {
         try {
             ApiResponse<Object> response = sellerService.MakeProductLive(productId);
@@ -185,6 +185,7 @@ public class SellerController {
     }
 
     @GetMapping("/search-product-live/{productId}")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> searchProduct(@PathVariable UUID productId) {
         try {
             ApiResponse<Object> response = sellerService.MakeProductLive(productId);
@@ -195,6 +196,7 @@ public class SellerController {
     }
 
     @GetMapping("/test/{productId}")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> Test(@PathVariable UUID productId, @RequestParam String keyword) {
         try {
             ApiResponse<Object> response = sellerService.searchProducts(keyword);
@@ -205,7 +207,7 @@ public class SellerController {
     }
 
     @PostMapping("/upload-images")
-    @PrivateApi
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> uploadAttributeImages(
             @RequestParam("data") String data,
             @RequestParam("step") String step,
