@@ -5,11 +5,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
+import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
+import com.ProductClientService.ProductClientService.DTO.Settings.AadhaarVerificationDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductTagRequestDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
+import com.ProductClientService.ProductClientService.Service.AadhaarVerificationService;
 import com.ProductClientService.ProductClientService.Service.ImageUploadService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.SuggestionGeneratorService;
@@ -53,8 +56,8 @@ public class SellerController {
     private final ProductRepository productRepository;
     private final ImageUploadService imageUploadService;
     private final TagService tagService;
-
     private final SuggestionGeneratorService suggestionGeneratorService;
+    private final AadhaarVerificationService aadhaarVerificationService;
 
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SELLER')")
@@ -149,6 +152,23 @@ public class SellerController {
         suggestionGeneratorService.generateCompositeSuggestions();
         ApiResponse<Object> response = new ApiResponse<>(true, "Test completed", null, 200);
         return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PostMapping(value = "/update-address")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> updateAddress(@RequestBody SellerBasicInfo infoRequest) {
+        try {
+            ApiResponse<Object> response = sellerService.handleLocation(infoRequest);
+            return ResponseEntity
+                    .status(200)
+                    .body(response);
+        } catch (Exception e) {
+            ApiResponse<Object> response = new ApiResponse(false, e.getMessage(), null, 501);
+            System.out.println("messge" + e);
+            return ResponseEntity
+                    .status(response.statusCode())
+                    .body(response);
+        }
     }
 
     // @GetMapping("/attributes/{productId}")
@@ -302,7 +322,35 @@ public class SellerController {
     // }
     // }
 
+    // Aadhaar Verification Endpoints
+
+    @PostMapping("/kyc/aadhar/send-otp")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> sendAadhaarOtp(@Valid @RequestBody AadhaarVerificationDto request) {
+        try {
+            ApiResponse<Object> response = aadhaarVerificationService.triggerAadhaarOtp(request);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error sending OTP: " + e.getMessage(), null, 500));
+        }
+    }
+
+    @PostMapping("/aadhaar/verify-otp")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> verifyAadhaarOtp(
+            @RequestParam String otp) {
+        try {
+            ApiResponse<Object> response = aadhaarVerificationService.verifyAadhaarOtp(otp);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error verifying OTP: " + e.getMessage(), null, 500));
+        }
+    }
+
 }
 // jhiu jhuiyuiu huymnkjnkhkihiyh nbuygyu bgyg bvytg mkj9oi fjnhk jhbh
 // kiyui nhuihu uihyiu hjh nhjhj hjhj bhjhj hkhu hyihu hjhj hjhiujnjnjnn
 // hyuihu huihk khiurf guihrfbk hukhur jhbrkf fgrtt tgte tggrrerehjjuhyh
+// uhiui nhuuhiu

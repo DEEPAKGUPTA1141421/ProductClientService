@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -44,14 +45,14 @@ public class SellerSettingsController {
     // PERSONAL INFO
     // ─────────────────────────────────────────────
     @GetMapping("/personal")
-
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getPersonalInfo() {
         ApiResponse<Object> response = sellerSettingsService.getPersonalInfo();
         return ResponseEntity.status(200).body(response);
     }
 
     @PutMapping(value = "/personal", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> updatePersonalInfo(@Valid @ModelAttribute PersonalInfoDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updatePersonalInfo(dto);
         return ResponseEntity.status(200).body(response);
@@ -61,7 +62,7 @@ public class SellerSettingsController {
     // BUSINESS DETAILS
     // ─────────────────────────────────────────────
     @GetMapping("/business")
-
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getBusinessDetails() {
         ApiResponse<Object> response = sellerSettingsService.getBusinessDetails();
         return ResponseEntity.status(200).body(response);

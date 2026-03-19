@@ -47,3 +47,8 @@ public class Brand {
 
 // kjljl n jnjl jnnjkfn jnjkf njnjgt njnt ntg ngtgt m gt
 // mkmkf jrfkkm mlmklt m,, m
+/*
+ * product
+ * has brandandcategorty
+ * sosearchintentshould becreatedlikebrandandcategory,
+ */

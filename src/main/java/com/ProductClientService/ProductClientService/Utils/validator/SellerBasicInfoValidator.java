@@ -7,10 +7,11 @@ import com.ProductClientService.ProductClientService.Utils.annotation.ValidSelle
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
-public class SellerBasicInfoValidator implements ConstraintValidator <ValidSellerBasicInfo, SellerBasicInfo> {
+public class SellerBasicInfoValidator implements ConstraintValidator<ValidSellerBasicInfo, SellerBasicInfo> {
     @Override
     public boolean isValid(SellerBasicInfo info, ConstraintValidatorContext context) {
-        if (info == null) return true;
+        if (info == null)
+            return true;
 
         ONBOARDSTAGE stage = info.stage_of_onboarding();
 
@@ -23,9 +24,6 @@ public class SellerBasicInfoValidator implements ConstraintValidator <ValidSelle
             }
             case ADHADHAR_CARD -> {
                 return notBlank(info.adhadhar_card()) && info.adhadhar_card().matches("\\d{12}");
-            }
-            case PAN_CARD -> {
-                return notBlank(info.pan_card()) && info.pan_card().matches("[A-Z]{5}[0-9]{4}[A-Z]{1}");
             }
             default -> {
                 return true;

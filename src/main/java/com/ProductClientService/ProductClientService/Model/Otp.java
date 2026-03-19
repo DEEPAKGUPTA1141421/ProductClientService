@@ -1,4 +1,5 @@
 package com.ProductClientService.ProductClientService.Model;
+
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Date;
@@ -8,6 +9,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.*;
+
 @Entity
 @Table(name = "otp")
 public class Otp {
@@ -23,38 +25,47 @@ public class Otp {
     private boolean isVerified = false;
     @Column(name = "expiry_time", nullable = false)
     private Date expiryTime = new Date(System.currentTimeMillis() + 5 * 60 * 1000); // 5 minutes from now
-    
-    @Enumerated(EnumType.STRING)    
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private typeOfOtp type;
 
     public UUID getId() {
         return id;
-    }   
+    }
+
     public void setId(UUID id) {
         this.id = id;
     }
+
     public String getPhone() {
         return phone;
     }
+
     public void setPhone(String phone) {
         this.phone = phone;
     }
+
     public String getOtpCode() {
         return otpCode;
     }
+
     public void setOtpCode(String otpCode) {
         this.otpCode = otpCode;
     }
+
     public boolean isVerified() {
         return isVerified;
     }
+
     public void setVerified(boolean isVerified) {
         this.isVerified = isVerified;
     }
+
     public Date getExpiryTime() {
         return expiryTime;
     }
+
     public void setExpiryTime(Date expiryTime) {
         this.expiryTime = expiryTime;
     }
@@ -67,9 +78,18 @@ public class Otp {
         this.type = type;
     }
 
+    public void setCreatedAt(ZonedDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public void setUpdatedAt(ZonedDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
-    private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
+    private ZonedDateTime createdAt = ZonedDateTime
+            .now(ZoneId.of("Asia/Kolkata"));
 
     @UpdateTimestamp
     @Column(name = "updated_at")
@@ -83,7 +103,7 @@ public class Otp {
     public ZonedDateTime getUpdatedAt() {
         return updatedAt.withZoneSameInstant(ZoneId.of("Asia/Kolkata"));
     }
-    
+
     public enum typeOfOtp {
         login,
         registration,
@@ -92,5 +112,6 @@ public class Otp {
         parcelDelivered,
         parcelCancelled,
         parcelReturned,
+        aadhaarVerification,
     }
 }

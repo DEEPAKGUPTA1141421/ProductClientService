@@ -11,12 +11,4 @@ import java.util.UUID;
 @Repository
 public interface UserRepojectory extends JpaRepository<User, UUID> {
     Optional<User> findByPhone(String phone);
-
-    default User findOrCreateByPhone(String phone) {
-        return findByPhone(phone).orElseGet(() -> {
-            User user = new User();
-            user.setPhone(phone);
-            return save(user);
-        });
-    }
 }

@@ -80,11 +80,4 @@ public interface SellerRepository extends JpaRepository<Seller, UUID> {
     // seller.setOnboardingStage(Seller.ONBOARDSTAGE.BASIC_INFO_NAME);
     // return save(seller);
     // }
-
-    default boolean stageValidation(Seller.ONBOARDSTAGE stage, String phone) {
-        Optional<Seller> optionalSeller = findByPhone(phone);
-        if (optionalSeller.isEmpty())
-            return false;
-        return stage == optionalSeller.get().getOnboardingStage();
-    }
 }

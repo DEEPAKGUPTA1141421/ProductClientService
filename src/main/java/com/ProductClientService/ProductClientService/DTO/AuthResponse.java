@@ -1,3 +1,4 @@
 package com.ProductClientService.ProductClientService.DTO;
 
-public record AuthResponse(String token) {}
+public record AuthResponse(String token, Object user) {
+}

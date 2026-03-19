@@ -19,6 +19,7 @@ import com.ProductClientService.ProductClientService.Repository.UserRecentSearch
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
+import com.ProductClientService.ProductClientService.Service.OpenStreetMapService;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
@@ -35,7 +36,8 @@ public class UserService {
 
     public ApiResponse<Object> handleLocaton(SellerBasicInfo inforequest) {
         String phone = (String) request.getAttribute("phone");
-        System.out.println("calling google service and test" + inforequest.latitude().getClass()
+        System.out.println("calling google service and test" +
+                inforequest.latitude().getClass()
                 + inforequest.longitude().getClass() + "hello and say");
         GoogleMapsService googleMapsService = googleMapsProvider.getObject();
         AddressResponse addressDetails = googleMapsService.getAddressFromLatLng(

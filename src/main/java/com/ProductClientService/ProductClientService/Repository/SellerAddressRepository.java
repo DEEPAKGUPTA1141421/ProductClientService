@@ -93,5 +93,7 @@ public interface SellerAddressRepository extends JpaRepository<Address, UUID> {
         address.setPanCard(pan);
         return saveOrUpdate(address, seller);
     }
+
+    Optional<Address> findBySellerId(UUID sellerId);
 }
 // lkjiuhbkj jhguy jhguyjbhjh jhmbiymnbjhb jhb

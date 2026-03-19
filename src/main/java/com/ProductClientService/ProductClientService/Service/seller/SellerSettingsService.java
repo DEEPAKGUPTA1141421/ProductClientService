@@ -5,15 +5,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
@@ -36,8 +39,13 @@ import com.ProductClientService.ProductClientService.Repository.SellerNotificati
 import com.ProductClientService.ProductClientService.Repository.SellerPreferencesRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
+import com.ProductClientService.ProductClientService.Service.ImageUploadService;
 //import com.ProductClientService.ProductClientService.Repository.SellerSessionRepository;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 @RequiredArgsConstructor
@@ -53,14 +61,17 @@ public class SellerSettingsService {
     private final HttpServletRequest request;
     private final EntityManager entityManager;
     private final GoogleMapsService googleMapsService;
-
     private final SellerAddressRepository sellerAddressRepository;
+    private final ImageUploadService fileUploadService;
+    private final ObjectMapper objectMapper;
+    private static final Logger logger = LoggerFactory.getLogger(SellerSettingsService.class);
 
-    // ─────────────────────────────────────────────
+    // ──────────────────────────────────────────
     // Helper: get current seller UUID from request
     // ─────────────────────────────────────────────
+
     private UUID getSellerId() {
-        return (UUID) request.getAttribute("id");
+        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
     }
 
     private Seller getSellerOrThrow() {
@@ -100,25 +111,60 @@ public class SellerSettingsService {
     @Transactional
     public ApiResponse<Object> updatePersonalInfo(PersonalInfoDto dto) {
         Seller seller = getSellerOrThrow();
-
-        seller.setLegalName(dto.fullName());
-        seller.setDisplayName(dto.displayName());
-        seller.setEmail(dto.email());
-        seller.setPhone(dto.phone());
+        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.LOCATION) {
+            seller.setOnboardingStage(Seller.ONBOARDSTAGE.BASIC_INFO_NAME);
+            sellerRepository.save(seller);
+        }
+        if (dto.fullName() != null)
+            seller.setLegalName(dto.fullName());
+        if (dto.displayName() != null)
+            seller.setDisplayName(dto.displayName());
+        if (dto.email() != null)
+            seller.setEmail(dto.email());
+        if (dto.phone() != null)
+            seller.setPhone(dto.phone());
 
         // Update address if present
-        if (seller.getAddress() != null) {
+        if (dto.address() != null) {
             AddressResponse addressDetails = googleMapsService.getAddressFromLatLng(dto.latitude(), dto.longitude());
             boolean isSaved = saveAddress(addressDetails, dto.phone(), dto.latitude(), dto.longitude());
         }
 
         // Profile photo upload handling (integrate with your file upload service)
-        if (dto.profilePhoto() != null && !dto.profilePhoto().isEmpty()) {
-            // TODO: upload to S3/local storage and set URL
-            // String photoUrl = fileUploadService.upload(dto.profilePhoto());
-            // seller.setProfilePhotoUrl(photoUrl);
+        if (dto.profileImage() != null && !dto.profileImage().isEmpty()) {
+            try {
+                String photoUrl = fileUploadService.uploadImage(dto.profileImage());
+                logger.info("Uploaded profile photo URL: " + photoUrl);
+                seller.setProfilePhotoUrl(photoUrl);
+            } catch (Exception e) {
+                throw new RuntimeException("Error uploading profile photo", e);
+            }
         }
+        if (dto.mediaFiles() != null && !dto.mediaFiles().isEmpty()) {
 
+            List<String> urls = new ArrayList<>();
+
+            for (MultipartFile file : dto.mediaFiles()) {
+                try {
+                    String url = fileUploadService.uploadImage(file);
+                    urls.add(url);
+                    logger.info("Uploaded media file URL: " + url);
+                } catch (Exception e) {
+                    logger.error("Error uploading media file", e);
+                    throw new RuntimeException("Error uploading media file", e);
+                }
+            }
+            try {
+                String existingMedia = seller.getProfileImageAndVideos();
+                List<String> existingUrls = existingMedia != null
+                        ? objectMapper.readValue(existingMedia, List.class)
+                        : new ArrayList<>();
+                existingUrls.addAll(urls);
+                seller.setProfileImageAndVideos(objectMapper.writeValueAsString(existingUrls));
+            } catch (Exception e) {
+                throw new RuntimeException("Error saving media URLs", e);
+            }
+        }
         sellerRepository.save(seller);
         return new ApiResponse<>(true, "Personal info updated", buildPersonalInfo(seller), 200);
     }
@@ -152,7 +198,9 @@ public class SellerSettingsService {
     @Transactional
     public ApiResponse<Object> updateBusinessDetails(BusinessDetailsDto dto) {
         Seller seller = getSellerOrThrow();
-
+        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.BASIC_INFO_NAME) {
+            seller.setOnboardingStage(Seller.ONBOARDSTAGE.BUSINESS_INFO);
+        }
         seller.setLegalName(dto.businessName());
         Category category = CategoryRepository
                 .findByIdAndCategoryLevel(dto.businessCategory(), Category.Level.SUPER_CATEGORY)
@@ -179,12 +227,17 @@ public class SellerSettingsService {
     @Transactional
     public ApiResponse<Object> updateBankDetails(BankDetailsDto dto) {
         UUID sellerId = getSellerId();
-
+        Seller seller = getSellerOrThrow();
+        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.BUSINESS_INFO) {
+            seller.setOnboardingStage(Seller.ONBOARDSTAGE.BANK_ACCOUNT);
+            sellerRepository.save(seller);
+        }
         SellerBankDetails bank = bankDetailsRepository.findBySellerId(sellerId)
                 .orElse(new SellerBankDetails());
 
         bank.setAccountHolderName(dto.accountHolderName());
         bank.setAccountNumber(dto.accountNumber());
+        bank.setBankName(dto.bankName());
         bank.setIfscCode(dto.ifscCode());
         bank.setVerified(false); // re-verification needed on change
         bank.setSeller(entityManager.getReference(Seller.class, sellerId));
@@ -309,6 +362,9 @@ public class SellerSettingsService {
         map.put("displayName", seller.getDisplayName());
         map.put("email", seller.getEmail());
         map.put("phone", seller.getPhone());
+        map.put("profile_image", seller.getProfilePhotoUrl());
+        map.put("media_files", seller.getProfileImageAndVideos());
+        logger.info("media Files: " + seller.getProfileImageAndVideos());
         if (seller.getAddress() != null) {
             map.put("address", seller.getAddress().getLine1());
             map.put("city", seller.getAddress().getCity());
@@ -403,4 +459,6 @@ public class SellerSettingsService {
         return "*".repeat(accountNumber.length() - 4) + accountNumber.substring(accountNumber.length() - 4);
     }
 }
-// hjhuj gyhu hhujuh
+// hjhuj gyhu hhujuhhhhhhhjgyy hgjyjgygyhjkj kuh uhkhuk ihuuhnjjkj kjj jbh
+// bhbnnjhkhjbnmbhhjnh kjjn jknj kjjn njkj bjnjhhhuhuhuh hu uhu kh jji njkbhj
+// nbjknjk njkjjkkjn hkhu hji hkhkb bh hiooij hj jkhkuuggyuhgyuhuhukhu

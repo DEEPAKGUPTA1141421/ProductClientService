@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,6 +20,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDocument;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
+import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CategoryAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
@@ -34,6 +36,7 @@ import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.StandardProduct;
+import com.ProductClientService.ProductClientService.Model.Address;
 import com.ProductClientService.ProductClientService.Repository.AttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryAttributeRepository;
@@ -41,9 +44,13 @@ import com.ProductClientService.ProductClientService.Repository.CategoryReposito
 import com.ProductClientService.ProductClientService.Repository.ProductAttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductVariantRepository;
+import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.Repository.StandardProductRepository;
+import com.ProductClientService.ProductClientService.Service.OpenStreetMapService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
+import com.ProductClientService.ProductClientService.Service.OpenStreetMapService.AddressResponse;
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 
@@ -75,6 +82,8 @@ public class SellerService {
     private final Cloudinary cloudinary;
     private final SellerRepository sellerRepository;
     private final BrandRepository brandRepository;
+    private final OpenStreetMapService openStreetMapService;
+    private final SellerAddressRepository sellerAddressRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -367,6 +376,57 @@ public class SellerService {
         }
     }
 
+    public ApiResponse<Object> handleLocation(SellerBasicInfo inforequest) {
+
+        String phone = getUserPhone();
+
+        System.out.println("calling OSM service "
+                + inforequest.latitude().getClass()
+                + inforequest.longitude().getClass());
+
+        OpenStreetMapService.AddressResponse addressDetails = openStreetMapService.getAddressFromLatLng(
+                inforequest.latitude(),
+                inforequest.longitude());
+
+        System.out.println("saving address");
+
+        Address savedAddress = saveAddress(
+                addressDetails,
+                phone,
+                inforequest.latitude(),
+                inforequest.longitude());
+
+        if (savedAddress == null) {
+            return new ApiResponse<>(false, "Location Info Not Saved", null, 500);
+        }
+
+        return new ApiResponse<>(true, "Location Info Saved", savedAddress, 200);
+    }
+
+    private Address saveAddress(AddressResponse addressDetails, String phone, BigDecimal lat, BigDecimal longi) {
+
+        Seller seller = sellerRepository.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("Seller not found"));
+        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.RESGISTER) {
+            seller.setOnboardingStage(Seller.ONBOARDSTAGE.LOCATION);
+            sellerRepository.save(seller);
+        }
+        Address address = sellerAddressRepository.findBySellerId(seller.getId())
+                .orElseGet(Address::new);
+
+        System.out.println("City is " + addressDetails.city());
+
+        address.setCity(addressDetails.city());
+        address.setLine1(addressDetails.line1());
+        address.setState(addressDetails.state());
+        address.setCountry(addressDetails.country());
+        address.setPincode(addressDetails.pincode());
+        address.setLatitude(lat);
+        address.setLongitude(longi);
+        address.setSeller(seller);
+
+        return sellerAddressRepository.save(address);
+    }
     // public ApiResponse<Object> getProductWithAttributesAndVariants(UUID
     // productId) {
     // try {
@@ -636,7 +696,16 @@ public class SellerService {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
         }
     }
+
+    private UUID getUserId() {
+        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
+    }
+
+    private String getUserPhone() {
+        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getPhone();
+    }
 }
 // huuiuo huuioj nkjhu huhu huhu huju huuhkj huhuj huiuia
 // juujji uhjiji kjhjij jj njji jj bkhhk hbb jhbhj hbjj hjbhj
-// juouio huiuhi nlghuy ihuhiu hhuh hkhu hkhu jkjk
+// juouio huiuhi nlghuy ihuhiu hhuh hkhu hkhu jkjkhuhuhubjkh
+// hude uouejiuobhkhuuhnkjhu huhui uhijn n,jkbhjh gjy gyjj gyuyggh

@@ -46,14 +46,22 @@ public class Seller {
     private ONBOARDSTAGE onboardingStage = ONBOARDSTAGE.RESGISTER;
 
     @OneToOne(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "seller_id", unique = true)
     @JsonManagedReference
     private Address address;
 
-    @OneToOne
+    @ManyToOne
+    @JoinColumn(name = "category_id")
     private Category category;
 
     @Column(name = "qr_code_url")
     private String qrCodeUrl;
+
+    @Column(name = "profile_photo_url")
+    private String profilePhotoUrl;
+
+    @Column(name = "profile_imgae_and_videos", columnDefinition = "TEXT")
+    private String profileImageAndVideos; // This can be a JSON string or a comma-separated list of URLs
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -65,13 +73,16 @@ public class Seller {
 
     public enum ONBOARDSTAGE {
         RESGISTER,
-        BASIC_INFO_NAME,
         LOCATION,
+        BASIC_INFO_NAME,
+        BUSINESS_INFO,
+        BANK_ACCOUNT,
         ADHADHAR_CARD,
-        PAN_CARD,
+        DOCUMENT_VERIFICATION_PENDING,
         DOCUMENT_VERIFIED
     }
 }
 
 // skihyiyhhiujhhuhuyjhjhjbgj mlnjjhjhh jji hkuuojui kihuihui kjhj bhhu
-// khlhju hkhu bhu ghhui ghyuyui ghih ggyfg hjhj
+// khlhju hkhu bhu ghhui ghyuyui ghih ggyfg hjhjnjkji uhkkjjjkjnjk
+// huui uouo uiij uhiui huikj hkuuih jkadd

@@ -32,7 +32,7 @@ public class AuthController {
         // i will call service layer to handle login logic
         // for now, just return a success response
         System.out.println("Login request received for phone:");
-        ApiResponse<String> response = authService.login(loginRequest);
+        ApiResponse<?> response = authService.login(loginRequest);
         return ResponseEntity
                 .status(response.statusCode()) // use the status from your ApiResponse
                 .body(response);
@@ -41,7 +41,7 @@ public class AuthController {
     @PostMapping("/verify")
     public ResponseEntity<?> verify(@Valid @RequestBody AuthRequest request) {
         System.out.println("Phone: " + request.phone() + ", Password: " + request.otp_code());
-        ApiResponse<String> response = authService.verify(request);
+        ApiResponse<?> response = authService.verify(request);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 }

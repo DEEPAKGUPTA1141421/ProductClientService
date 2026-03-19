@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.AuthRequest;
+import com.ProductClientService.ProductClientService.DTO.AuthResponse;
 import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.NotificationRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
@@ -72,62 +73,121 @@ public class AuthService {
     private final Cloudinary cloudinary;
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
 
-    public ApiResponse<String> login(LoginRequest loginRequest) {
-        // Check rate limit
+    public ApiResponse<?> login(LoginRequest loginRequest) {
+
         try {
-            System.out.println("Checking rate limit for phone: ");
-            // will connect using connect #Todo
-            // if (!rateLimiter.allow(loginRequest.phone())) {
-            // System.out.println("Rate limit exceeded for phone: " + loginRequest.phone());
-            // return new ApiResponse<>(false, "Too many requests. Please try again later.",
-            // null, 429);
-            // }
+
+            boolean isSignup = false;
+
             if (loginRequest.typeOfUser() == LoginRequest.UserType.SELLER) {
-                sellerRepository.findOrCreateByPhone(loginRequest.phone());
+
+                Optional<Seller> seller = sellerRepository.findByPhone(loginRequest.phone());
+
+                if (seller.isEmpty()) {
+                    Seller newSeller = new Seller();
+                    newSeller.setPhone(loginRequest.phone());
+                    sellerRepository.save(newSeller);
+                    isSignup = true;
+                }
+
             } else if (loginRequest.typeOfUser() == LoginRequest.UserType.USER) {
-                userRepojectory.findOrCreateByPhone(loginRequest.phone());
+
+                Optional<User> user = userRepojectory.findByPhone(loginRequest.phone());
+
+                if (user.isEmpty()) {
+                    User newUser = new User();
+                    newUser.setPhone(loginRequest.phone());
+                    userRepojectory.save(newUser);
+                    isSignup = true;
+                }
+
             } else if (loginRequest.typeOfUser() == LoginRequest.UserType.RIDER) {
-                // Rider logic here
+
+                // Rider logic
+
             } else {
-                return new ApiResponse<>(true, "Invalid User Type", null, 403);
+                return new ApiResponse<>(false, "Invalid User Type", null, 403);
             }
+
             sendOtpAsync(loginRequest.phone(), "login");
-            return new ApiResponse<>(true, "Otp Triggered on you Phone", null, 200);
+            Map<String, String> logData = new HashMap<>();
+            logData.put("phone", loginRequest.phone());
+            logData.put("isSignup", String.valueOf(isSignup));
+            logger.info("Login attempt: {}", logData);
+            return new ApiResponse<>(true, "OTP sent", logData, 200);
         } catch (Exception e) {
-            System.out.println("authservice login method error" + e.toString());
-            return new ApiResponse<>(true, e.getMessage(), null, 200);
+            System.out.println("authservice login method error " + e);
+            return new ApiResponse<>(false, e.getMessage(), null, 500);
         }
     }
 
-    public ApiResponse<String> verify(AuthRequest authrequest) {
-        boolean valid = otpRepository.checkOtpValidity(authrequest.phone(), authrequest.otp_code(), "login");
-        if (valid) {
-            otpRepository.markAsVerified(authrequest.phone(), authrequest.otp_code(), typeOfOtp.login);
-        }
-        if (!valid)
+    public ApiResponse<?> verify(AuthRequest authrequest) {
+
+        boolean valid = otpRepository.checkOtpValidity(
+                authrequest.phone(),
+                authrequest.otp_code(),
+                "login");
+
+        if (!valid) {
             return new ApiResponse<>(false, "Otp is Invalid", null, 200);
+        }
+
+        otpRepository.markAsVerified(
+                authrequest.phone(),
+                authrequest.otp_code(),
+                typeOfOtp.login);
+
         String token;
+
         if (authrequest.typeOfUser() == AuthRequest.UserType.SELLER) {
-            Seller seller = sellerRepository.findOrCreateByPhone(authrequest.phone());
+
+            Seller seller = sellerRepository.findByPhone(authrequest.phone())
+                    .orElseThrow(() -> new RuntimeException("Seller not found"));
+
             token = jwtService.generateToken(authrequest.phone(), "SELLER", seller.getId());
+
+            return new ApiResponse<>(
+                    true,
+                    "Otp Verification Success",
+                    new AuthResponse(token, seller),
+                    200);
+
         } else if (authrequest.typeOfUser() == AuthRequest.UserType.USER) {
-            User user = userRepojectory.findOrCreateByPhone(authrequest.phone());
+
+            User user = userRepojectory.findByPhone(authrequest.phone())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
             token = jwtService.generateToken(authrequest.phone(), "USER", user.getId());
+
+            return new ApiResponse<>(
+                    true,
+                    "Otp Verification Success",
+                    new AuthResponse(token, user),
+                    200);
+
         } else if (authrequest.typeOfUser() == AuthRequest.UserType.RIDER) {
-            // will handle rider case
+
             ApiResponse<RiderIdResponse> response = deliveryInventoryClient.createRiderWithPhone(
                     new CreateRiderDto("PHONE", authrequest.phone()));
 
             if (response.statusCode() == 200 && response.success()) {
+
                 UUID riderId = response.data().id();
+
                 token = jwtService.generateToken(authrequest.phone(), "RIDER", riderId);
+
+                return new ApiResponse<>(
+                        true,
+                        "Otp Verification Success",
+                        new AuthResponse(token, response.data()),
+                        200);
+
             } else {
                 throw new RuntimeException("Failed to create rider: " + response.message());
             }
-        } else {
-            return new ApiResponse<>(true, "Invalid User Type", null, 403);
         }
-        return new ApiResponse<>(true, "Otp Verification Success", token, 200);
+
+        return new ApiResponse<>(false, "Invalid User Type", null, 403);
     }
 
     @Async
@@ -164,9 +224,9 @@ public class AuthService {
 
     private ApiResponse<Seller> handleAdhadharCard(SellerBasicInfo inforequest) {
         String phone = (String) request.getAttribute("phone");
-        if (!sellerRepository.stageValidation(Seller.ONBOARDSTAGE.LOCATION, phone)) {
-            return new ApiResponse<>(false, "Stage is Not Correct", null, 403);
-        }
+        // if (!sellerRepository.stageValidation(Seller.ONBOARDSTAGE.LOCATION, phone)) {
+        // return new ApiResponse<>(false, "Stage is Not Correct", null, 403);
+        // }
 
         Optional<Seller> optionalSeller = sellerRepository.findByPhone(phone);
         if (optionalSeller.isEmpty()) {
@@ -182,9 +242,10 @@ public class AuthService {
 
     private ApiResponse<Seller> handlePanCard(SellerBasicInfo inforequest) throws WriterException, IOException {
         String phone = (String) request.getAttribute("phone");
-        if (!sellerRepository.stageValidation(Seller.ONBOARDSTAGE.ADHADHAR_CARD, phone)) {
-            return new ApiResponse<>(false, "Stage is Not Correct", null, 403);
-        }
+        // if (!sellerRepository.stageValidation(Seller.ONBOARDSTAGE.ADHADHAR_CARD,
+        // phone)) {
+        // return new ApiResponse<>(false, "Stage is Not Correct", null, 403);
+        // }
 
         Optional<Seller> optionalSeller = sellerRepository.findByPhone(phone);
         if (optionalSeller.isEmpty()) {

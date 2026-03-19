@@ -31,7 +31,6 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping(value = "/update-address")
-
     public ResponseEntity<?> updateAddress(@RequestBody SellerBasicInfo infoRequest) {
         try {
             ApiResponse<Object> response = userService.handleLocaton(infoRequest);
@@ -47,21 +46,22 @@ public class UserController {
         }
     }
 
-    @GetMapping(value = "/searchplace/{keyword}")
-    public ResponseEntity<?> searchPlace(@PathVariable String keyword) {
-        try {
-            ApiResponse<Object> response = userService.searchPlace(keyword);
-            return ResponseEntity
-                    .status(200)
-                    .body(response);
-        } catch (Exception e) {
-            ApiResponse<Object> response = new ApiResponse(false, e.getMessage(), null, 501);
-            System.out.println("messge" + e);
-            return ResponseEntity
-                    .status(response.statusCode())
-                    .body(response);
-        }
-    }
+    // @GetMapping(value = "/searchplace/{keyword}")
+    // public ResponseEntity<?> searchPlace(@PathVariable String keyword) {
+    // try {
+    // ApiResponse<Object> response = userService.searchPlace(keyword);
+    // return ResponseEntity
+    // .status(200)
+    // .body(response);
+    // } catch (Exception e) {
+    // ApiResponse<Object> response = new ApiResponse(false, e.getMessage(), null,
+    // 501);
+    // System.out.println("messge" + e);
+    // return ResponseEntity
+    // .status(response.statusCode())
+    // .body(response);
+    // }
+    // }
 
     @GetMapping(value = "/get-user")
 
