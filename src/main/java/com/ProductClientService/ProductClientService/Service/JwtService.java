@@ -18,8 +18,8 @@ public class JwtService {
     private final long jwtExpirationInMillis;
 
     public JwtService(@Value("${jwt.private.key.path}") String privateKeyPath,
-                      @Value("${jwt.public.key.path}") String publicKeyPath,
-                      @Value("${jwt.expiration.in.millis}") long jwtExpirationInMillis) throws Exception {
+            @Value("${jwt.public.key.path}") String publicKeyPath,
+            @Value("${jwt.expiration.in.millis}") long jwtExpirationInMillis) throws Exception {
         this.privateKey = KeyLoader.loadPrivateKey(privateKeyPath);
         this.publicKey = KeyLoader.loadPublicKey(publicKeyPath);
         this.jwtExpirationInMillis = jwtExpirationInMillis;
@@ -51,15 +51,14 @@ public class JwtService {
         return parseClaims(token).getSubject();
     }
 
-    public String extractRole(String token){
+    public String extractRole(String token) {
         return parseClaims(token).get("role", String.class);
     }
 
     public UUID extractId(String token) {
-        String idStr = parseClaims(token).get("id", String.class); 
-        return UUID.fromString(idStr);  
+        String idStr = parseClaims(token).get("id", String.class);
+        return UUID.fromString(idStr);
     }
-
 
     // Check if token is expired
     public boolean isTokenExpired(String token) {
@@ -73,5 +72,9 @@ public class JwtService {
         } catch (JwtException ex) {
             return false;
         }
+    }
+
+    public long getExpirationInSeconds() {
+        return jwtExpirationInMillis / 1000;
     }
 }

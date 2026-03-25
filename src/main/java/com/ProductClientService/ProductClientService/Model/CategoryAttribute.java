@@ -23,6 +23,9 @@ public class CategoryAttribute {
     @JsonManagedReference
     private Category category;
 
+    @Column(name = "name", nullable = false)
+    private String name;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "category_attribute_mapping", // 👈 join table
             joinColumns = @JoinColumn(name = "category_attribute_id"), inverseJoinColumns = @JoinColumn(name = "attribute_id"))
@@ -33,4 +36,4 @@ public class CategoryAttribute {
     Boolean isVariantAttribute = false;
     Boolean isAdditionalAttribute = false;
 }
-// jjijjmjj kjkjk
+// jjijjmjj kjkjkkhjjidiojjfrjijjijin

@@ -15,17 +15,20 @@ import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.AuthRequest;
-import com.ProductClientService.ProductClientService.DTO.AuthResponse;
 import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.NotificationRequest;
+import com.ProductClientService.ProductClientService.DTO.RefreshRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
+import com.ProductClientService.ProductClientService.DTO.TokenPairResponse;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.CreateRiderDto;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.RiderIdResponse;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Seller.ONBOARDSTAGE;
 import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Model.Otp.typeOfOtp;
+import com.ProductClientService.ProductClientService.Model.RefreshToken;
 import com.ProductClientService.ProductClientService.Repository.OtpRepository;
+import com.ProductClientService.ProductClientService.Repository.RefreshTokenRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
@@ -48,8 +51,6 @@ import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
 
-import org.springframework.stereotype.Service;
-
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -71,6 +72,9 @@ public class AuthService {
     private final DeliveryInventoryClient deliveryInventoryClient;
     private final UserRepojectory userRepojectory;
     private final Cloudinary cloudinary;
+    private final RefreshTokenService refreshTokenService;
+    private final RefreshTokenRepository refreshTokenRepository;
+
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
 
     public ApiResponse<?> login(LoginRequest loginRequest) {
@@ -137,19 +141,23 @@ public class AuthService {
                 authrequest.otp_code(),
                 typeOfOtp.login);
 
-        String token;
-
         if (authrequest.typeOfUser() == AuthRequest.UserType.SELLER) {
 
             Seller seller = sellerRepository.findByPhone(authrequest.phone())
                     .orElseThrow(() -> new RuntimeException("Seller not found"));
 
-            token = jwtService.generateToken(authrequest.phone(), "SELLER", seller.getId());
+            String accessToken = jwtService.generateToken(authrequest.phone(), "SELLER", seller.getId());
+            RefreshToken refreshToken = refreshTokenService.createRefreshToken(
+                    seller.getId(), authrequest.phone(), "SELLER", null);
 
-            return new ApiResponse<>(
-                    true,
-                    "Otp Verification Success",
-                    new AuthResponse(token, seller),
+            return new ApiResponse<>(true, "OTP Verification Success",
+                    new TokenPairResponse(
+                            accessToken,
+                            refreshToken.getToken(),
+                            jwtService.getExpirationInSeconds(), // add this getter to JwtService
+                            refreshToken.getExpiresAt().toEpochSecond() -
+                                    java.time.ZonedDateTime.now().toEpochSecond(),
+                            seller),
                     200);
 
         } else if (authrequest.typeOfUser() == AuthRequest.UserType.USER) {
@@ -157,37 +165,98 @@ public class AuthService {
             User user = userRepojectory.findByPhone(authrequest.phone())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            token = jwtService.generateToken(authrequest.phone(), "USER", user.getId());
-
-            return new ApiResponse<>(
-                    true,
-                    "Otp Verification Success",
-                    new AuthResponse(token, user),
+            String accessToken = jwtService.generateToken(authrequest.phone(), "USER", user.getId());
+            RefreshToken refreshToken = refreshTokenService.createRefreshToken(
+                    user.getId(), authrequest.phone(), "USER", null);
+            Map<String, Object> userData = new HashMap<>();
+            userData.put("id", user.getId());
+            userData.put("phone", user.getPhone());
+            userData.put("name", user.getName());
+            userData.put("status", user.getStatus());
+            return new ApiResponse<>(true, "OTP Verification Success",
+                    new TokenPairResponse(
+                            accessToken,
+                            refreshToken.getToken(),
+                            jwtService.getExpirationInSeconds(),
+                            refreshToken.getExpiresAt().toEpochSecond() -
+                                    java.time.ZonedDateTime.now().toEpochSecond(),
+                            userData),
                     200);
-
         } else if (authrequest.typeOfUser() == AuthRequest.UserType.RIDER) {
 
             ApiResponse<RiderIdResponse> response = deliveryInventoryClient.createRiderWithPhone(
                     new CreateRiderDto("PHONE", authrequest.phone()));
 
             if (response.statusCode() == 200 && response.success()) {
-
                 UUID riderId = response.data().id();
+                String accessToken = jwtService.generateToken(authrequest.phone(), "RIDER", riderId);
+                RefreshToken refreshToken = refreshTokenService.createRefreshToken(
+                        riderId, authrequest.phone(), "RIDER", null);
 
-                token = jwtService.generateToken(authrequest.phone(), "RIDER", riderId);
-
-                return new ApiResponse<>(
-                        true,
-                        "Otp Verification Success",
-                        new AuthResponse(token, response.data()),
+                return new ApiResponse<>(true, "OTP Verification Success",
+                        new TokenPairResponse(
+                                accessToken,
+                                refreshToken.getToken(),
+                                jwtService.getExpirationInSeconds(),
+                                refreshToken.getExpiresAt().toEpochSecond() -
+                                        java.time.ZonedDateTime.now().toEpochSecond(),
+                                response.data()),
                         200);
-
             } else {
                 throw new RuntimeException("Failed to create rider: " + response.message());
             }
         }
 
         return new ApiResponse<>(false, "Invalid User Type", null, 403);
+    }
+
+    public ApiResponse<?> refresh(RefreshRequest request) {
+        try {
+            RefreshToken oldToken = refreshTokenService.validateAndRotate(request.refreshToken());
+
+            String newAccessToken = jwtService.generateToken(
+                    oldToken.getPhone(),
+                    oldToken.getUserType(),
+                    oldToken.getUserId());
+
+            RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(
+                    oldToken.getUserId(),
+                    oldToken.getPhone(),
+                    oldToken.getUserType(),
+                    oldToken.getFamily()); // ← same family = rotation, not new session
+
+            return new ApiResponse<>(true, "Token refreshed",
+                    new TokenPairResponse(
+                            newAccessToken,
+                            newRefreshToken.getToken(),
+                            jwtService.getExpirationInSeconds(),
+                            newRefreshToken.getExpiresAt().toEpochSecond() -
+                                    java.time.ZonedDateTime.now().toEpochSecond(),
+                            null),
+                    200);
+
+        } catch (SecurityException e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 401);
+        } catch (RuntimeException e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 401);
+        }
+    }
+
+    public ApiResponse<?> logout(RefreshRequest request) {
+        try {
+            RefreshToken token = refreshTokenRepository.findByToken(request.refreshToken())
+                    .orElseThrow(() -> new RuntimeException("Token not found"));
+            token.setRevoked(true);
+            refreshTokenRepository.save(token);
+            return new ApiResponse<>(true, "Logged out successfully", null, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 400);
+        }
+    }
+
+    public ApiResponse<?> logoutAll(UUID userId) {
+        refreshTokenService.revokeAllForUser(userId);
+        return new ApiResponse<>(true, "All sessions revoked", null, 200);
     }
 
     @Async
@@ -303,4 +372,4 @@ public class AuthService {
 }
 
 // huyh hihi hyihi hyh huih huihu huj ggygggygggggg
-// kjj juji hukjiij hju
+// kjj juji hukjiij hjuhhuughuhuhuhhh

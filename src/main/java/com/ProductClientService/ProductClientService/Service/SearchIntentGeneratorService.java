@@ -1,154 +1,6 @@
-# ProductClientService Requirements and Overview
-
-## 🔧 Prerequisites
-
-Before building or running the service ensure the following tools are installed:
-
-1. **Java Development Kit (JDK)**
-   - Version 17 (matches `<java.version>` in `pom.xml`).
-   - Set `JAVA_HOME` accordingly and add to `PATH`.
-
-2. **Apache Maven**
-   - Version 3.6+ (any recent release).
-   - Used to compile, package and run tests (`mvn` / `mvnw` wrappers included).
-
-3. **Database**
-   - PostgreSQL (or any JDBC-compatible DB; `org.postgresql:postgresql` dependency).
-   - Configure connection properties via Spring `application.properties` or environment variables.
-
-4. **Supporting Services** (each optional depending on features used):
-   - **Redis** – caching and session store (`spring-boot-starter-data-redis`).
-   - **Elasticsearch** – search index (`co.elastic.clients:elasticsearch-java`).
-   - **Kafka** – messaging (`spring-kafka`).
-   - **Amazon S3** – file storage (AWS SDK for S3).
-   - **Cloudinary** – image/media CDN.
-   - **Cloudinary & AWS credentials** – injected via `.env` file or environment variables.
-   - **SMTP / Email** – if notification features are used.
-
-5. **Environment variables**
-   - Project loads variables from the `.env` file located in `src/main/resources` by default.
-   - Example keys: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `CLOUDINARY_URL`, `KAFKA_BOOTSTRAP_SERVERS`, etc.
-
-6. **Other**
-   - `dotEnv` library is used to read `.env` into system properties at startup.
-   - `Lombok` annotations require IDE support (install Lombok plugin).
-
-
-## 📦 Building & Running
-
-From the project root:
-
-```sh
-# compile & package
-mvn clean package
-
-# run using Maven
-mvn spring-boot:run
-
-# or run the JAR directly
-java -jar target/ProductClientService-0.0.1-SNAPSHOT.jar
-```
-
-Configuration values can be supplied via `application.properties` or environment variables; the `.env` loader will copy them into `System` properties automatically.
-
-
-## 🧠 What the Service Does
-
-`ProductClientService` is a Spring Boot‑based backend that provides REST endpoints for
-managing products, carts, coupons, banners, brands, sections, stock notifications,
-wishlists, authentication, and other e‑commerce operations.
-
-Key characteristics:
-
-* **Controller layer** – defined under `com.ProductClientService.ProductClientService.Controller`.
-  Separate packages exist for `admin`, `seller`, and user scopes.
-* **Service & Repository layers** – use Spring Data JPA to persist models to PostgreSQL.
-* **Asynchronous processing** – enabled with `@EnableAsync` and async beans.
-* **Feign clients** – for calling other microservices (`@EnableFeignClients`).
-* **Security** – JWT‑based authentication via `spring-boot-starter-security` and `jjwt`.
-* **Cloud & external integrations**:
-  * AWS S3 for object storage.
-  * Cloudinary for media handling.
-  * Elasticsearch for advanced search capabilities.
-  * Kafka for event-driven messaging.
-  * Redis for caching and session management.
-* **Utilities & helpers** – common validators, constants, and interceptors live under `Utils`.
-* **Configuration classes** – all third‑party clients and infrastructure beans are defined
-  in `Configuration` package (e.g. `S3Config`, `KafkaConfig`, `RedisConfig`, etc.).
-
-The service is designed to be a central API gateway for e‑commerce data operations, exposing
-JSON endpoints consumed by front‑end applications or other microservices.
-
-
-## ✅ Summary
-
-1. Ensure JDK 17 and Maven are installed.
-2. Configure your environment variables or `.env` file for database, AWS, Cloudinary,
-   Kafka, Redis, etc.
-3. Build with `mvn clean package` and run via Maven or by executing the JAR.
-4. The application provides a RESTful API for product and user management with
-   integrations to multiple external systems.
-
-Refer to each configuration class in `src/main/java/com/ProductClientService/ProductClientService/Configuration`
-for details on supported properties and defaults.
-
-
-package com.ProductClientService.ProductClientService.Model;
-
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.util.UUID;
-
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
-import com.fasterxml.jackson.databind.JsonNode;
-
-import jakarta.persistence.*;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.Setter;
-
-@Entity
-@Table(name = "search_intents", uniqueConstraints = @UniqueConstraint(columnNames = "keyword"))
-@Getter
-@Setter
-@Builder
-public class SearchIntent {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @Column(nullable = false, unique = true)
-    private String keyword;
-
-    @Column(nullable = false, length = 2000)
-    private String imageUrl;
-
-    private String suggestionType;
-    // CATEGORY, BRAND_CATEGORY, ATTRIBUTE_CATEGORY, TAG_CATEGORY
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private JsonNode filterPayload;
-
-    @Builder.Default
-    private Long searchCount = 0L;
-
-    /** How many times users clicked this suggestion */
-    @Builder.Default
-    private Long clickCount = 0L;
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
-}
-
-
 package com.ProductClientService.ProductClientService.Service;
 
-import com.ProductClientService.ProductClientService.DTO.ProductAttributeForIntentProjection;
+import com.ProductClientService.ProductClientService.DTO.admin.ProductAttributeForIntentProjection;
 import com.ProductClientService.ProductClientService.Model.CategorySearchIntentRule;
 import com.ProductClientService.ProductClientService.Model.SearchIntent;
 import com.ProductClientService.ProductClientService.Repository.CategorySearchIntentRuleRepository;
@@ -207,48 +59,21 @@ public class SearchIntentGeneratorService {
     private final SearchIntentRepository searchIntentRepository;
     private final ObjectMapper objectMapper;
     private final CategorySearchIntentRuleRepository categorySearchIntentRuleRepository;
-    // ─── Attribute name constants (case-insensitive matching) ───────────────────
-    private static final Set<String> GENDER_ATTRS = Set.of("gender", "for", "age group");
+    // ─── Attribute name constants (case-insensitive matching)
+    // ───────────────────
+    private static final Set<String> GENDER_ATTRS = Set.of("gender", "for", "agegroup");
     private static final Set<String> COLOR_ATTRS = Set.of("color", "colour");
     private static final Set<String> SIZE_ATTRS = Set.of("size");
-    private static final Set<String> MATERIAL_ATTRS = Set.of("material", "fabric");
+    private static final Set<String> MATERIAL_ATTRS = Set.of("material",
+            "fabric");
     // Everything else is treated as a generic "attribute" suggestion
 
-    // ── CRON: runs every night at 2 AM ──────────────────────────────────────────
+    // ── CRON: runs every night at 2 AM
+    // ──────────────────────────────────────────
 
-    @Scheduled(cron = "0 0 2 * * ?")
-    @Transactional
-    public void cronGenerateForAllPendingProducts() {
-        log.info("SearchIntent cron started");
+    // ── IMMEDIATE: called from SellerService when product goes LIVE
+    // ─────────────
 
-        List<ProductAttributeForIntentProjection> rows = productRepository.findAllAttributesForIntentGeneration();
-        log.info("Found {} products pending intent generation", rows.size()); // Each product has ~10 rows due to
-                                                                              // joins jj hkj jj
-        for (ProductAttributeForIntentProjection row : rows) {
-            log.debug("Pending product: {} - {} / {}", row.getProductId(), row.getCategoryName(), row.getBrandName());
-        }
-        if (rows.isEmpty()) {
-            log.info("No pending products found for intent generation");
-            return;
-        }
-
-        // Group rows by productId
-        Map<UUID, List<ProductAttributeForIntentProjection>> byProduct = rows.stream()
-                .collect(Collectors.groupingBy(ProductAttributeForIntentProjection::getProductId));
-
-        for (Map.Entry<UUID, List<ProductAttributeForIntentProjection>> entry : byProduct.entrySet()) {
-            try {
-                processProduct(entry.getKey(), entry.getValue());
-                productRepository.markSearchIntentCreated(entry.getKey());
-            } catch (Exception e) {
-                log.error("Failed to generate intents for product {}: {}", entry.getKey(), e.getMessage());
-            }
-        }
-
-        log.info("SearchIntent cron completed. Processed {} products.", byProduct.size());
-    }
-
-    // ── IMMEDIATE: called from SellerService when product goes LIVE ─────────────
     @Transactional
     public void generateForProduct(UUID productId) {
 
@@ -265,20 +90,24 @@ public class SearchIntentGeneratorService {
 
             ProductAttributeForIntentProjection first = rows.get(0);
 
-            String brand = first.getBrandName();
-            UUID brandId = first.getBrandId();
-            String category = first.getCategoryName();
-            UUID categoryId = first.getCategoryId();
+            String brand = first.brandName();
+            UUID brandId = first.brandId();
+            String category = first.categoryName();
+            UUID categoryId = first.categoryId();
 
             String base = category.toLowerCase();
 
             // 🔥 GROUP ATTRIBUTES (UNIQUE VALUES)
             Map<String, List<String>> attributes = rows.stream()
+                    .filter(r -> r.attributeName() != null && r.attributeValue() != null)
                     .collect(Collectors.groupingBy(
-                            r -> r.getAttributeName().toLowerCase(),
+                            (ProductAttributeForIntentProjection r) -> r.attributeName().toLowerCase().trim(),
+                            LinkedHashMap::new,
                             Collectors.mapping(
-                                    r -> r.getAttributeValue().toLowerCase(),
-                                    Collectors.collectingAndThen(Collectors.toSet(), ArrayList::new))));
+                                    (ProductAttributeForIntentProjection r) -> r.attributeValue().toLowerCase().trim(),
+                                    Collectors.collectingAndThen(
+                                            Collectors.toCollection(LinkedHashSet::new),
+                                            ArrayList::new))));
 
             List<CategorySearchIntentRule> rules = categorySearchIntentRuleRepository.findByCategoryId(categoryId);
 
@@ -355,7 +184,8 @@ public class SearchIntentGeneratorService {
             log.info("Search intents generated for product {}", productId);
 
         } catch (Exception e) {
-            log.error("Failed to generate intents for product {}: {}", productId, e.getMessage());
+            log.error("Failed to generate intents for product {}: {}", productId,
+                    e.getMessage());
         }
     }
 
@@ -510,19 +340,21 @@ public class SearchIntentGeneratorService {
             log.debug("Duplicate skipped: {}", keyword);
         }
     }
-    // ── Core processing ─────────────────────────────────────────────────────────
+    // ── Core processing
+    // ─────────────────────────────────────────────────────────
 
-    private void processProduct(UUID productId, List<ProductAttributeForIntentProjection> rows) {
+    private void processProduct(UUID productId,
+            List<ProductAttributeForIntentProjection> rows) {
 
         // All rows share the same product meta – grab from first row
         ProductAttributeForIntentProjection meta = rows.get(0);
 
-        String categoryName = safeLower(meta.getCategoryName());
-        String categoryImage = meta.getCategoryImageUrl();
-        UUID categoryId = meta.getCategoryId();
-        UUID brandId = meta.getBrandId();
-        String brandName = meta.getBrandName();
-        String productImage = meta.getProductImageUrl();
+        String categoryName = safeLower(meta.categoryName());
+        String categoryImage = "meta.categoryImageUrl()";
+        UUID categoryId = meta.categoryId();
+        UUID brandId = meta.brandId();
+        String brandName = meta.brandName();
+        String productImage = "meta.productImageUrl()";
 
         // Choose best image: product image > category image
         String displayImage = productImage != null ? productImage : categoryImage;
@@ -535,8 +367,8 @@ public class SearchIntentGeneratorService {
         List<String[]> genericAttrs = new ArrayList<>(); // [name, value]
 
         for (ProductAttributeForIntentProjection row : rows) {
-            String attrName = row.getAttributeName() != null ? row.getAttributeName().trim().toLowerCase() : "";
-            String attrValue = row.getAttributeValue() != null ? row.getAttributeValue().trim() : "";
+            String attrName = row.attributeName() != null ? row.attributeName().trim().toLowerCase() : "";
+            String attrValue = row.attributeValue() != null ? row.attributeValue().trim() : "";
 
             if (attrValue.isEmpty())
                 continue;
@@ -581,7 +413,8 @@ public class SearchIntentGeneratorService {
 
         // ── 2. SIZE_BRAND_CATEGORY → "XL Puma Shoes" ──────────────────────────
         if (size != null && brandName != null) {
-            String keyword = size.toUpperCase() + " " + capitalize(brandName) + " " + categoryName;
+            String keyword = size.toUpperCase() + " " + capitalize(brandName) + " " +
+                    categoryName;
             ObjectNode filter = baseFilter.deepCopy();
             filter.remove("gender");
             filter.remove("color");
@@ -591,7 +424,8 @@ public class SearchIntentGeneratorService {
 
         // ── 3. BRAND_GENDER_CATEGORY → "Puma Shoes for Men" ───────────────────
         if (brandName != null && gender != null) {
-            String keyword = capitalize(brandName) + " " + categoryName + " for " + safeLower(gender);
+            String keyword = capitalize(brandName) + " " + categoryName + " for " +
+                    safeLower(gender);
             ObjectNode filter = baseFilter.deepCopy();
             filter.remove("color");
             filter.remove("size");
@@ -612,7 +446,8 @@ public class SearchIntentGeneratorService {
 
         // ── 5. COLOR_GENDER_CATEGORY → "Red T-Shirt for Kids" ─────────────────
         if (color != null && gender != null) {
-            String keyword = capitalize(color) + " " + categoryName + " for " + safeLower(gender);
+            String keyword = capitalize(color) + " " + categoryName + " for " +
+                    safeLower(gender);
             ObjectNode filter = baseFilter.deepCopy();
             filter.remove("brandId");
             filter.remove("size");
@@ -673,7 +508,8 @@ public class SearchIntentGeneratorService {
 
         // ── 10. BRAND_COLOR_CATEGORY → "Puma Red Shoes" ───────────────────────
         if (brandName != null && color != null) {
-            String keyword = capitalize(brandName) + " " + capitalize(color) + " " + categoryName;
+            String keyword = capitalize(brandName) + " " + capitalize(color) + " " +
+                    categoryName;
             ObjectNode filter = baseFilter.deepCopy();
             filter.remove("gender");
             filter.remove("size");
@@ -685,11 +521,13 @@ public class SearchIntentGeneratorService {
         if (brandName != null && size != null && gender != null) {
             String keyword = capitalize(brandName) + " " + size.toUpperCase()
                     + " " + categoryName + " for " + safeLower(gender);
-            saveIntent(keyword, "BRAND_SIZE_GENDER_CATEGORY", baseFilter.deepCopy(), displayImage);
+            saveIntent(keyword, "BRAND_SIZE_GENDER_CATEGORY", baseFilter.deepCopy(),
+                    displayImage);
         }
     }
 
-    // ── Persistence helper ───────────────────────────────────────────────────────
+    // ── Persistence helper
+    // ───────────────────────────────────────────────────────
 
     private void saveIntent(String keyword, String type,
             ObjectNode filterPayload, String imageUrl) {
@@ -721,7 +559,8 @@ public class SearchIntentGeneratorService {
         }
     }
 
-    // ── Utilities ────────────────────────────────────────────────────────────────
+    // ── Utilities
+    // ────────────────────────────────────────────────────────────────
 
     private String safeLower(String value) {
         return value == null ? "" : value.trim().toLowerCase();
@@ -731,217 +570,12 @@ public class SearchIntentGeneratorService {
         if (value == null || value.isBlank())
             return value;
         String trimmed = value.trim();
-        return trimmed.substring(0, 1).toUpperCase() + trimmed.substring(1).toLowerCase();
+        return trimmed.substring(0, 1).toUpperCase() +
+                trimmed.substring(1).toLowerCase();
     }
 }
-// jiooiiuonju9h iuioljijnjkhjjiljjklnjlknkjkbbhuhuhbhhu khhukbhuuhkkhhukuhhjkhu
+// jiooiiuonju9h iuioljijnjkhjjiljjklnjlknkjkbbhuhuhbhhu
+// khhukbhuuhkkhhukuhhjkhu
 // joihukbiujjkkjjnjioijoinuiui jiuhiuhuihukhhkhnjjkhui uy ygujyygjyuuhiuhg
-// guihuhyhbhuhukjikhukhukhuk hukjkhukhunjkhjhhukh uhih huhk huu hukhu
-
-package com.ProductClientService.ProductClientService.Model;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.Setter;
-import com.ProductClientService.ProductClientService.Model.Category;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.util.UUID;
-
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-@Entity
-@Table(name = "category_search_intent_rules")
-@Getter
-@Setter
-public class CategorySearchIntentRule {
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id", nullable = false)
-    private Category category;
-
-    // attribute name like color, size, age
-    @Column(name = "attribute_name", nullable = false)
-    private String attributeName;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "position", nullable = false)
-    private Position position;
-
-    // words like "for", "with", "in"
-    @Column(name = "join_word")
-    private String joinWord;
-
-    @Column(name = "priority")
-    private Integer priority;
-
-    @Column(name = "is_active")
-    private Boolean isActive = true;
-
-    public enum Position {
-        PREFIX, // "green shirt"
-        SUFFIX, // "shirt for men"
-        INFIX // "shirt with cotton"
-    }
-
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private ZonedDateTime createdAt = ZonedDateTime
-            .now(ZoneId.of("Asia/Kolkata"));
-
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
-}
-
-package com.ProductClientService.ProductClientService.Controller;
-
-import com.ProductClientService.ProductClientService.DTO.ApiResponse;
-import com.ProductClientService.ProductClientService.Service.SearchIntentService;
-
-import lombok.RequiredArgsConstructor;
-
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.UUID;
-
-/**
- * SearchIntentController
- * ───────────────────────
- * REST endpoints for search suggestions and click tracking.
- *
- * Typical frontend flow:
- *
- * 1. User types "puma sh"
- * → GET /api/v1/search/autocomplete?keyword=puma+sh
- * ← [{ id, keyword:"Puma Shoes", imageUrl, filterPayload:{categoryId,brandId}
- * }, ...]
- *
- * 2. User taps "Puma Shoes for Men"
- * → POST /api/v1/search/intent/{id}/click
- * ← { filterPayload: { categoryId:"...", brandId:"...", gender:"men" } }
- *
- * 3. Frontend maps filterPayload → product search query params
- * → GET /api/v1/product/products/search?categoryId=...&brandId=...
- * &attributeName=gender&attributeValue=men
- */
-@RestController
-@RequestMapping("/api/v1/search")
-@RequiredArgsConstructor
-public class SearchIntentController {
-
-    private final SearchIntentService searchIntentService;
-
-    /**
-     * Autocomplete suggestions as the user types.
-     *
-     * Used for: search bar dropdown, search overlay suggestions
-     *
-     * @param keyword partial text entered by user (min 1 char)
-     */
-    @GetMapping("/autocomplete")
-    public ResponseEntity<?> autocomplete(@RequestParam String keyword) {
-        ApiResponse<Object> response = searchIntentService.autocomplete(keyword);
-        return ResponseEntity.status(response.statusCode()).body(response);
-    }
-
-    /**
-     * Record that user clicked a suggestion and return the filter payload.
-     *
-     * The returned filterPayload tells the frontend exactly what search
-     * parameters to use when calling the product listing API.
-     *
-     * @param id UUID of the SearchIntent that was clicked
-     */
-    @PostMapping("/intent/{id}/click")
-    public ResponseEntity<?> recordClick(@PathVariable UUID id) {
-        ApiResponse<Object> response = searchIntentService.recordClick(id);
-        return ResponseEntity.status(response.statusCode()).body(response);
-    }
-}
-// joji jojijnn
-
-
-    /**
-     * Fetches every attribute row (with its category + brand metadata) for all
-     * products where search_intent_created = false.
-     *
-     * Returns one row per (product, attribute, value) combination.
-     * The service groups by productId to build permutations per product.
-     *
-     * NOTE: Add this to your existing ProductRepository interface.
-     */
-    @Query(value = """
-            SELECT
-                p.id                                   AS productId,
-                c.id                                   AS categoryId,
-                c.name                                 AS categoryName,
-                c.image_url                            AS categoryImageUrl,
-                b.id                                   AS brandId,
-                b.name                                 AS brandName,
-                a.name                                 AS attributeName,
-                pa.value                               AS attributeValue,
-                ca.is_variant_attribute                AS isVariantAttribute,
-                ca.is_image_attribute                  AS isImageAttribute,
-                (
-                    SELECT pa2.images
-                    FROM product_attributes pa2
-                    INNER JOIN category_attributes ca2
-                        ON pa2.category_attribute_id = ca2.id
-                    WHERE pa2.product_id = p.id
-                      AND ca2.is_image_attribute = true
-                    LIMIT 1
-                )                                      AS productImageUrl
-            FROM products p
-            JOIN categories c          ON c.id = p.category_id
-            LEFT JOIN brands b         ON b.id = p.brand_id
-            JOIN product_attributes pa ON pa.product_id = p.id
-            JOIN category_attributes ca ON ca.id = pa.category_attribute_id
-            JOIN category_attribute_mapping cam ON cam.category_attribute_id = ca.id
-            JOIN attributes a          ON a.id = cam.attribute_id
-            WHERE p.search_intent_created = false
-              AND p.step = 'LIVE'
-            ORDER BY p.id, a.name
-            """, nativeQuery = true)
-    List<ProductAttributeForIntentProjection> findAllAttributesForIntentGeneration();
-
-    @Query(value = """
-                SELECT
-                    p.id AS productId,
-                    c.id AS categoryId,
-                    c.name AS categoryName,
-                    b.id AS brandId,
-                    b.name AS brandName,
-                    a.name AS attributeName,
-                    pa.value AS attributeValue,
-                    ca.is_variant_attribute AS isVariantAttribute,
-                    ca.is_image_attribute AS isImageAttribute
-                FROM products p
-                JOIN categories c ON c.id = p.category_id
-                LEFT JOIN brands b ON b.id = p.brand_id
-                JOIN product_attributes pa ON pa.product_id = p.id
-                JOIN category_attributes ca ON ca.id = pa.category_attribute_id
-                JOIN attributes a ON a.id = ca.attribute_id   -- ✅ DIRECT JOIN
-                WHERE p.id = :productId
-            """, nativeQuery = true)
-    List<ProductAttributeForIntentProjection> findAttributesForIntentByProductId(
-            @Param("productId") UUID productId);
-}
-
-// hyuhk khui huih iui huiujkj kjnj jkjn njkk
-// khu uhikuhuyiuiiuyyuiuiukbyui huuy
+// guihuhyhbhuhukjikhukhukhuk hukjkhukhunjkhjhhukh uhih huhk huu hukhuhbjhj
+// htfghy tg hgtgy thfygt tyfttftt gytyg

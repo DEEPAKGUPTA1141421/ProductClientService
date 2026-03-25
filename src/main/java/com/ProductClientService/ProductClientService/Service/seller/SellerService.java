@@ -114,16 +114,13 @@ public class SellerService {
         product.setDescription(dto.description());
         product.setStep(Product.Step.valueOf(dto.step()));
 
-        Seller sellerRef = entityManager.getReference(
-                Seller.class,
-                (UUID) request.getAttribute("id"));
-        product.setSeller(sellerRef);
-
+        Seller seller = sellerRepository.findById(getUserId())
+                .orElseThrow(() -> new RuntimeException("Seller not found"));
+        product.setSeller(seller);
         if (dto.category() != null) {
-            Category categoryRef = entityManager.getReference(
-                    Category.class,
-                    (UUID) dto.category());
-            product.setCategory(categoryRef);
+            Category category = categoryRepository.findById(dto.category())
+                    .orElseThrow(() -> new RuntimeException("Category not found"));
+            product.setCategory(category);
         }
 
         UUID savedProductId = productRepository.save(product).getId();
@@ -251,6 +248,10 @@ public class SellerService {
 
         product.setStep(Product.Step.valueOf(dto.step()));
 
+        // 💡 FIX: Add a flat index counter to iterate through the flat
+        // productAttributeIds array
+        int flatAttributeIdIndex = 0;
+
         for (int i = 0; i < dto.categoryAttributeId().size(); i++) {
 
             UUID categoryAttrId = dto.categoryAttributeId().get(i);
@@ -260,36 +261,38 @@ public class SellerService {
                 continue;
             }
 
-            UUID productAttributeId = null;
-            if (dto.productAttributeIds() != null
-                    && dto.productAttributeIds().size() > i
-                    && dto.productAttributeIds().get(i) != null) {
+            CategoryAttribute categoryAttribute = categoryAttributeRepository.findById(categoryAttrId)
+                    .orElseThrow(() -> new RuntimeException("CategoryAttribute not found"));
 
-                productAttributeId = dto.productAttributeIds().get(i);
-            }
+            for (String value : vals) {
+                UUID productAttributeId = null;
 
-            CategoryAttribute categoryAttribute = categoryAttributeRepository.getReferenceById(categoryAttrId);
+                // 💡 FIX: Grab the specific ID for THIS value using the flat counter, not 'i'
+                if (dto.productAttributeIds() != null
+                        && dto.productAttributeIds().size() > flatAttributeIdIndex
+                        && dto.productAttributeIds().get(flatAttributeIdIndex) != null) {
 
-            // Since productAttributeIds is 1D, we assume ONE value per categoryAttribute
-            String value = vals.get(0);
+                    productAttributeId = dto.productAttributeIds().get(flatAttributeIdIndex);
+                }
 
-            if (productAttributeId != null) {
+                if (productAttributeId != null) {
+                    // ✅ UPDATE existing entity
+                    ProductAttribute existing = productAttributeRepository.findById(productAttributeId)
+                            .orElseThrow(() -> new RuntimeException("ProductAttribute not found"));
 
-                // ✅ UPDATE existing entity
-                ProductAttribute existing = productAttributeRepository.findById(productAttributeId)
-                        .orElseThrow(() -> new RuntimeException("ProductAttribute not found"));
+                    existing.setValue(value);
+                } else {
+                    // ✅ CREATE new entity
+                    ProductAttribute newAttribute = new ProductAttribute();
+                    newAttribute.setProduct(product);
+                    newAttribute.setCategoryAttribute(categoryAttribute);
+                    newAttribute.setValue(value);
 
-                existing.setValue(value);
+                    product.getProductAttributes().add(newAttribute);
+                }
 
-            } else {
-
-                // ✅ CREATE new entity
-                ProductAttribute newAttribute = new ProductAttribute();
-                newAttribute.setProduct(product);
-                newAttribute.setCategoryAttribute(categoryAttribute);
-                newAttribute.setValue(value);
-
-                product.getProductAttributes().add(newAttribute);
+                // 💡 FIX: Increment flat index after processing each individual value
+                flatAttributeIdIndex++;
             }
         }
 
@@ -298,7 +301,6 @@ public class SellerService {
         return savedProduct.getProductAttributes()
                 .stream()
                 .map(pa -> {
-
                     CategoryAttribute ca = pa.getCategoryAttribute();
 
                     String attributeName = ca.getAttributes()
@@ -705,7 +707,6 @@ public class SellerService {
         return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getPhone();
     }
 }
-// huuiuo huuioj nkjhu huhu huhu huju huuhkj huhuj huiuia
-// juujji uhjiji kjhjij jj njji jj bkhhk hbb jhbhj hbjj hjbhj
-// juouio huiuhi nlghuy ihuhiu hhuh hkhu hkhu jkjkhuhuhubjkh
-// hude uouejiuobhkhuuhnkjhu huhui uhijn n,jkbhjh gjy gyjj gyuyggh
+// hukiiu iuui jkjbhjhhjhj huhu uhh,j uh yiu ujhhuhjuhui uhh juyyuuik uhhu
+// jliij oijij uhjinhuk hkuhj uhiu uhiuhuhkui uihhjhhhijji hukhu guy uy7 yuyu
+// yuuyy yuyu

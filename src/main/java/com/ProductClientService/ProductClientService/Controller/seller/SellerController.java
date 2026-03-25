@@ -15,10 +15,11 @@ import com.ProductClientService.ProductClientService.Repository.ProductRepositor
 import com.ProductClientService.ProductClientService.Service.AadhaarVerificationService;
 import com.ProductClientService.ProductClientService.Service.ImageUploadService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
-import com.ProductClientService.ProductClientService.Service.SuggestionGeneratorService;
+import com.ProductClientService.ProductClientService.Service.SearchIntentGeneratorService;
+//import com.ProductClientService.ProductClientService.Service.SuggestionGeneratorService;
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerService;
-
+import com.cloudinary.Search;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -56,7 +57,7 @@ public class SellerController {
     private final ProductRepository productRepository;
     private final ImageUploadService imageUploadService;
     private final TagService tagService;
-    private final SuggestionGeneratorService suggestionGeneratorService;
+    private final SearchIntentGeneratorService searchIntentGeneratorService;
     private final AadhaarVerificationService aadhaarVerificationService;
 
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -148,9 +149,10 @@ public class SellerController {
     }
 
     @GetMapping("/test")
-    public ResponseEntity<?> test() {
-        suggestionGeneratorService.generateCompositeSuggestions();
-        ApiResponse<Object> response = new ApiResponse<>(true, "Test completed", null, 200);
+    public ResponseEntity<?> test(@RequestParam UUID productId) {
+        searchIntentGeneratorService.generateForProduct(productId);
+        ApiResponse<Object> response = new ApiResponse<>(true, "Test completed",
+                null, 200);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
@@ -350,7 +352,10 @@ public class SellerController {
     }
 
 }
+
 // jhiu jhuiyuiu huymnkjnkhkihiyh nbuygyu bgyg bvytg mkj9oi fjnhk jhbh
 // kiyui nhuihu uihyiu hjh nhjhj hjhj bhjhj hkhu hyihu hjhj hjhiujnjnjnn
 // hyuihu huihk khiurf guihrfbk hukhur jhbrkf fgrtt tgte tggrrerehjjuhyh
-// uhiui nhuuhiu
+// uhiui nhuuhiuhhu huh hj hkj hukhukjhukhu hukkjk nhk
+// jhh jhhjhbb hj jkj hujkj hkj jkbhjhhuhu uhhumjbhhj hjhuj hbhjuk khhuk
+// hjhukjkjjihukjbhjkjk jkkj njj

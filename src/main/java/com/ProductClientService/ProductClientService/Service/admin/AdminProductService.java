@@ -428,6 +428,7 @@ public class AdminProductService {
             // create and link
             CategoryAttribute categoryAttribute = new CategoryAttribute();
             categoryAttribute.setCategory(category);
+            categoryAttribute.setName(attribute.getName()); // set name same as attribute for easy reference
             categoryAttribute.setAttributes(new HashSet<>() {
                 {
                     add(attribute);

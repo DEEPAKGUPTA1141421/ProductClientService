@@ -19,6 +19,7 @@ import com.ProductClientService.ProductClientService.DTO.ProductPriceSuggestionP
 import com.ProductClientService.ProductClientService.DTO.ProductSuggestionProjection;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
+import com.ProductClientService.ProductClientService.DTO.admin.ProductAttributeForIntentProjection;
 import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Product.Step;
@@ -211,6 +212,27 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     Optional<Product> findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
             UUID sellerId,
             Product.Step step);
+
+    @Query(value = """
+                    SELECT
+                        p.id AS productId,
+                        c.id AS categoryId,
+                        c.name AS categoryName,
+                        b.id AS brandId,
+                        b.name AS brandName,
+                        ca.name AS attributeName,   -- ✅ FIXED
+                        pa.value AS attributeValue,
+                        ca.is_variant_attribute AS isVariantAttribute,
+                        ca.is_image_attribute AS isImageAttribute
+                    FROM products p
+                    JOIN categories c ON c.id = p.category_id
+                    LEFT JOIN brands b ON b.id = p.brand_id
+                    JOIN product_attributes pa ON pa.product_id = p.id
+                    JOIN category_attributes ca ON ca.id = pa.category_attribute_id
+                    WHERE p.id = :productId
+            """, nativeQuery = true)
+    List<ProductAttributeForIntentProjection> findAttributesForIntentByProductId(
+            @Param("productId") UUID productId);
 }
 
-// hyuhk khui huih iui huiu
+// hyuhk khui huih iui huiuhukuijkji
