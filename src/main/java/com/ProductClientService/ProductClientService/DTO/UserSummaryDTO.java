@@ -20,11 +20,8 @@ public class UserSummaryDTO {
     private String image; // only one image (e.g. first)
 
     public static UserSummaryDTO fromEntity(User user) {
-        String firstImage = null;
-        Set<String> images = user.getImages();
-        if (images != null && !images.isEmpty()) {
-            firstImage = images.iterator().next(); // pick the first image
-        }
-        return new UserSummaryDTO(user.getId(), user.getName(), firstImage);
+        String image = user.getAvatarUrl();
+
+        return new UserSummaryDTO(user.getId(), user.getName(), image);
     }
 }
