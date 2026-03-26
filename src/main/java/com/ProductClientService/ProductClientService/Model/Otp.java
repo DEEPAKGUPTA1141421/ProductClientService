@@ -113,5 +113,7 @@ public class Otp {
         parcelCancelled,
         parcelReturned,
         aadhaarVerification,
+        emailVerification
     }
 }
+// huuihujhujklkkokopoko

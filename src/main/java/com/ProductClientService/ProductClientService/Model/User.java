@@ -31,15 +31,27 @@ public class User {
     @Column(length = 255)
     private String name;
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "user_images", joinColumns = @JoinColumn(name = "user_id"))
-    @Column(name = "image_url")
-    private Set<String> images = new HashSet<>();
-
-    @ElementCollection(fetch = FetchType.EAGER)
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Address> addresses = new ArrayList<>();
+
+    @Column(name = "email", unique = true)
+    private String email;
+
+    @Column(name = "avatar_url")
+    private String avatarUrl;
+
+    @Column(name = "gender")
+    private String gender;
+
+    @Column(name = "date_of_birth")
+    private String dateOfBirth;
+
+    @Column(name = "is_email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    @Column(name = "pending_email")
+    private String pendingEmail;
 
     @Enumerated(EnumType.ORDINAL)
     @Column(nullable = false)
@@ -65,3 +77,4 @@ public class User {
         PENDING_VERIFICATION
     }
 }
+// njkjnjkkjjkkljjijiliji

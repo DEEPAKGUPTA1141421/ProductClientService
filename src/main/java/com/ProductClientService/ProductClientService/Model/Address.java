@@ -24,12 +24,12 @@ public class Address {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @OneToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "seller_id", referencedColumnName = "id", nullable = true)
     @JsonBackReference
     private Seller seller;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = true)
     @JsonBackReference
     private User user;
@@ -86,3 +86,4 @@ public class Address {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
+// jjjjijinjkjikikjkhjijhkjhukjijijnnj
