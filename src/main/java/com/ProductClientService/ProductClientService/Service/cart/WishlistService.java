@@ -50,6 +50,17 @@ public class WishlistService {
         return new ApiResponse<>(true, "Item removed from wishlist", wl, 200);
     }
 
+    @Transactional
+    public ApiResponse<Object> clearWishlist(UUID userId) {
+        Wishlist wl = wishlistRepo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Wishlist not found"));
+
+        wl.getItems().clear();
+        wishlistRepo.save(wl);
+
+        return new ApiResponse<>(true, "Wishlist cleared", null, 200);
+    }
+
     @Transactional(readOnly = true)
     public ApiResponse<Object> get(UUID userId) {
         Wishlist wl = wishlistRepo.findByUserId(userId)

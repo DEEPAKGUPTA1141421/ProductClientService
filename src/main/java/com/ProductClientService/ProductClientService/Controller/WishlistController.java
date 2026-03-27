@@ -8,14 +8,12 @@ import org.springframework.web.bind.annotation.*;
 import com.ProductClientService.ProductClientService.Service.cart.WishlistService;
 import java.util.UUID;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
-import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/v1/wishlist")
 @RequiredArgsConstructor
 public class WishlistController {
     private final WishlistService wishlistService;
-    private final HttpServletRequest request;
 
     @PostMapping("/items/{productId}")
     public ResponseEntity<?> add(
@@ -28,6 +26,11 @@ public class WishlistController {
     @DeleteMapping("/items/{productId}")
     public ResponseEntity<?> remove(@PathVariable UUID productId) {
         return ResponseEntity.ok(wishlistService.remove(getUserId(), productId));
+    }
+
+    @DeleteMapping
+    public ResponseEntity<?> clearWishList() {
+        return ResponseEntity.ok(wishlistService.clearWishlist(getUserId()));
     }
 
     @GetMapping
