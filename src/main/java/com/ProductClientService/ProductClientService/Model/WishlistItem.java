@@ -35,6 +35,9 @@ public class WishlistItem {
 
     private UUID variantId;
 
+    @Column(name = "added_price")
+    private String addedPrice;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
