@@ -1,0 +1,122 @@
+// ════════════════════════════════════════════════════════════════════════
+// FILE 1 of 2 — WebConfig.java  (only the changed authorizeHttpRequests section)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Add to the existing authorizeHttpRequests block in WebConfig.java:
+//
+//    .requestMatchers(HttpMethod.GET,  "/api/v1/search/results").authenticated()
+//    .requestMatchers(HttpMethod.DELETE, "/api/v1/search/cache").hasRole("ADMIN")
+//
+// The full updated permitAll block:
+//
+//    .requestMatchers(
+//            "/api/v1/auth/**",
+//            "/public/**",
+//            "/api/v1/search/**",          // ← autocomplete stays public
+//            "/api/v1/seller/product/test",
+//            "/api/v1/product/categorylevelwise/**",
+//            "/api/v1/product/category",
+//            "api/v1/wishlist/token/**",
+//            "/api/v1/product/search",
+//            "/api/v1/brands/category/**")
+//    .permitAll()
+//
+//    // Search results require auth (wishlist flags + rate-limit by user)
+//    .requestMatchers(HttpMethod.GET, "/api/v1/search/results").authenticated()
+//    // Cache eviction is admin-only
+//    .requestMatchers(HttpMethod.DELETE, "/api/v1/search/cache").hasRole("ADMIN")
+//    .anyRequest().authenticated()
+
+
+// ════════════════════════════════════════════════════════════════════════
+// FILE 2 of 2 — Patch for SellerService.MakeProductLive()
+// ════════════════════════════════════════════════════════════════════════
+//
+// In SellerService, inject SearchResultsService and call evictCategoryCache
+// after a product goes live so stale results are flushed from Redis.
+//
+// DIFF (add the two lines marked with ←):
+
+/*
+@Service
+@RequiredArgsConstructor
+public class SellerService {
+
+    // ← add this injection
+    private final SearchResultsService searchResultsService;
+
+    ...
+
+    public ApiResponse<Object> MakeProductLive(UUID productId) {
+        try {
+            Product.Step currentStep = productRepository.findStepById(productId)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            if (currentStep == Product.Step.PRODUCT_VARIANT) {
+                int updatescore = updateStatusById(productId, Product.Step.LIVE);
+                if (updatescore > 0) {
+                    indexProduct(productId);
+                    handleProductUpdate(productId);
+
+                    // ← evict cached search results for this product's category
+                    UUID categoryId = productRepository.findById(productId)
+                            .map(p -> p.getCategory().getId())
+                            .orElse(null);
+                    if (categoryId != null) {
+                        searchResultsService.evictCategoryCache(categoryId);
+                    }
+
+                    return new ApiResponse<>(true, "Product Live", null, 200);
+                } else {
+                    return new ApiResponse<>(false, "Internal Server Error", null, 500);
+                }
+            } else {
+                return new ApiResponse<>(false, "Bad Request", null, 403);
+            }
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 500);
+        }
+    }
+}
+*/
+
+
+// ════════════════════════════════════════════════════════════════════════
+// PostgreSQL migration — run once
+// ════════════════════════════════════════════════════════════════════════
+/*
+-- Enable trigram extension for fast ILIKE keyword search
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- Partial index: query planner only scans LIVE products
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_live
+    ON products (id)
+    WHERE step = 'LIVE';
+
+-- Trigram indexes for keyword matching
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_name_trgm
+    ON products USING gin (name gin_trgm_ops)
+    WHERE step = 'LIVE';
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_desc_trgm
+    ON products USING gin (description gin_trgm_ops)
+    WHERE step = 'LIVE';
+
+-- Rating sort / filter
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_rating
+    ON products (average_rating DESC NULLS LAST)
+    WHERE step = 'LIVE';
+
+-- New-arrivals filter
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_created
+    ON products (created_at DESC)
+    WHERE step = 'LIVE';
+
+-- Variant lookup (cheapest in-stock)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_variants_product_stock
+    ON product_variants (product_id, CAST(price AS NUMERIC) ASC)
+    WHERE stock > 0;
+
+-- Brand name search
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_brands_name_trgm
+    ON brands USING gin (name gin_trgm_ops);
+*/
