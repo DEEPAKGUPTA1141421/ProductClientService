@@ -146,8 +146,8 @@ public class CartService {
                                 .id(item.getId())
                                 .productId(item.getProductId())
                                 .appliedCoupon(Optional.ofNullable(item.getAppliedCoupon())
-                                .map(Coupon::getCode)
-                                .orElse(null))
+                                        .map(Coupon::getCode)
+                                        .orElse(null))
                                 .discountLineAmount(item.getLineDiscount())
                                 .variantId(item.getVariantId())
                                 .shopId(shopId)
@@ -172,7 +172,7 @@ public class CartService {
             double gstCharge = totalAmount * 0.18; // 18% GST
 
             // Final response
-            double grandTotal=totalAmount-totalDiscount+serviceCharge+deliveryCharge+gstCharge;
+            double grandTotal = totalAmount - totalDiscount + serviceCharge + deliveryCharge + gstCharge;
             CartResponseDto dto = CartResponseDto.builder()
                     .cartId(cart.getId())
                     .userId(cart.getUserId())
@@ -183,7 +183,9 @@ public class CartService {
                     .serviceCharge(serviceCharge)
                     .deliveryCharge(deliveryCharge)
                     .CartLineDiscount(cart.getCartLevelDiscount())
-                    .cartCoupon(cart.getAppliedCartCoupon().getCode())
+                    .cartCoupon(Optional.ofNullable(cart.getAppliedCartCoupon())
+                            .map(coupon -> coupon.getCode())
+                            .orElse(null))
                     .gstCharge(gstCharge)
                     .grandTotal(grandTotal)
                     .build();
@@ -298,6 +300,7 @@ public class CartService {
         cartRepo.save(cart);
         return getCart(userId);
     }
+
     @Transactional(readOnly = true)
     public ApiResponse<Object> getApplicableCoupons(UUID userId) {
         Cart cart = mustGetActiveCart(userId);
@@ -311,7 +314,7 @@ public class CartService {
         System.out.println("Cart subtotal: " + subTotalValue);
 
         // Fetch eligible coupons
-        System.out.println("subTotal before "+subTotal);
+        System.out.println("subTotal before " + subTotal);
         List<Coupon> eligibleCoupons = couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
                 Coupon.Applicability.CART_TOTAL,
                 subTotal);
@@ -353,10 +356,10 @@ public class CartService {
                             .build();
                 })
                 .toList();
-        List<CouponResponseDto.MoreCoupon> moreCoupons=MoreCoupons(subTotal);
-        HashMap<String,Object>results= new HashMap<>();
-        results.put("bestCoupons",bestCoupons);
-        results.put("moreCoupons",moreCoupons);
+        List<CouponResponseDto.MoreCoupon> moreCoupons = MoreCoupons(subTotal);
+        HashMap<String, Object> results = new HashMap<>();
+        results.put("bestCoupons", bestCoupons);
+        results.put("moreCoupons", moreCoupons);
         return new ApiResponse<>(true, "Applicable coupons", results, 200);
     }
 
@@ -420,7 +423,8 @@ public class CartService {
             throw new IllegalArgumentException("Cart total below minimum for this coupon");
         }
         cart.setAppliedCartCoupon(coupon);
-        cart.setCartLevelDiscount(computeDiscount(currentSubTotal,coupon.getDiscountType(),coupon.getDiscountValue()).toString());
+        cart.setCartLevelDiscount(
+                computeDiscount(currentSubTotal, coupon.getDiscountType(), coupon.getDiscountValue()).toString());
         recompute(cart);
         cartRepo.save(cart);
         return getCart(userId);
@@ -524,6 +528,4 @@ public class CartService {
         }
     }
 }
-
-
-
+// 8u8uu8u8

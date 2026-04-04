@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Service.ProductService;
+import com.ProductClientService.ProductClientService.Service.SearchIntentService;
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.Strategy.SearchHistoryStragecy.TrendingSearchStrategy;
 
@@ -26,6 +27,7 @@ public class ProductController {
     private final ProductService productService;
     private final TrendingSearchStrategy trendingSearchStrategy;
     private final TagService tagService;
+    private final SearchIntentService searchIntentService;
 
     @GetMapping("/products/search")
     public ResponseEntity<?> searchProducts(
@@ -104,7 +106,7 @@ public class ProductController {
     public ResponseEntity<?> searchProduct(@RequestParam String keyword) {
         try {
 
-            return ResponseEntity.status(200).body(tagService.search(keyword));
+            return ResponseEntity.status(200).body(searchIntentService.autocomplete(keyword));
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
         }
@@ -134,4 +136,4 @@ public class ProductController {
 
 // hyhu gtutu tutyutgygyyg nkhjujuju huihhu iujuu
 // hjujij hjuouj uhujio uiui huiujiiu
-// hyuyu ghy hihu iuujf ji juou hiuui huhu
+// hyuyu ghy hihu iuujf ji juou hiuui huhuuhuh iuuhuhi

@@ -38,7 +38,7 @@ public class UserController {
 
     private final UserService userService;
 
-    @GetMapping("/profile")
+    @GetMapping
     public ResponseEntity<?> getProfile() {
         return ResponseEntity.ok(userService.getFullProfile());
     }
@@ -139,4 +139,4 @@ public class UserController {
 // uhiuhu uihiuh hjkj h8yiuhy uyg97 gfyugyugujnnnkjnn nkjnnkjn jihknk
 // hhiuiuo9ujkhjbhjbhjb hbjbhjb bhuihiuhyiuyiuyiuyuiuyi
 // jijuijiu joijioo jiuu9o8u9 iuui8u87yyu
-// hiuhuo8uo90ih09iju98unkjhuhuihhuyubjbuguygu guytutuyt
+// hiuhuo8uo90ih09iju98unkjhuhuihhuyubjbuguygu guytutuythhuhjij

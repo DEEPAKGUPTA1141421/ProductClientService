@@ -30,15 +30,10 @@ public class WebConfig {
         public CorsConfigurationSource corsConfigurationSource() {
                 CorsConfiguration config = new CorsConfiguration();
 
-                // 🔥 Allow your frontend origins (update if needed)
-                config.setAllowedOrigins(List.of(
-                                "http://localhost:3000",
-                                "http://localhost:8000",
-                                "http://localhost:8080",
-                                "http://192.168.1.104:8080",
-                                "http://localhost:5173",
-                                "http://10.0.2.2:3000",
-                                "http://127.0.0.1:8080"));
+                config.setAllowedOriginPatterns(List.of("*"));
+                config.setAllowedMethods(List.of("*"));
+                config.setAllowedHeaders(List.of("*"));
+                config.setAllowCredentials(true);
 
                 // Allow all standard HTTP methods
                 config.setAllowedMethods(List.of(
@@ -90,6 +85,7 @@ public class WebConfig {
                                                                 "/api/v1/product/categorylevelwise/**",
                                                                 "/api/v1/product/category",
                                                                 "api/v1/wishlist/token/**",
+                                                                "/api/v1/product/search",
                                                                 "/api/v1/brands/category/**")
                                                 .permitAll()
 
@@ -110,4 +106,5 @@ public class WebConfig {
 }
 // juoiiojnji jioji mmjio uiouoinjjjknjknjnjnjkjjnkjnk
 // mlkklijkjiljijijijnnjjijihuhuhuhhuhuhugihhuihuikuhuigyjjijinjkj
-// hujijhjjujijkj khuiu uhkuio houoij uiou8uuuhuhuihu
+// hujijhjjujijkj khuiu uhkuio houoij
+// uiou8uuuhuhuihubhhbhgyhbhhnljjioio88iu8bhhuhvygujhhu

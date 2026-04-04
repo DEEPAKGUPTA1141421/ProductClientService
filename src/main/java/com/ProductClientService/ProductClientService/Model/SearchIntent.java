@@ -11,8 +11,10 @@ import org.hibernate.type.SqlTypes;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
@@ -20,6 +22,8 @@ import lombok.Setter;
 @Getter
 @Setter
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class SearchIntent {
 
     @Id
@@ -49,3 +53,4 @@ public class SearchIntent {
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
+// iiuyu gyuy ygyurfhu
