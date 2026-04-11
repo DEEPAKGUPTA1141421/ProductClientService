@@ -89,6 +89,10 @@ public class WebConfig {
                                                                 "/api/v1/brands/category/**")
                                                 .permitAll()
 
+                                                // ✅ Category filters — GET is public, DELETE (cache evict) requires auth
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/categories/*/filters")
+                                                .permitAll()
+
                                                 // 🔒 Secure everything else
                                                 .anyRequest().authenticated())
 

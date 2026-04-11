@@ -16,6 +16,10 @@ public class AttributeRepositoryImpl {
     @PersistenceContext
     private EntityManager entityManager;
 
+    /**
+     * Original method — returns ALL attributes linked to a category (including image attrs).
+     * Kept as-is so ProductService.searchProducts() still works.
+     */
     public List<AttributeDto> findFiltersByCategoryId(UUID categoryId) {
         String sql = """
                 SELECT
@@ -33,20 +37,22 @@ public class AttributeRepositoryImpl {
 
         Query query = entityManager.createNativeQuery(sql);
         query.setParameter("categoryId", categoryId);
+        return mapRows(query.getResultList());
+    }
 
-        List<Object[]> rows = query.getResultList();
+    // ── shared row mapper ─────────────────────────────────────────────────────
 
+    @SuppressWarnings("unchecked")
+    private List<AttributeDto> mapRows(List<Object[]> rows) {
         return rows.stream().map(row -> {
             UUID id = (UUID) row[0];
             String name = (String) row[1];
             String fieldType = (String) row[2];
             Boolean isRequired = row[3] != null ? (Boolean) row[3] : true;
 
-            // Convert comma-separated string into list
             List<String> options = new ArrayList<>();
-            if (row[4] != null) {
-                String optionsStr = (String) row[4];
-                options = Arrays.asList(optionsStr.split(","));
+            if (row[4] != null && !((String) row[4]).isBlank()) {
+                options = Arrays.asList(((String) row[4]).split(","));
             }
 
             return AttributeDto.builder()

@@ -39,6 +39,13 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
                 FROM Category c
             """)
     List<CategoryTreeProjection> fetchCategoryTreeData();
+
+    /**
+     * Returns the parent category's UUID for the given category, or empty if it has no parent.
+     * Used by CategoryFilterService to walk up the hierarchy without loading the full entity.
+     */
+    @Query("SELECT c.parent.id FROM Category c WHERE c.id = :id AND c.parent IS NOT NULL")
+    Optional<UUID> findParentIdById(@Param("id") UUID id);
 }
 
 /// hjuihui gyuhgyuy gyutguyu hyiuy unjj huijbhjgujhyhhihhuihhuihuhuihiuhhui
