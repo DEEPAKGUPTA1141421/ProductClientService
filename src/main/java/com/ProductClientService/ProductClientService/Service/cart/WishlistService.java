@@ -118,7 +118,7 @@ public class WishlistService {
         req.setVariantId(variantId);
         req.setQuantity(1);
 
-        ApiResponse<Object> cartResponse = cartService.addItem(userId, req);
+        ApiResponse<Object> cartResponse = cartService.addItem(req);
 
         if (!cartResponse.success()) {
             // Rollback: put item back in wishlist

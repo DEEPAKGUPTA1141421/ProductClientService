@@ -14,6 +14,7 @@ import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Repository.*;
 import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
+import com.ProductClientService.ProductClientService.Service.BaseService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,7 +31,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class CartService {
+public class CartService extends BaseService {
     private final CartRepository cartRepo;
     private final CartItemRepository itemRepo;
     private final CouponRepository couponRepo;
@@ -42,12 +43,12 @@ public class CartService {
     private final ProductAttributeRepository productAttributeRepository;
 
     @Transactional
-    public ApiResponse<Object> addItem(UUID userId, CartItemRequest req) {
+    public ApiResponse<Object> addItem(CartItemRequest req) {
         try {
-            Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+            Cart cart = cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
                     .orElseGet(() -> cartRepo.save(
                             Cart.builder()
-                                    .userId(userId)
+                                    .userId(getUserId())
                                     .status(Cart.Status.ACTIVE)
                                     .build()));
             List<CartItem> items = cart.getItems();
@@ -78,16 +79,16 @@ public class CartService {
 
             recompute(cart);
             cart = cartRepo.save(cart);
-            return getCart(userId);
+            return getCart();
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
     }
 
     @Transactional
-    public ApiResponse<Object> updateQuantity(UUID userId, UUID itemId, int qty) {
+    public ApiResponse<Object> updateQuantity(UUID itemId, int qty) {
         try {
-            Cart cart = mustGetActiveCart(userId);
+            Cart cart = mustGetActiveCart();
 
             CartItem item = cart.getItems().stream()
                     .filter(i -> i.getId().equals(itemId))
@@ -102,32 +103,32 @@ public class CartService {
             }
             recompute(cart);
             cartRepo.save(cart);
-            return getCart(userId);
+            return getCart();
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
     }
 
     @Transactional
-    public ApiResponse<Object> removeItem(UUID userId, UUID itemId) {
-        Cart cart = mustGetActiveCart(userId);
+    public ApiResponse<Object> removeItem(UUID itemId) {
+        Cart cart = mustGetActiveCart();
         CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Item not in cart"));
         cart.getItems().remove(item);
         itemRepo.delete(item);
         recompute(cart);
         cartRepo.save(cart);
-        return getCart(userId);
+        return getCart();
     }
 
     @Transactional(readOnly = true)
-    public ApiResponse<Object> getCart(UUID userId) {
+    public ApiResponse<Object> getCart() {
         System.out.println("we receive the call");
         // Find active cart for user
         try {
-            Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+            Cart cart = cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
                     .orElseGet(() -> Cart.builder()
-                            .userId(userId)
+                            .userId(getUserId())
                             .status(Cart.Status.ACTIVE)
                             .items(List.of())
                             .build());
@@ -240,8 +241,8 @@ public class CartService {
     }
 
     @Transactional
-    public Cart clearCart(UUID userId) {
-        Cart cart = mustGetActiveCart(userId);
+    public Cart clearCart() {
+        Cart cart = mustGetActiveCart();
         cart.getItems().clear();
         cart.setAppliedCartCoupon(null);
         cart.setItemLevelDiscount("0");
@@ -252,10 +253,10 @@ public class CartService {
 
     // ---------- Coupons ----------
     @Transactional
-    public ApiResponse<Object> applyItemCoupon(UUID userId, ApplyCouponRequest req) {
+    public ApiResponse<Object> applyItemCoupon(ApplyCouponRequest req) {
         if (req.getItemId() == null)
             throw new IllegalArgumentException("itemId required for item coupon");
-        Cart cart = mustGetActiveCart(userId);
+        Cart cart = mustGetActiveCart();
         CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(req.getItemId()))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Item not found"));
 
@@ -286,24 +287,24 @@ public class CartService {
         item.setLineDiscount(disc.toPlainString());
         recompute(cart);
         cartRepo.save(cart);
-        return getCart(userId);
+        return getCart();
     }
 
     @Transactional
-    public ApiResponse<Object> removeItemCoupon(UUID userId, UUID itemId) {
-        Cart cart = mustGetActiveCart(userId);
+    public ApiResponse<Object> removeItemCoupon(UUID itemId) {
+        Cart cart = mustGetActiveCart();
         CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
                 .findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found"));
         item.setAppliedCoupon(null);
         item.setLineDiscount("0");
         recompute(cart);
         cartRepo.save(cart);
-        return getCart(userId);
+        return getCart();
     }
 
     @Transactional(readOnly = true)
-    public ApiResponse<Object> getApplicableCoupons(UUID userId) {
-        Cart cart = mustGetActiveCart(userId);
+    public ApiResponse<Object> getApplicableCoupons() {
+        Cart cart = mustGetActiveCart();
 
         if (cart.getItems() == null || cart.getItems().isEmpty()) {
             return new ApiResponse<>(true, "No items in cart", List.of(), 200);
@@ -317,7 +318,9 @@ public class CartService {
         System.out.println("subTotal before " + subTotal);
         List<Coupon> eligibleCoupons = couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
                 Coupon.Applicability.CART_TOTAL,
-                subTotal);
+                subTotal).stream()
+                .filter(c -> c.getEndsAt() != null && c.getEndsAt().isAfter(ZonedDateTime.now()))
+                .toList();
 
         // Sort by discount descending
         List<Coupon> sortedCoupons = eligibleCoupons.stream()
@@ -406,8 +409,8 @@ public class CartService {
     }
 
     @Transactional
-    public ApiResponse<Object> applyCartCoupon(UUID userId, String code) {
-        Cart cart = mustGetActiveCart(userId);
+    public ApiResponse<Object> applyCartCoupon(String code) {
+        Cart cart = mustGetActiveCart();
         Coupon coupon = couponRepo.findByCodeIgnoreCaseAndActiveTrue(code)
                 .orElseThrow(() -> new RuntimeException("Invalid coupon"));
         validateCouponWindow(coupon);
@@ -427,21 +430,21 @@ public class CartService {
                 computeDiscount(currentSubTotal, coupon.getDiscountType(), coupon.getDiscountValue()).toString());
         recompute(cart);
         cartRepo.save(cart);
-        return getCart(userId);
+        return getCart();
     }
 
     @Transactional
-    public ApiResponse<Object> removeCartCoupon(UUID userId, String code) {
-        Cart cart = mustGetActiveCart(userId);
+    public ApiResponse<Object> removeCartCoupon(String code) {
+        Cart cart = mustGetActiveCart();
         couponRepo.findByCodeIgnoreCaseAndActiveTrue(code).ifPresent(c -> cart.setAppliedCartCoupon(null));
         recompute(cart);
         cartRepo.save(cart);
-        return getCart(userId);
+        return getCart();
     }
 
     // ---------- Helpers ----------
-    private Cart mustGetActiveCart(UUID userId) {
-        return cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+    private Cart mustGetActiveCart() {
+        return cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
                 .orElseThrow(() -> new IllegalStateException("No active cart for user"));
     }
 
@@ -528,4 +531,4 @@ public class CartService {
         }
     }
 }
-// 8u8uu8u8
+// 8u8uu8u8hyiu yuiu88u8889 hu kijjijokkl

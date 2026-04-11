@@ -24,7 +24,7 @@ public class CartController {
 
     public ResponseEntity<?> addItem(@RequestBody CartItemRequest req) {
         try {
-            ApiResponse<Object> response = cartService.addItem(getUserId(), req);
+            ApiResponse<Object> response = cartService.addItem(req);
             return ResponseEntity.status(201).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -36,7 +36,7 @@ public class CartController {
     public ResponseEntity<?> updateQty(
             @PathVariable UUID itemId, @RequestParam int qty) {
         try {
-            ApiResponse<Object> response = cartService.updateQuantity(getUserId(), itemId, qty);
+            ApiResponse<Object> response = cartService.updateQuantity(itemId, qty);
             return ResponseEntity.status(200).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -47,7 +47,7 @@ public class CartController {
 
     public ResponseEntity<?> removeItem(@PathVariable UUID itemId) {
         try {
-            ApiResponse<Object> response = cartService.removeItem(getUserId(), itemId);
+            ApiResponse<Object> response = cartService.removeItem(itemId);
             return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -58,7 +58,7 @@ public class CartController {
 
     public ResponseEntity<?> getCart() {
         try {
-            var cart = cartService.getCart(getUserId());
+            var cart = cartService.getCart();
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -69,7 +69,7 @@ public class CartController {
 
     public ResponseEntity<?> clear() {
         try {
-            var cart = cartService.clearCart(getUserId());
+            var cart = cartService.clearCart();
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -82,7 +82,7 @@ public class CartController {
     public ResponseEntity<?> applyItemCoupon(
             @PathVariable UUID itemId, @PathVariable String code) {
         try {
-            var cart = cartService.applyItemCoupon(getUserId(),
+            var cart = cartService.applyItemCoupon(
                     new ApplyCouponRequest() {
                         {
                             setItemId(itemId);
@@ -100,7 +100,7 @@ public class CartController {
     public ResponseEntity<?> removeItemCoupon(
             @PathVariable UUID itemId) {
         try {
-            var cart = cartService.removeItemCoupon(getUserId(), itemId);
+            var cart = cartService.removeItemCoupon(itemId);
             return ResponseEntity.status(200).body(cart);
         } catch (Exception e) {
             return ResponseEntity.status(501).body(e.getMessage());
@@ -110,22 +110,20 @@ public class CartController {
     @PostMapping("/coupons/{code}")
     public ResponseEntity<ApiResponse<Object>> applyCartCoupon(@PathVariable String code) {
 
-        return ResponseEntity.status(200).body(cartService.applyCartCoupon(getUserId(), code));
+        return ResponseEntity.status(200).body(cartService.applyCartCoupon(code));
     }
 
     @GetMapping("/coupons")
 
     public ResponseEntity<?> getApplicableCoupons(HttpServletRequest request) {
-        return ResponseEntity.ok(cartService.getApplicableCoupons(getUserId()));
+        return ResponseEntity.ok(cartService.getApplicableCoupons());
     }
 
     @DeleteMapping("/coupons/{code}")
 
     public ResponseEntity<?> removeCartCoupon(@PathVariable String code) {
-        return ResponseEntity.status(200).body(cartService.removeCartCoupon(getUserId(), code));
+        return ResponseEntity.status(200).body(cartService.removeCartCoupon(code));
     }
 
-    private UUID getUserId() {
-        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
-    }
 }
+// jiokooioljiiiii
