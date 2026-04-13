@@ -3,7 +3,6 @@ package com.ProductClientService.ProductClientService.Service;
 import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse.SearchProductDto;
-import com.ProductClientService.ProductClientService.Repository.SearchResultsRepository;
 import com.ProductClientService.ProductClientService.Repository.WishlistRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +41,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SearchResultsService {
 
-    private final SearchResultsRepository searchRepo;
+    private final ElasticsearchSearchService esSearchService;
     private final WishlistRepository wishlistRepo;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -62,7 +61,6 @@ public class SearchResultsService {
         if (cached != null) {
             try {
                 SearchResultsResponse response = objectMapper.readValue(cached, SearchResultsResponse.class);
-                // Inject wishlist flags (never cached)
                 injectWishlistFlags(response.getProducts(), userId);
                 log.debug("Cache HIT for key={}", cacheKey);
                 return response;
@@ -71,23 +69,9 @@ public class SearchResultsService {
             }
         }
 
-        // ── 2. DB query ───────────────────────────────────────────────────────
-        log.debug("Cache MISS for key={}", cacheKey);
-        List<Object[]> rows = searchRepo.search(req, userId);
-        long total = searchRepo.count(req);
-
-        List<SearchProductDto> products = rows.stream()
-                .map(this::mapRow)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        SearchResultsResponse response = SearchResultsResponse.builder()
-                .totalCount(total)
-                .page(req.getPage())
-                .pageSize(req.getPageSize())
-                .hasMore(((long) req.getPage() + 1) * req.getPageSize() < total)
-                .products(products)
-                .build();
+        // ── 2. Elasticsearch query (replaces native SQL) ──────────────────────
+        log.debug("Cache MISS for key={}, querying ES", cacheKey);
+        SearchResultsResponse response = esSearchService.search(req, userId);
 
         // ── 3. Cache user-agnostic response ───────────────────────────────────
         try {
@@ -103,90 +87,6 @@ public class SearchResultsService {
         injectWishlistFlags(response.getProducts(), userId);
 
         return response;
-    }
-
-    // ─── Row mapper ───────────────────────────────────────────────────────────
-
-    /**
-     * Maps a raw Object[] row from the native query to SearchProductDto.
-     *
-     * Column order must match the SELECT list in SearchResultsRepository.
-     */
-    private SearchProductDto mapRow(Object[] row) {
-        try {
-            UUID productId = (UUID) row[0];
-            String name = (String) row[1];
-            String brandName = (String) row[2];
-            UUID brandId = (UUID) row[3];
-            String minPriceStr = (String) row[4];
-            String origPriceStr = (String) row[5];
-            double avgRating = row[6] != null ? ((Number) row[6]).doubleValue() : 0.0;
-            int ratingCount = row[7] != null ? ((Number) row[7]).intValue() : 0;
-            String imageUrls = (String) row[8];
-            boolean sponsored = row[9] != null && ((Number) row[9]).intValue() == 1;
-            int deliveryDays = row[10] != null ? ((Number) row[10]).intValue() : 3;
-            boolean freeDeliv = row[11] != null && ((Number) row[11]).intValue() == 1;
-            UUID variantId = (UUID) row[12];
-
-            // ── Price conversion: paise → rupees ─────────────────────────────
-            double price = minPriceStr != null
-                    ? Double.parseDouble(minPriceStr) / 100.0
-                    : 0.0;
-            Double originalPrice = origPriceStr != null
-                    ? Double.parseDouble(origPriceStr) / 100.0
-                    : null;
-
-            // Discount % — only show if meaningfully different
-            Integer discountPercent = null;
-            if (originalPrice != null && originalPrice > price && originalPrice > 0) {
-                discountPercent = (int) Math.round(((originalPrice - price) / originalPrice) * 100);
-            }
-
-            // ── Badge logic ───────────────────────────────────────────────────
-            // Priority: Sponsored > custom badge > discount
-            String badge = null;
-            if (!sponsored) {
-                if (avgRating >= 4.5 && ratingCount > 1000) {
-                    badge = "Bestseller";
-                } else if (avgRating >= 4.3) {
-                    badge = "Top Rated";
-                } else if (discountPercent != null && discountPercent >= 20) {
-                    badge = discountPercent + "% Off";
-                }
-            }
-
-            // ── Delivery text ─────────────────────────────────────────────────
-            String deliveryText = buildDeliveryText(deliveryDays, freeDeliv);
-
-            // ── Images ────────────────────────────────────────────────────────
-            List<String> images = imageUrls != null && !imageUrls.isBlank()
-                    ? Arrays.asList(imageUrls.split(","))
-                    : List.of();
-
-            return SearchProductDto.builder()
-                    .id(productId)
-                    .name(name)
-                    .brand(brandName)
-                    .brandId(brandId)
-                    .price(price)
-                    .originalPrice(originalPrice)
-                    .discountPercent(discountPercent)
-                    .rating(avgRating)
-                    .reviewCount(ratingCount)
-                    .images(images)
-                    .hasVideo(false) // extend later with media-type column
-                    .badge(badge)
-                    .deliveryText(deliveryText)
-                    .freeDelivery(freeDeliv)
-                    .isSponsored(sponsored)
-                    .isWishlisted(false) // injected separately
-                    .variantId(variantId)
-                    .build();
-
-        } catch (Exception e) {
-            log.warn("Failed to map search row: {}", e.getMessage());
-            return null;
-        }
     }
 
     // ─── Wishlist injection ───────────────────────────────────────────────────
@@ -211,17 +111,6 @@ public class SearchResultsService {
         } catch (Exception e) {
             log.warn("Wishlist injection failed for userId={}: {}", userId, e.getMessage());
         }
-    }
-
-    // ─── Utilities ────────────────────────────────────────────────────────────
-
-    private String buildDeliveryText(int days, boolean free) {
-        String suffix = free ? ", Free" : "";
-        return switch (days) {
-            case 0 -> "Today" + suffix;
-            case 1 -> "Tomorrow" + suffix;
-            default -> "In " + days + " Days" + (free ? ", Free" : "");
-        };
     }
 
     /**

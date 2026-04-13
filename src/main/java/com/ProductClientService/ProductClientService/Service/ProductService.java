@@ -42,6 +42,7 @@ import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Repository.Projection.CategoryProjection;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ProductClientService.ProductClientService.Model.User;
+import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -64,6 +65,7 @@ public class ProductService {
     private final ObjectMapper objectMapper;
     private final AttributeRepositoryImpl attributeRepositoryImpl;
     private final HttpServletRequest request;
+    private final EventPublisherService eventPublisher;
 
     @Transactional(readOnly = true)
 
@@ -202,12 +204,25 @@ public class ProductService {
         try {
             String response = productRepository.getProductDetailAsJson(productId);
             if (response != null) {
+                // Publish view event asynchronously — never blocks the response
+                UUID userId = tryGetUserId();
+                UUID categoryId = productRepository.findCategoryIdByProductId(productId).orElse(null);
+                eventPublisher.publishProductViewed(productId, userId, categoryId);
                 return new ApiResponse<>(true, "Get Product Detail", objectMapper.readTree(response), 200);
             } else {
                 return new ApiResponse<>(false, "Product not found", null, 404);
             }
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
+        }
+    }
+
+    /** Returns userId from the JWT if authenticated, null for guest requests. */
+    private UUID tryGetUserId() {
+        try {
+            return getUserId();
+        } catch (Exception e) {
+            return null;
         }
     }
 

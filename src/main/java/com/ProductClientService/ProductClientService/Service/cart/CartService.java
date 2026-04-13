@@ -15,6 +15,7 @@ import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Repository.*;
 import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
 import com.ProductClientService.ProductClientService.Service.BaseService;
+import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -39,8 +40,8 @@ public class CartService extends BaseService {
     private final ProductRepository productRepository;
 
     private final ProductVariantRepository variantRepository;
-
     private final ProductAttributeRepository productAttributeRepository;
+    private final EventPublisherService eventPublisher;
 
     @Transactional
     public ApiResponse<Object> addItem(CartItemRequest req) {
@@ -79,6 +80,8 @@ public class CartService extends BaseService {
 
             recompute(cart);
             cart = cartRepo.save(cart);
+            // Publish event asynchronously — fire and forget
+            eventPublisher.publishCartAdded(req.getProductId(), req.getVariantId(), getUserId());
             return getCart();
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);

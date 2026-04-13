@@ -10,6 +10,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.DTO.wishlist.PriceDropItemDto;
 
+import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +34,7 @@ public class WishlistService {
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
     private final SharedWishlistRepository sharedWishlistRepo;
+    private final EventPublisherService eventPublisher;
 
     @Value("${app.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -58,6 +60,7 @@ public class WishlistService {
         if (!exists) {
             wl.getItems().add(WishlistItem.builder()
                     .wishlist(wl).productId(productId).variantId(variantId).build());
+            eventPublisher.publishWishlistAdd(productId, userId);
         }
 
         wishlistRepo.save(wl);
@@ -68,6 +71,11 @@ public class WishlistService {
     public ApiResponse<Object> remove(UUID userId, UUID itemId) {
         Wishlist wl = wishlistRepo.findByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("Wishlist not found"));
+
+        wl.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .ifPresent(i -> eventPublisher.publishWishlistRemove(i.getProductId(), userId));
 
         itemRepo.deleteById(itemId);
         wishlistRepo.save(wl);

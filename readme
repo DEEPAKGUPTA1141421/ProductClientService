@@ -70,3 +70,18 @@ from different shop then create as many booking  per shop and details of one ord
 @RestController
 @RequestMapping("/api/v1/seller/product")
 @PostMapping("/attach-brand")
+
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": "es:*",
+      "Resource": "arn:aws:es:ap-southeast-2:961529742038:domain/product-search/*"
+    }
+  ]
+}

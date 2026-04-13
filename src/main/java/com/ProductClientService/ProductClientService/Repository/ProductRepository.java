@@ -108,6 +108,9 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("select p.seller.id from Product p where p.id = :productId")
     UUID findSellerIdByProductId(@Param("productId") UUID productId);
 
+    @Query("SELECT p.category.id FROM Product p WHERE p.id = :productId")
+    Optional<UUID> findCategoryIdByProductId(@Param("productId") UUID productId);
+
     @Query(value = """
             SELECT
                 p.id AS id,
