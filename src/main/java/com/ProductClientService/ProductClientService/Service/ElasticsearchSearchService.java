@@ -4,6 +4,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.json.JsonData;
@@ -162,20 +163,20 @@ public class ElasticsearchSearchService {
         if (req.getAttributeName() != null && req.getAttributeValues() != null
                 && !req.getAttributeValues().isEmpty()) {
 
-            List<Query> attrValues = req.getAttributeValues().stream()
-                    .map(v -> term("attributes.value", v.toLowerCase()))
+            String attrName = req.getAttributeName().toLowerCase();
+            List<FieldValue> attrFieldValues = req.getAttributeValues().stream()
+                    .map(v -> FieldValue.of(v.toLowerCase()))
                     .toList();
 
             filters.add(Query.of(q -> q.nested(n -> n
                     .path("attributes")
                     .query(inner -> inner.bool(b -> b
-                            .must(term("attributes.name", req.getAttributeName().toLowerCase()))
+                            .must(m -> m.term(t -> t
+                                    .field("attributes.name")
+                                    .value(attrName)))
                             .must(m -> m.terms(t -> t
                                     .field("attributes.value")
-                                    .terms(tv -> tv.value(
-                                            req.getAttributeValues().stream()
-                                                    .map(v -> FieldValue.of(v.toLowerCase()))
-                                                    .toList())))))))));
+                                    .terms(tv -> tv.value(attrFieldValues)))))))));
         }
 
         // ── Keyword (should clause — boosts score but doesn't exclude) ────────

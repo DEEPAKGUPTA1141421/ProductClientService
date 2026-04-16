@@ -15,6 +15,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.ProductClientService.ProductClientService.Service.JwtService;
+import com.ProductClientService.ProductClientService.filter.InternalApiKeyFilter;
 import com.ProductClientService.ProductClientService.filter.JwtAuthenticationFilter;
 
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 public class WebConfig {
 
         private final JwtService jwtService;
+        private final InternalApiKeyFilter internalApiKeyFilter;
 
         // ✅ CORS Configuration (IMPORTANT)
         @Bean
@@ -76,11 +78,15 @@ public class WebConfig {
                                                 // ✅ Allow preflight requests
                                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
+                                                // ✅ Internal service endpoints (secured by InternalApiKeyFilter)
+                                                .requestMatchers("/internal/**").permitAll()
+
                                                 // ✅ Public APIs
                                                 .requestMatchers(
                                                                 "/api/v1/auth/**",
                                                                 "/public/**",
                                                                 "/api/v1/search/**",
+                                                                "/",
                                                                 "/api/v1/seller/product/test",
                                                                 "/api/v1/product/categorylevelwise/**",
                                                                 "/api/v1/product/category",
@@ -89,13 +95,16 @@ public class WebConfig {
                                                                 "/api/v1/brands/category/**")
                                                 .permitAll()
 
-                                                // ✅ Category filters — GET is public, DELETE (cache evict) requires auth
+                                                // ✅ Category filters — GET is public, DELETE (cache evict) requires
+                                                // auth
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/categories/*/filters")
                                                 .permitAll()
 
                                                 // 🔒 Secure everything else
                                                 .anyRequest().authenticated())
 
+                                // ✅ Internal API key filter (before JWT — handles /internal/** only)
+                                .addFilterBefore(internalApiKeyFilter, UsernamePasswordAuthenticationFilter.class)
                                 // ✅ JWT Filter
                                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -109,6 +118,4 @@ public class WebConfig {
         }
 }
 // juoiiojnji jioji mmjio uiouoinjjjknjknjnjnjkjjnkjnk
-// mlkklijkjiljijijijnnjjijihuhuhuhhuhuhugihhuihuikuhuigyjjijinjkj
-// hujijhjjujijkj khuiu uhkuio houoij
-// uiou8uuuhuhuihubhhbhgyhbhhnljjioio88iu8bhhuhvygujhhu
+// jliio uiu8u88uuiiiu8iui

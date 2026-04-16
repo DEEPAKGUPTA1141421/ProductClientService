@@ -1,23 +1,20 @@
 package com.ProductClientService.ProductClientService.Service.cart;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
-import com.ProductClientService.ProductClientService.DTO.ProductDetailsDto;
-import com.ProductClientService.ProductClientService.DTO.Cart.ApplyCouponRequest;
-import com.ProductClientService.ProductClientService.DTO.Cart.CartItemDto;
-import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
-import com.ProductClientService.ProductClientService.DTO.Cart.CartResponseDto;
-import com.ProductClientService.ProductClientService.DTO.Cart.CouponResponseDto;
+import com.ProductClientService.ProductClientService.DTO.Cart.*;
 import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Model.CartItem;
 import com.ProductClientService.ProductClientService.Model.Coupon;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Repository.*;
+import com.ProductClientService.ProductClientService.Repository.Projection.ProductSellerProjection;
 import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
 import com.ProductClientService.ProductClientService.Service.BaseService;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,55 +29,53 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CartService extends BaseService {
-    private final CartRepository cartRepo;
-    private final CartItemRepository itemRepo;
-    private final CouponRepository couponRepo;
 
-    private final ProductRepository productRepository;
+    // ── Constants ──────────────────────────────────────────────────────────────
+    private static final int        MAX_QTY_PER_ITEM        = 20;
+    private static final BigDecimal SERVICE_CHARGE          = BigDecimal.valueOf(30);
+    private static final BigDecimal GST_RATE                = BigDecimal.valueOf(18);
+    private static final BigDecimal FREE_DELIVERY_THRESHOLD = BigDecimal.valueOf(500);
+    private static final BigDecimal DELIVERY_CHARGE_AMOUNT  = BigDecimal.valueOf(50);
 
-    private final ProductVariantRepository variantRepository;
-    private final ProductAttributeRepository productAttributeRepository;
-    private final EventPublisherService eventPublisher;
+    // ── Dependencies ───────────────────────────────────────────────────────────
+    private final CartRepository              cartRepo;
+    private final CartItemRepository          itemRepo;
+    private final CouponRepository            couponRepo;
+    private final ProductRepository           productRepository;
+    private final ProductVariantRepository    variantRepository;
+    private final ProductAttributeRepository  productAttributeRepository;
+    private final EventPublisherService       eventPublisher;
+
+    // ── Internal data holders ─────────────────────────────────────────────────
+
+    /**
+     * Pre-loaded batch data for a single cart read — avoids N+1 queries.
+     * 3 DB queries regardless of how many items the cart contains.
+     */
+    private record BatchContext(
+            Map<UUID, ProductVariant>        variantMap,
+            Map<UUID, UUID>                  productToShop,
+            Map<UUID, List<ProductAttribute>> imageAttrByProduct
+    ) {}
+
+    /** Resolved cart-level coupon data (code, amount, raw string). */
+    private record CartCouponInfo(String code, BigDecimal discount, String discountStr) {
+        static CartCouponInfo none() { return new CartCouponInfo(null, BigDecimal.ZERO, "0"); }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PUBLIC API — cart CRUD
+    // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
     public ApiResponse<Object> addItem(CartItemRequest req) {
         try {
-            Cart cart = cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
-                    .orElseGet(() -> cartRepo.save(
-                            Cart.builder()
-                                    .userId(getUserId())
-                                    .status(Cart.Status.ACTIVE)
-                                    .build()));
-            List<CartItem> items = cart.getItems();
-            if (items == null) {
-                items = new ArrayList<>();
-                cart.setItems(items);
-            }
-            // merge if same product+variant exists
-            Optional<CartItem> existing = cart.getItems().stream()
-                    .filter(i -> i.getProductId().equals(req.getProductId())
-                            && Objects.equals(i.getVariantId(), req.getVariantId()))
-                    .findFirst();
-
-            if (existing.isPresent()) {
-                CartItem it = existing.get();
-                it.setQuantity(it.getQuantity() + Math.max(1, req.getQuantity()));
-            } else {
-                CartItem it = CartItem.builder()
-                        .cart(cart)
-                        .productId(req.getProductId())
-                        .variantId(req.getVariantId())
-                        .quantity(Math.max(1, req.getQuantity()))
-                        .metadata(req.getMetadata())
-                        .lineDiscount("0") // ✅ always initialize as string
-                        .build();
-                cart.getItems().add(it);
-            }
-
+            Cart cart = getOrCreateActiveCart();
+            mergeOrAddItem(cart, req);
             recompute(cart);
-            cart = cartRepo.save(cart);
-            // Publish event asynchronously — fire and forget
+            cartRepo.save(cart);
             eventPublisher.publishCartAdded(req.getProductId(), req.getVariantId(), getUserId());
             return getCart();
         } catch (Exception e) {
@@ -92,12 +87,7 @@ public class CartService extends BaseService {
     public ApiResponse<Object> updateQuantity(UUID itemId, int qty) {
         try {
             Cart cart = mustGetActiveCart();
-
-            CartItem item = cart.getItems().stream()
-                    .filter(i -> i.getId().equals(itemId))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Item not in cart"));
-
+            CartItem item = findCartItem(cart, itemId);
             if (qty <= 0) {
                 cart.getItems().remove(item);
                 itemRepo.delete(item);
@@ -115,8 +105,7 @@ public class CartService extends BaseService {
     @Transactional
     public ApiResponse<Object> removeItem(UUID itemId) {
         Cart cart = mustGetActiveCart();
-        CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("Item not in cart"));
+        CartItem item = findCartItem(cart, itemId);
         cart.getItems().remove(item);
         itemRepo.delete(item);
         recompute(cart);
@@ -126,121 +115,34 @@ public class CartService extends BaseService {
 
     @Transactional(readOnly = true)
     public ApiResponse<Object> getCart() {
-        System.out.println("we receive the call");
-        // Find active cart for user
-        try {
-            Cart cart = cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
-                    .orElseGet(() -> Cart.builder()
-                            .userId(getUserId())
-                            .status(Cart.Status.ACTIVE)
-                            .items(List.of())
-                            .build());
-            System.out.println("Cart" + cart.toString());
-            // Convert CartItems -> CartItemDto
-            List<CartItemDto> itemDtos = cart.getItems().stream()
-                    .map(item -> {
-                        System.out.println("Cart Item" + item.getProductId());
-                        UUID shopId = productRepository.findSellerIdByProductId(item.getProductId());
-                        System.out.println("shopId" + shopId);
-                        UUID variantId = item.getVariantId();
-                        ProductDetailsDto productDetails = getProductDetails(item);
-                        // String a = "0db8b4b7-69fd-4843-9904-8408ee1e77d8";
-                        // UUID shopId = UUID.fromString(a);
-                        return CartItemDto.builder()
-                                .id(item.getId())
-                                .productId(item.getProductId())
-                                .appliedCoupon(Optional.ofNullable(item.getAppliedCoupon())
-                                        .map(Coupon::getCode)
-                                        .orElse(null))
-                                .discountLineAmount(item.getLineDiscount())
-                                .variantId(item.getVariantId())
-                                .shopId(shopId)
-                                .quantity(item.getQuantity())
-                                .price(Double.parseDouble(getPriceFromVariant(variantId))) // convert paise to ₹
-                                .name(productDetails.getName())
-                                .description(productDetails.getDescription())
-                                .image(productDetails.getImageUrl())
-                                .build();
-                    })
-                    .toList();
-
-            // Business logic
-            System.out.println("price calculation");
-            double totalAmount = itemDtos.stream()
-                    .mapToDouble(i -> i.getPrice() * i.getQuantity())
-                    .sum();
-
-            double totalDiscount = totalAmount * 0.1; // assume 10% discount
-            double serviceCharge = 30.0; // flat service fee
-            double deliveryCharge = totalAmount > 500 ? 0 : 50; // free delivery above ₹500
-            double gstCharge = totalAmount * 0.18; // 18% GST
-
-            // Final response
-            double grandTotal = totalAmount - totalDiscount + serviceCharge + deliveryCharge + gstCharge;
-            CartResponseDto dto = CartResponseDto.builder()
-                    .cartId(cart.getId())
-                    .userId(cart.getUserId())
-                    .status(cart.getStatus().name())
-                    .items(itemDtos)
-                    .totalAmount(totalAmount)
-                    .totalDiscount(totalDiscount)
-                    .serviceCharge(serviceCharge)
-                    .deliveryCharge(deliveryCharge)
-                    .CartLineDiscount(cart.getCartLevelDiscount())
-                    .cartCoupon(Optional.ofNullable(cart.getAppliedCartCoupon())
-                            .map(coupon -> coupon.getCode())
-                            .orElse(null))
-                    .gstCharge(gstCharge)
-                    .grandTotal(grandTotal)
-                    .build();
-            return new ApiResponse<>(true, "Cart fetched", dto, 200);
-        } catch (Exception e) {
-            System.out.println("Error mesaage" + e.getMessage());
-            return new ApiResponse<>(false, e.getMessage(), null, 501);
-        }
+        return getCartByUserId(getUserId());
     }
 
-    private ProductDetailsDto getProductDetails(CartItem item) {
-        UUID variantId = item.getVariantId();
-        UUID productId = item.getProductId();
+    @Transactional(readOnly = true)
+    public ApiResponse<Object> getCartByUserId(UUID userId) {
+        try {
+            Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE).orElse(null);
+            List<CartItem> cartItems = cart != null ? cart.getItems() : List.of();
 
-        // 1. Fetch name and description (projection)
-        ProductSummaryProjection productSummary = productRepository.getProductNameAndDescription(productId);
-
-        if (productSummary == null) {
-            throw new RuntimeException("Product not found for ID: " + productId);
-        }
-
-        // 2. Fetch variant
-        ProductVariant variant = variantRepository.findById(variantId)
-                .orElseThrow(() -> new RuntimeException("Variant not found for ID: " + variantId));
-
-        // 3. Determine image attribute from SKU (safe)
-        String[] skuParts = variant.getSku().split("-");
-        String imageAttribute = skuParts.length > 1 ? skuParts[1] : skuParts[0];
-
-        // 4. Fetch all image attributes for this product
-        List<ProductAttribute> attributes = productAttributeRepository.findImageAttributesByProductId(productId);
-
-        // 5. Find matching image URL
-        String imageUrl = null;
-        for (ProductAttribute pa : attributes) {
-            if (pa.getValue().equalsIgnoreCase(imageAttribute) && pa.getImages() != null && !pa.getImages().isEmpty()) {
-                imageUrl = pa.getImages().get(0);
-                break;
+            if (cart == null || cartItems.isEmpty()) {
+                return new ApiResponse<>(true, "Cart fetched", emptyCartResponse(userId, cart), 200);
             }
-        }
 
-        // 6. Fallback if no image found
-        if (imageUrl == null && !attributes.isEmpty() && !attributes.get(0).getImages().isEmpty()) {
-            imageUrl = attributes.get(0).getImages().get(0);
-        }
+            List<CartValidationIssue> issues      = new ArrayList<>();
+            BatchContext              ctx          = loadBatchContext(cartItems);
+            CartCouponInfo            couponInfo   = resolveCartCoupon(cart, issues);
+            List<CartItemDto>         itemDtos     = buildValidatedItems(cartItems, ctx, issues);
+            BigDecimal                totalNet     = netAfterItemDiscounts(itemDtos);
+            Map<UUID, List<CartItemDto>> byShop    = groupByShop(itemDtos);
+            List<SubOrderDto>         subOrders    = buildSubOrders(byShop, couponInfo, totalNet);
 
-        return ProductDetailsDto.builder()
-                .name(productSummary.getName())
-                .description(productSummary.getDescription())
-                .imageUrl(imageUrl)
-                .build();
+            return new ApiResponse<>(true, "Cart fetched",
+                    assembleCartResponse(cart, userId, itemDtos, subOrders, couponInfo, issues), 200);
+
+        } catch (Exception e) {
+            log.error("Error building cart for userId={}", userId, e);
+            return new ApiResponse<>(false, e.getMessage(), null, 500);
+        }
     }
 
     @Transactional
@@ -254,40 +156,25 @@ public class CartService extends BaseService {
         return cartRepo.save(cart);
     }
 
-    // ---------- Coupons ----------
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PUBLIC API — coupons
+    // ═══════════════════════════════════════════════════════════════════════════
+
     @Transactional
     public ApiResponse<Object> applyItemCoupon(ApplyCouponRequest req) {
         if (req.getItemId() == null)
             throw new IllegalArgumentException("itemId required for item coupon");
-        Cart cart = mustGetActiveCart();
-        CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(req.getItemId()))
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("Item not found"));
 
-        Coupon coupon = couponRepo.findByCodeIgnoreCaseAndActiveTrue(req.getCode())
-                .orElseThrow(() -> new RuntimeException("Invalid coupon"));
+        Cart cart     = mustGetActiveCart();
+        CartItem item = findCartItem(cart, req.getItemId());
+        Coupon coupon = fetchActiveCoupon(req.getCode());
         validateCouponWindow(coupon);
 
         if (coupon.getScope() != Coupon.Scope.ITEM)
             throw new RuntimeException("Coupon is not item-scope");
 
-        // Validate applicability (here you can query product->brand/category if needed)
-        // For demo: only PRODUCT applicability strictly checks productId
-        switch (coupon.getApplicability()) {
-            case PRODUCT -> {
-                if (!item.getProductId().equals(coupon.getProductId()))
-                    throw new IllegalArgumentException("Coupon not applicable on this product");
-            }
-            case BRAND, CATEGORY -> {
-                /* accept (extend with brand/category lookups) */ }
-        }
-        UUID variantId = item.getVariantId();
-        String priceStr = getPriceFromVariant(variantId);
-        BigDecimal base = new BigDecimal(priceStr)
-                .multiply(BigDecimal.valueOf(item.getQuantity()));
-
-        BigDecimal disc = computeDiscount(base, coupon.getDiscountType(), coupon.getDiscountValue());
-        item.setAppliedCoupon(coupon);
-        item.setLineDiscount(disc.toPlainString());
+        validateCouponApplicability(item, coupon);
+        applyDiscountToItem(item, coupon);
         recompute(cart);
         cartRepo.save(cart);
         return getCart();
@@ -295,9 +182,8 @@ public class CartService extends BaseService {
 
     @Transactional
     public ApiResponse<Object> removeItemCoupon(UUID itemId) {
-        Cart cart = mustGetActiveCart();
-        CartItem item = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
-                .findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found"));
+        Cart cart     = mustGetActiveCart();
+        CartItem item = findCartItem(cart, itemId);
         item.setAppliedCoupon(null);
         item.setLineDiscount("0");
         recompute(cart);
@@ -308,129 +194,36 @@ public class CartService extends BaseService {
     @Transactional(readOnly = true)
     public ApiResponse<Object> getApplicableCoupons() {
         Cart cart = mustGetActiveCart();
-
-        if (cart.getItems() == null || cart.getItems().isEmpty()) {
+        if (cart.getItems() == null || cart.getItems().isEmpty())
             return new ApiResponse<>(true, "No items in cart", List.of(), 200);
-        }
 
-        String subTotal = cart.getSubTotal();
-        long subTotalValue = Long.parseLong(subTotal); // assuming paise
-        System.out.println("Cart subtotal: " + subTotalValue);
+        String subTotal      = cart.getSubTotal();
+        long   subTotalValue = Long.parseLong(subTotal);
 
-        // Fetch eligible coupons
-        System.out.println("subTotal before " + subTotal);
-        List<Coupon> eligibleCoupons = couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
-                Coupon.Applicability.CART_TOTAL,
-                subTotal).stream()
-                .filter(c -> c.getEndsAt() != null && c.getEndsAt().isAfter(ZonedDateTime.now()))
+        List<CouponResponseDto.BestCoupon> bestCoupons = fetchEligibleCoupons(subTotal).stream()
+                .sorted(Comparator.comparingLong((Coupon c) -> calculateDiscount(c, subTotalValue)).reversed())
+                .map(c -> toBestCoupon(c, subTotalValue))
                 .toList();
 
-        // Sort by discount descending
-        List<Coupon> sortedCoupons = eligibleCoupons.stream()
-                .sorted(Comparator.comparingLong((Coupon c) -> calculateDiscount(c, subTotalValue))
-                        .reversed())
-                .toList();
+        List<CouponResponseDto.MoreCoupon> moreCoupons = buildMoreCoupons(subTotal);
 
-        // Map to response DTO
-        List<CouponResponseDto.BestCoupon> bestCoupons = sortedCoupons.stream()
-                .map(c -> {
-                    long discountAmount = calculateDiscount(c, subTotalValue);
-
-                    String leftParagraph;
-                    if (c.getDiscountType() == Coupon.DiscountType.PERCENT) {
-                        leftParagraph = c.getDiscountValue() + " % Off";
-                    } else { // FLAT
-                        leftParagraph = "₹" + c.getDiscountValue() + " Off";
-                    }
-
-                    String saveDescription = "Save ₹ " + discountAmount + " on this Order";
-
-                    String description = String.format(
-                            "Use Code %s & get %s %s off on Order Above ₹ %s. Maximum discount %s.",
-                            c.getCode(),
-                            c.getDiscountValue(),
-                            c.getDiscountType() == Coupon.DiscountType.PERCENT ? "%" : "₹",
-                            c.getMinCartTotal(),
-                            discountAmount);
-
-                    return CouponResponseDto.BestCoupon.builder()
-                            .id(c.getId())
-                            .code(c.getCode())
-                            .leftParagraph(leftParagraph)
-                            .saveDescription(saveDescription)
-                            .description(description)
-                            .build();
-                })
-                .toList();
-        List<CouponResponseDto.MoreCoupon> moreCoupons = MoreCoupons(subTotal);
-        HashMap<String, Object> results = new HashMap<>();
-        results.put("bestCoupons", bestCoupons);
-        results.put("moreCoupons", moreCoupons);
-        return new ApiResponse<>(true, "Applicable coupons", results, 200);
-    }
-
-    public List<CouponResponseDto.MoreCoupon> MoreCoupons(String subTotal) {
-        List<Coupon> moreCoupons = couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalGreaterThan(
-                Coupon.Applicability.CART_TOTAL,
-                subTotal);
-        moreCoupons = moreCoupons.stream()
-                .sorted(Comparator.comparingLong((Coupon c) -> calculateDiscount(c, Long.parseLong(subTotal))))
-                .toList();
-        return moreCoupons.stream()
-                .map(c -> {
-                    long discountAmount = calculateDiscount(c, Long.parseLong(c.getMinCartTotal()));
-
-                    String leftParagraph = c.getDiscountType() == Coupon.DiscountType.PERCENT
-                            ? c.getDiscountValue() + " % Off"
-                            : "₹" + c.getDiscountValue() + " Off";
-
-                    String addMoreDescription = "Add More ₹ " +
-                            (Long.parseLong(c.getMinCartTotal()) - Long.parseLong(subTotal)) +
-                            " to avail this Offer";
-
-                    String subDescription = "Get " + c.getDiscountValue() +
-                            (c.getDiscountType() == Coupon.DiscountType.PERCENT ? " % Off" : " ₹ Flat");
-
-                    String description = String.format(
-                            "Use Code %s & get %s %s off on Order Above ₹ %s. Maximum discount %s.",
-                            c.getCode(),
-                            c.getDiscountValue(),
-                            c.getDiscountType() == Coupon.DiscountType.PERCENT ? "%" : "₹",
-                            c.getMinCartTotal(),
-                            discountAmount);
-
-                    return CouponResponseDto.MoreCoupon.builder()
-                            .id(c.getId())
-                            .code(c.getCode())
-                            .addMoreDescription(addMoreDescription)
-                            .subDescription(subDescription)
-                            .leftParagraph(leftParagraph)
-                            .description(description)
-                            .build();
-                })
-                .collect(Collectors.toList());
+        return new ApiResponse<>(true, "Applicable coupons",
+                Map.of("bestCoupons", bestCoupons, "moreCoupons", moreCoupons), 200);
     }
 
     @Transactional
     public ApiResponse<Object> applyCartCoupon(String code) {
-        Cart cart = mustGetActiveCart();
-        Coupon coupon = couponRepo.findByCodeIgnoreCaseAndActiveTrue(code)
-                .orElseThrow(() -> new RuntimeException("Invalid coupon"));
+        Cart   cart   = mustGetActiveCart();
+        Coupon coupon = fetchActiveCoupon(code);
         validateCouponWindow(coupon);
+
         if (coupon.getScope() != Coupon.Scope.CART)
             throw new IllegalArgumentException("Coupon is not cart-scope");
 
-        // validate min cart total if needed
-        BigDecimal currentSubTotal = new BigDecimal(cart.getSubTotal())
-                .subtract(new BigDecimal(cart.getItemLevelDiscount()));
-        if (coupon.getApplicability() == Coupon.Applicability.CART_TOTAL
-                && coupon.getMinCartTotal() != null
-                && currentSubTotal.compareTo(new BigDecimal(coupon.getMinCartTotal())) < 0) {
-            throw new IllegalArgumentException("Cart total below minimum for this coupon");
-        }
+        validateCartMinimum(cart, coupon);
+        BigDecimal net = cartNetSubTotal(cart);
         cart.setAppliedCartCoupon(coupon);
-        cart.setCartLevelDiscount(
-                computeDiscount(currentSubTotal, coupon.getDiscountType(), coupon.getDiscountValue()).toString());
+        cart.setCartLevelDiscount(computeDiscount(net, coupon.getDiscountType(), coupon.getDiscountValue()).toString());
         recompute(cart);
         cartRepo.save(cart);
         return getCart();
@@ -445,10 +238,309 @@ public class CartService extends BaseService {
         return getCart();
     }
 
-    // ---------- Helpers ----------
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CART BUILD — step-by-step private helpers (called only by getCartByUserId)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private CartResponseDto emptyCartResponse(UUID userId, Cart cart) {
+        return CartResponseDto.builder()
+                .userId(userId)
+                .status(cart != null ? cart.getStatus().name() : Cart.Status.ACTIVE.name())
+                .items(List.of()).subOrders(List.of()).validationIssues(List.of())
+                .totalAmount(0).totalDiscount(0).serviceCharge(r2(SERVICE_CHARGE))
+                .deliveryCharge(0).gstCharge(0).grandTotal(r2(SERVICE_CHARGE))
+                .cartLineDiscount("0")
+                .build();
+    }
+
+    /** Loads variants, seller IDs, and image attributes in 3 DB queries. */
+    private BatchContext loadBatchContext(List<CartItem> cartItems) {
+        Set<UUID> variantIds = cartItems.stream().map(CartItem::getVariantId).collect(Collectors.toSet());
+        Set<UUID> productIds = cartItems.stream().map(CartItem::getProductId).collect(Collectors.toSet());
+
+        Map<UUID, ProductVariant> variantMap = variantRepository.findAllById(variantIds).stream()
+                .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        Map<UUID, UUID> productToShop = productRepository.findSellerIdsByProductIds(productIds).stream()
+                .collect(Collectors.toMap(
+                        ProductSellerProjection::getProductId,
+                        ProductSellerProjection::getSellerId));
+
+        Map<UUID, List<ProductAttribute>> imageAttrByProduct = productAttributeRepository
+                .findImageAttributesByProductIds(productIds).stream()
+                .collect(Collectors.groupingBy(pa -> pa.getProduct().getId()));
+
+        return new BatchContext(variantMap, productToShop, imageAttrByProduct);
+    }
+
+    /** Validates the cart-level coupon; adds a CART_COUPON_EXPIRED issue if stale. */
+    private CartCouponInfo resolveCartCoupon(Cart cart, List<CartValidationIssue> issues) {
+        Coupon coupon = cart.getAppliedCartCoupon();
+        if (coupon == null) return CartCouponInfo.none();
+
+        if (!isCouponLive(coupon)) {
+            issues.add(new CartValidationIssue(CartValidationIssue.Type.CART_COUPON_EXPIRED, null, null,
+                    "Cart coupon '" + coupon.getCode() + "' has expired and was excluded from totals"));
+            return CartCouponInfo.none();
+        }
+
+        String discStr = cart.getCartLevelDiscount() != null ? cart.getCartLevelDiscount() : "0";
+        return new CartCouponInfo(coupon.getCode(), parseDecimal(discStr), discStr);
+    }
+
+    /** Converts each CartItem to a CartItemDto, skipping unavailable variants. */
+    private List<CartItemDto> buildValidatedItems(List<CartItem> cartItems,
+                                                  BatchContext ctx,
+                                                  List<CartValidationIssue> issues) {
+        List<CartItemDto> result = new ArrayList<>();
+        for (CartItem item : cartItems) {
+            buildCartItemDto(item, ctx, issues).ifPresent(result::add);
+        }
+        return result;
+    }
+
+    /** Builds one CartItemDto. Returns empty if the variant no longer exists. */
+    private Optional<CartItemDto> buildCartItemDto(CartItem item,
+                                                   BatchContext ctx,
+                                                   List<CartValidationIssue> issues) {
+        ProductVariant variant = ctx.variantMap().get(item.getVariantId());
+        if (variant == null) {
+            issues.add(new CartValidationIssue(CartValidationIssue.Type.ITEM_UNAVAILABLE,
+                    item.getId(), item.getProductId(),
+                    "Variant " + item.getVariantId() + " is no longer available"));
+            return Optional.empty();
+        }
+
+        boolean available   = checkStock(item, variant, issues);
+        String  lineDiscount = resolveEffectiveLineDiscount(item, issues);
+        String  couponCode   = isCouponLive(item.getAppliedCoupon()) ? item.getAppliedCoupon().getCode() : null;
+        String  image        = resolveImageUrl(
+                ctx.imageAttrByProduct().getOrDefault(item.getProductId(), List.of()), variant.getSku());
+
+        ProductSummaryProjection summary = productRepository.getProductNameAndDescription(item.getProductId());
+
+        return Optional.of(CartItemDto.builder()
+                .id(item.getId())
+                .productId(item.getProductId())
+                .variantId(item.getVariantId())
+                .shopId(ctx.productToShop().get(item.getProductId()))
+                .quantity(item.getQuantity())
+                .price(parseDecimal(variant.getPrice()).doubleValue())
+                .name(summary != null ? summary.getName() : "Unknown")
+                .description(summary != null ? summary.getDescription() : "")
+                .image(image)
+                .appliedCoupon(couponCode)
+                .discountLineAmount(lineDiscount)
+                .stockAvailable(variant.getStock())
+                .isAvailable(available)
+                .build());
+    }
+
+    /** Validates stock levels; returns true if the item can proceed to checkout. */
+    private boolean checkStock(CartItem item, ProductVariant variant, List<CartValidationIssue> issues) {
+        int qty   = item.getQuantity();
+        int stock = variant.getStock();
+
+        if (qty > MAX_QTY_PER_ITEM) {
+            issues.add(new CartValidationIssue(CartValidationIssue.Type.INSUFFICIENT_STOCK,
+                    item.getId(), item.getProductId(),
+                    "Quantity " + qty + " exceeds maximum allowed " + MAX_QTY_PER_ITEM));
+        }
+        if (stock == 0) {
+            issues.add(new CartValidationIssue(CartValidationIssue.Type.OUT_OF_STOCK,
+                    item.getId(), item.getProductId(), "Product is out of stock"));
+            return false;
+        }
+        if (stock < qty) {
+            issues.add(new CartValidationIssue(CartValidationIssue.Type.INSUFFICIENT_STOCK,
+                    item.getId(), item.getProductId(),
+                    "Only " + stock + " unit(s) available, cart has " + qty));
+            return false;
+        }
+        return true;
+    }
+
+    /** Returns the effective line discount, zeroing it if the item coupon has expired. */
+    private String resolveEffectiveLineDiscount(CartItem item, List<CartValidationIssue> issues) {
+        Coupon coupon = item.getAppliedCoupon();
+        if (coupon == null) return item.getLineDiscount() != null ? item.getLineDiscount() : "0";
+
+        if (!isCouponLive(coupon)) {
+            issues.add(new CartValidationIssue(CartValidationIssue.Type.COUPON_EXPIRED,
+                    item.getId(), item.getProductId(),
+                    "Item coupon '" + coupon.getCode() + "' has expired"));
+            return "0";
+        }
+        return item.getLineDiscount() != null ? item.getLineDiscount() : "0";
+    }
+
+    private Map<UUID, List<CartItemDto>> groupByShop(List<CartItemDto> items) {
+        return items.stream().collect(Collectors.groupingBy(CartItemDto::getShopId));
+    }
+
+    /** Total (subTotal − itemDiscounts) across all items — the base for coupon splitting. */
+    private BigDecimal netAfterItemDiscounts(List<CartItemDto> items) {
+        BigDecimal sub  = items.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal disc = items.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sub.subtract(disc);
+    }
+
+    private List<SubOrderDto> buildSubOrders(Map<UUID, List<CartItemDto>> byShop,
+                                             CartCouponInfo couponInfo,
+                                             BigDecimal totalNet) {
+        return byShop.entrySet().stream()
+                .map(e -> buildSubOrder(e.getKey(), e.getValue(), couponInfo, totalNet))
+                .collect(Collectors.toList());
+    }
+
+    /** Builds one shop's sub-order with proportional cart-coupon allocation. */
+    private SubOrderDto buildSubOrder(UUID shopId, List<CartItemDto> shopItems,
+                                      CartCouponInfo couponInfo, BigDecimal totalNet) {
+        BigDecimal shopSub      = shopItems.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal shopItemDisc = shopItems.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal shopNet      = shopSub.subtract(shopItemDisc);
+        BigDecimal shopCartDisc = proportionalDiscount(shopNet, totalNet, couponInfo.discount());
+        BigDecimal taxable      = shopNet.subtract(shopCartDisc).max(BigDecimal.ZERO);
+        BigDecimal gst          = taxable.multiply(GST_RATE).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal delivery     = taxable.compareTo(FREE_DELIVERY_THRESHOLD) > 0 ? BigDecimal.ZERO : DELIVERY_CHARGE_AMOUNT;
+
+        return SubOrderDto.builder()
+                .shopId(shopId).items(shopItems)
+                .subTotal(r2(shopSub)).itemLevelDiscount(r2(shopItemDisc))
+                .proportionalCartDiscount(r2(shopCartDisc))
+                .taxableAmount(r2(taxable)).gstCharge(r2(gst)).deliveryCharge(r2(delivery))
+                .subOrderTotal(r2(taxable.add(gst).add(delivery)))
+                .build();
+    }
+
+    /** discount × (shopNet / totalNet), or zero if either operand is zero. */
+    private BigDecimal proportionalDiscount(BigDecimal shopNet, BigDecimal totalNet, BigDecimal cartDiscount) {
+        if (totalNet.compareTo(BigDecimal.ZERO) <= 0 || cartDiscount.compareTo(BigDecimal.ZERO) <= 0)
+            return BigDecimal.ZERO;
+        return cartDiscount.multiply(shopNet).divide(totalNet, 2, RoundingMode.HALF_UP);
+    }
+
+    /** Assembles the final CartResponseDto from pre-computed parts. */
+    private CartResponseDto assembleCartResponse(Cart cart, UUID userId,
+                                                 List<CartItemDto> items,
+                                                 List<SubOrderDto> subOrders,
+                                                 CartCouponInfo couponInfo,
+                                                 List<CartValidationIssue> issues) {
+        BigDecimal totalSub      = items.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalItemDisc = items.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalDelivery = subOrders.stream().map(s -> bd(s.getDeliveryCharge())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalGst      = subOrders.stream().map(s -> bd(s.getGstCharge())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal grandTotal    = subOrders.stream().map(s -> bd(s.getSubOrderTotal())).reduce(BigDecimal.ZERO, BigDecimal::add).add(SERVICE_CHARGE);
+
+        return CartResponseDto.builder()
+                .cartId(cart.getId()).userId(userId).status(cart.getStatus().name())
+                .items(items).subOrders(subOrders).validationIssues(issues)
+                .totalAmount(r2(totalSub))
+                .totalDiscount(r2(totalItemDisc.add(couponInfo.discount())))
+                .serviceCharge(r2(SERVICE_CHARGE))
+                .deliveryCharge(r2(totalDelivery))
+                .gstCharge(r2(totalGst))
+                .grandTotal(r2(grandTotal))
+                .cartCoupon(couponInfo.code())
+                .cartLineDiscount(couponInfo.discountStr())
+                .build();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COUPON DISPLAY — private helpers (called only by getApplicableCoupons)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private List<Coupon> fetchEligibleCoupons(String subTotal) {
+        return couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalLessThanEqual(
+                        Coupon.Applicability.CART_TOTAL, subTotal).stream()
+                .filter(c -> c.getEndsAt() != null && c.getEndsAt().isAfter(ZonedDateTime.now()))
+                .toList();
+    }
+
+    private CouponResponseDto.BestCoupon toBestCoupon(Coupon c, long subTotalValue) {
+        long discountAmount = calculateDiscount(c, subTotalValue);
+        return CouponResponseDto.BestCoupon.builder()
+                .id(c.getId()).code(c.getCode())
+                .leftParagraph(formatLeftParagraph(c))
+                .saveDescription("Save ₹ " + discountAmount + " on this Order")
+                .description(formatCouponDescription(c, discountAmount))
+                .build();
+    }
+
+    public List<CouponResponseDto.MoreCoupon> buildMoreCoupons(String subTotal) {
+        return couponRepo.findByActiveTrueAndApplicabilityAndMinCartTotalGreaterThan(
+                        Coupon.Applicability.CART_TOTAL, subTotal).stream()
+                .sorted(Comparator.comparingLong((Coupon c) -> calculateDiscount(c, Long.parseLong(subTotal))))
+                .map(c -> toMoreCoupon(c, subTotal))
+                .collect(Collectors.toList());
+    }
+
+    private CouponResponseDto.MoreCoupon toMoreCoupon(Coupon c, String subTotal) {
+        long discountAmount = calculateDiscount(c, Long.parseLong(c.getMinCartTotal()));
+        long gap            = Long.parseLong(c.getMinCartTotal()) - Long.parseLong(subTotal);
+        return CouponResponseDto.MoreCoupon.builder()
+                .id(c.getId()).code(c.getCode())
+                .leftParagraph(formatLeftParagraph(c))
+                .addMoreDescription("Add More ₹ " + gap + " to avail this Offer")
+                .subDescription("Get " + c.getDiscountValue() + (c.getDiscountType() == Coupon.DiscountType.PERCENT ? " % Off" : " ₹ Flat"))
+                .description(formatCouponDescription(c, discountAmount))
+                .build();
+    }
+
+    private String formatLeftParagraph(Coupon c) {
+        return c.getDiscountType() == Coupon.DiscountType.PERCENT
+                ? c.getDiscountValue() + " % Off"
+                : "₹" + c.getDiscountValue() + " Off";
+    }
+
+    private String formatCouponDescription(Coupon c, long discountAmount) {
+        return String.format("Use Code %s & get %s %s off on Order Above ₹ %s. Maximum discount %s.",
+                c.getCode(), c.getDiscountValue(),
+                c.getDiscountType() == Coupon.DiscountType.PERCENT ? "%" : "₹",
+                c.getMinCartTotal(), discountAmount);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SHARED HELPERS — cart, coupon, item utilities
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private Cart getOrCreateActiveCart() {
+        return cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
+                .orElseGet(() -> cartRepo.save(Cart.builder()
+                        .userId(getUserId()).status(Cart.Status.ACTIVE).build()));
+    }
+
     private Cart mustGetActiveCart() {
         return cartRepo.findByUserIdAndStatus(getUserId(), Cart.Status.ACTIVE)
                 .orElseThrow(() -> new IllegalStateException("No active cart for user"));
+    }
+
+    private CartItem findCartItem(Cart cart, UUID itemId) {
+        return cart.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not in cart"));
+    }
+
+    private void mergeOrAddItem(Cart cart, CartItemRequest req) {
+        if (cart.getItems() == null) cart.setItems(new ArrayList<>());
+        Optional<CartItem> existing = cart.getItems().stream()
+                .filter(i -> i.getProductId().equals(req.getProductId())
+                        && Objects.equals(i.getVariantId(), req.getVariantId()))
+                .findFirst();
+        if (existing.isPresent()) {
+            existing.get().setQuantity(existing.get().getQuantity() + Math.max(1, req.getQuantity()));
+        } else {
+            cart.getItems().add(CartItem.builder()
+                    .cart(cart).productId(req.getProductId()).variantId(req.getVariantId())
+                    .quantity(Math.max(1, req.getQuantity())).metadata(req.getMetadata()).lineDiscount("0")
+                    .build());
+        }
+    }
+
+    private Coupon fetchActiveCoupon(String code) {
+        return couponRepo.findByCodeIgnoreCaseAndActiveTrue(code)
+                .orElseThrow(() -> new RuntimeException("Invalid coupon"));
     }
 
     private void validateCouponWindow(Coupon coupon) {
@@ -461,54 +553,62 @@ public class CartService extends BaseService {
             throw new IllegalArgumentException("Coupon expired");
     }
 
-    private BigDecimal computeDiscount(BigDecimal base, Coupon.DiscountType type, String value) {
-        if (value == null || base.compareTo(BigDecimal.ZERO) <= 0)
-            return BigDecimal.ZERO;
-
-        BigDecimal valueDecimal;
-        try {
-            valueDecimal = new BigDecimal(value);
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO; // or handle invalid input gracefully
-        }
-
-        return switch (type) {
-            case FLAT -> valueDecimal.min(base); // ensure discount doesn't exceed base
-            case PERCENT -> base.multiply(valueDecimal).divide(BigDecimal.valueOf(100));
-        };
+    private boolean isCouponLive(Coupon coupon) {
+        if (coupon == null || !Boolean.TRUE.equals(coupon.getActive())) return false;
+        return coupon.getEndsAt() == null || !ZonedDateTime.now().isAfter(coupon.getEndsAt());
     }
 
-    private void recompute(Cart cart) {
-        if (cart.getItems() == null)
-            cart.setItems(new ArrayList<>());
+    private void validateCouponApplicability(CartItem item, Coupon coupon) {
+        switch (coupon.getApplicability()) {
+            case PRODUCT -> {
+                if (!item.getProductId().equals(coupon.getProductId()))
+                    throw new IllegalArgumentException("Coupon not applicable on this product");
+            }
+            case BRAND, CATEGORY -> { /* extend with brand/category lookups when needed */ }
+            default -> { /* CART_TOTAL / ITEM scope — no product-level restriction */ }
+        }
+    }
 
-        BigDecimal sub = BigDecimal.ZERO;
+    private void applyDiscountToItem(CartItem item, Coupon coupon) {
+        BigDecimal base = new BigDecimal(getPriceFromVariant(item.getVariantId()))
+                .multiply(BigDecimal.valueOf(item.getQuantity()));
+        BigDecimal disc = computeDiscount(base, coupon.getDiscountType(), coupon.getDiscountValue());
+        item.setAppliedCoupon(coupon);
+        item.setLineDiscount(disc.toPlainString());
+    }
+
+    private void validateCartMinimum(Cart cart, Coupon coupon) {
+        if (coupon.getApplicability() != Coupon.Applicability.CART_TOTAL || coupon.getMinCartTotal() == null)
+            return;
+        if (cartNetSubTotal(cart).compareTo(new BigDecimal(coupon.getMinCartTotal())) < 0)
+            throw new IllegalArgumentException("Cart total below minimum for this coupon");
+    }
+
+    private BigDecimal cartNetSubTotal(Cart cart) {
+        return new BigDecimal(cart.getSubTotal()).subtract(new BigDecimal(cart.getItemLevelDiscount()));
+    }
+
+    /** Recomputes and persists all financial fields on the Cart entity (for write operations). */
+    private void recompute(Cart cart) {
+        if (cart.getItems() == null) cart.setItems(new ArrayList<>());
+
+        BigDecimal sub      = BigDecimal.ZERO;
         BigDecimal itemDisc = BigDecimal.ZERO;
 
         for (CartItem it : cart.getItems()) {
-            UUID variantId = it.getVariantId();
-            BigDecimal price = new BigDecimal(getPriceFromVariant(variantId)); // already in paise
-            BigDecimal lineBase = price.multiply(BigDecimal.valueOf(it.getQuantity()));
-            sub = sub.add(lineBase);
-
-            BigDecimal lineDiscount = new BigDecimal(it.getLineDiscount() == null ? "0" : it.getLineDiscount());
-            itemDisc = itemDisc.add(lineDiscount);
+            BigDecimal price = new BigDecimal(getPriceFromVariant(it.getVariantId()));
+            sub      = sub.add(price.multiply(BigDecimal.valueOf(it.getQuantity())));
+            itemDisc = itemDisc.add(parseDecimal(it.getLineDiscount()));
         }
 
         BigDecimal cartBase = sub.subtract(itemDisc);
-        BigDecimal cartDisc = BigDecimal.ZERO;
-        Coupon c = cart.getAppliedCartCoupon();
-        if (c != null) {
-            cartDisc = computeDiscount(cartBase, c.getDiscountType(), c.getDiscountValue());
-        }
-
-        BigDecimal taxable = cartBase.subtract(cartDisc).max(BigDecimal.ZERO);
-
-        // ✅ Tax in paise (integer arithmetic)
-        // (taxable * 18) / 100 → both are integers, so result is integer paise
-        BigDecimal tax = taxable.multiply(BigDecimal.valueOf(18))
-                .divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN)
-                .setScale(0, RoundingMode.UNNECESSARY);
+        Coupon     c        = cart.getAppliedCartCoupon();
+        BigDecimal cartDisc = c != null
+                ? computeDiscount(cartBase, c.getDiscountType(), c.getDiscountValue())
+                : BigDecimal.ZERO;
+        BigDecimal taxable  = cartBase.subtract(cartDisc).max(BigDecimal.ZERO);
+        BigDecimal tax      = taxable.multiply(BigDecimal.valueOf(18))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN);
 
         cart.setSubTotal(sub.stripTrailingZeros().toPlainString());
         cart.setItemLevelDiscount(itemDisc.stripTrailingZeros().toPlainString());
@@ -517,21 +617,57 @@ public class CartService extends BaseService {
         cart.setGrandTotal(taxable.add(tax).stripTrailingZeros().toPlainString());
     }
 
+    private BigDecimal computeDiscount(BigDecimal base, Coupon.DiscountType type, String value) {
+        if (value == null || base.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+        try {
+            BigDecimal v = new BigDecimal(value);
+            return switch (type) {
+                case FLAT    -> v.min(base);
+                case PERCENT -> base.multiply(v).divide(BigDecimal.valueOf(100));
+            };
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private String resolveImageUrl(List<ProductAttribute> attrs, String sku) {
+        if (attrs == null || attrs.isEmpty()) return null;
+        String[] parts = sku != null ? sku.split("-") : new String[0];
+        String   key   = parts.length > 1 ? parts[1] : (parts.length > 0 ? parts[0] : "");
+        return attrs.stream()
+                .filter(pa -> pa.getValue().equalsIgnoreCase(key)
+                        && pa.getImages() != null && !pa.getImages().isEmpty())
+                .map(pa -> pa.getImages().get(0))
+                .findFirst()
+                .orElseGet(() -> attrs.stream()
+                        .filter(pa -> pa.getImages() != null && !pa.getImages().isEmpty())
+                        .map(pa -> pa.getImages().get(0)).findFirst().orElse(null));
+    }
+
     private String getPriceFromVariant(UUID variantId) {
-        return variantRepository.findById(variantId)
-                .map(v -> v.getPrice())
-                .orElse("0");
+        return variantRepository.findById(variantId).map(ProductVariant::getPrice).orElse("0");
     }
 
     public static long calculateDiscount(Coupon coupon, long cartAmount) {
-        if (coupon.getDiscountType() == Coupon.DiscountType.FLAT) {
-            return Long.parseLong(coupon.getDiscountValue()); // stored in paise
-        } else { // PERCENT
-            double percent = Double.parseDouble(coupon.getDiscountValue());
-            if (coupon.getUptoAmount() != null)
-                return Math.round(Long.parseLong(coupon.getUptoAmount()) * percent / 100.0);
-            return Math.round(cartAmount * percent / 100.0);
-        }
+        if (coupon.getDiscountType() == Coupon.DiscountType.FLAT)
+            return Long.parseLong(coupon.getDiscountValue());
+        double percent = Double.parseDouble(coupon.getDiscountValue());
+        if (coupon.getUptoAmount() != null)
+            return Math.round(Long.parseLong(coupon.getUptoAmount()) * percent / 100.0);
+        return Math.round(cartAmount * percent / 100.0);
+    }
+
+    // ── Math utilities ─────────────────────────────────────────────────────────
+
+    private static BigDecimal parseDecimal(String value) {
+        if (value == null || value.isBlank()) return BigDecimal.ZERO;
+        try { return new BigDecimal(value); } catch (NumberFormatException e) { return BigDecimal.ZERO; }
+    }
+
+    private static BigDecimal bd(double value) { return BigDecimal.valueOf(value); }
+    private static BigDecimal bd(int value)    { return BigDecimal.valueOf(value); }
+
+    private static double r2(BigDecimal value) {
+        return value.setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 }
-// 8u8uu8u8hyiu yuiu88u8889 hu kijjijokkl

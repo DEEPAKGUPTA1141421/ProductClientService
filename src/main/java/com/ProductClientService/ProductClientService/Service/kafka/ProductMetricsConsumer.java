@@ -10,27 +10,12 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 /**
- * ProductMetricsConsumer
- * ───────────────────────
- * One consumer class, one @KafkaListener per topic.
+ * Consumes product and order metric events from Kafka.
  * All listeners share the consumer group "product-metrics-group".
  *
- * Flow per message:
- *  1. Deserialize JSON string → event DTO
- *  2. Call MetricsWriterService (atomic DB increment)
- *  3. Acknowledge offset (MANUAL_IMMEDIATE)
- *
- * Failure handling:
- *  - If MetricsWriterService throws, we log and still ack (best-effort metrics).
- *    Metrics are business signals, not financial data — a missed increment is
- *    acceptable. Retrying indefinitely would stall the partition.
- *
- * Topics consumed:
- *  - product.viewed        → view_count++
- *  - product.cart_added    → cart_add_count++
- *  - product.wishlisted    → wishlist_count +/- (ADD / REMOVE)
- *  - order.completed       → purchases++, orders++, recent_sales++
- *  - order.returned        → return_count++
+ * Failure strategy: log and ack (best-effort metrics).
+ * Metrics are business signals, not financial data — a missed
+ * increment is acceptable; stalling the partition is not.
  */
 @Service
 @RequiredArgsConstructor
@@ -39,8 +24,6 @@ public class ProductMetricsConsumer {
 
     private final MetricsWriterService writer;
     private final ObjectMapper objectMapper;
-
-    // ── product.viewed ────────────────────────────────────────────────────────
 
     @KafkaListener(topics = "product.viewed", groupId = "product-metrics-group",
                    containerFactory = "kafkaListenerContainerFactory")
@@ -56,8 +39,6 @@ public class ProductMetricsConsumer {
         }
     }
 
-    // ── product.cart_added ────────────────────────────────────────────────────
-
     @KafkaListener(topics = "product.cart_added", groupId = "product-metrics-group",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onCartAdded(ConsumerRecord<String, String> record, Acknowledgment ack) {
@@ -71,8 +52,6 @@ public class ProductMetricsConsumer {
             ack.acknowledge();
         }
     }
-
-    // ── product.wishlisted ────────────────────────────────────────────────────
 
     @KafkaListener(topics = "product.wishlisted", groupId = "product-metrics-group",
                    containerFactory = "kafkaListenerContainerFactory")
@@ -92,8 +71,6 @@ public class ProductMetricsConsumer {
         }
     }
 
-    // ── order.completed ───────────────────────────────────────────────────────
-
     @KafkaListener(topics = "order.completed", groupId = "product-metrics-group",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onOrderCompleted(ConsumerRecord<String, String> record, Acknowledgment ack) {
@@ -111,8 +88,6 @@ public class ProductMetricsConsumer {
             ack.acknowledge();
         }
     }
-
-    // ── order.returned ────────────────────────────────────────────────────────
 
     @KafkaListener(topics = "order.returned", groupId = "product-metrics-group",
                    containerFactory = "kafkaListenerContainerFactory")

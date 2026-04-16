@@ -23,12 +23,22 @@ import com.ProductClientService.ProductClientService.DTO.admin.ProductAttributeF
 import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.Product.Step;
+import com.ProductClientService.ProductClientService.Repository.Projection.ProductSellerProjection;
 import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
 
 import jakarta.transaction.Transactional;
 
+import java.util.Collection;
+
 @Repository
 public interface ProductRepository extends JpaRepository<Product, UUID> {
+
+    /**
+     * Batch-fetches seller IDs for a set of product IDs in a single query.
+     * Used by CartService to group cart items by shop without N individual lookups.
+     */
+    @Query("SELECT p.id AS productId, p.seller.id AS sellerId FROM Product p WHERE p.id IN :productIds")
+    List<ProductSellerProjection> findSellerIdsByProductIds(@Param("productIds") Collection<UUID> productIds);
     @Modifying
     @Transactional
     @Query("UPDATE Product p SET p.step = :step WHERE p.id = :productId")

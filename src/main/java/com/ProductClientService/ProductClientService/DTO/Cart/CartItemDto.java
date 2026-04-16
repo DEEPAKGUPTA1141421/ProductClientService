@@ -19,9 +19,15 @@ public class CartItemDto {
     private String name;
     private String image;
     private String description;
-    private String appliedCoupon;       // lowercase
-    private String discountLineAmount;  // lowercase
+    private String appliedCoupon;
+    private String discountLineAmount;
+
+    /** Current stock units available for this variant. */
+    private int stockAvailable;
+
+    /**
+     * False when stock == 0 or stock < quantity.
+     * The Order service must reject checkout if any item is unavailable.
+     */
+    private boolean isAvailable;
 }
-
-// huhyuyb byguy gytguy hggy jhhhh njkh
-
