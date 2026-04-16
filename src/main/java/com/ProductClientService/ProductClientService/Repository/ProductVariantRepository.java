@@ -10,5 +10,5 @@ import com.ProductClientService.ProductClientService.Model.ProductVariant;
 
 @Repository
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, UUID> {
-    // List<ProductVariant> findByProductId(UUID productId);
+    List<ProductVariant> findByProductId(UUID productId);
 }

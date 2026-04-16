@@ -1,161 +1,215 @@
 package com.ProductClientService.ProductClientService.Service;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.query_dsl.*;
+import co.elastic.clients.elasticsearch.core.GetResponse;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
-import com.ProductClientService.ProductClientService.Model.SearchIntent;
-import com.ProductClientService.ProductClientService.Repository.SearchIntentRepository;
+import com.ProductClientService.ProductClientService.DTO.search.SearchIntentDocument;
 import com.fasterxml.jackson.databind.JsonNode;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * SearchIntentService
  * ────────────────────
- * Handles the runtime side of search intents:
+ * All reads and writes go to the "search-intents-v1" Elasticsearch index.
+ * No database table involved.
  *
- * 1. autocomplete(keyword)
- * Called as the user types. Returns matching SearchIntent rows
- * including their filterPayload so the frontend knows what filters
- * to pass to the product listing API when the user taps a suggestion.
+ * autocomplete(prefix)
+ *   Multi-match bool_prefix query on search_as_you_type sub-fields.
+ *   Ranked by function_score: log1p(clickCount) * 2.0 + log1p(searchCount) * 1.5
+ *   so "clicked" suggestions float to the top of the list.
  *
- * 2. recordClick(id)
- * Called when user taps a suggestion. Increments click count (async).
- * Frontend then calls the product search API with the filterPayload.
- *
- * 3. resolveFilter(id)
- * Returns the filterPayload JSON for a given SearchIntent ID.
- * This is the structured object the frontend sends to /products/search.
+ * recordClick(keyword)
+ *   Returns the stored filterPayload, then async-increments clickCount in ES.
+ *   The frontend sends back this filterPayload to /products/search.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SearchIntentService {
 
-    private final SearchIntentRepository searchIntentRepository;
+    static final String INDEX = "search-intents-v1";
+
+    private final ElasticsearchClient esClient;
+    private final ObjectMapper objectMapper;
+
+    // ── Autocomplete ──────────────────────────────────────────────────────────────
 
     /**
-     * Autocomplete endpoint — called while user types.
-     *
-     * Returns up to 10 suggestion objects. Each includes:
-     * - id → used to call recordClick later
-     * - keyword → display text in the suggestion list
-     * - imageUrl → thumbnail shown beside the keyword
-     * - filterPayload → the structured filter to use on tap
+     * Returns up to 10 ranked suggestions for the given prefix.
+     * Each suggestion includes keyword, imageUrl, suggestionType, and filterPayload.
      */
-    public ApiResponse<Object> autocomplete(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
+    public ApiResponse<Object> autocomplete(String prefix) {
+        if (prefix == null || prefix.isBlank()) {
             return new ApiResponse<>(false, "Keyword required", null, 400);
         }
 
-        List<SearchIntent> results = keyword.length() < 3
-                ? searchIntentRepository.findTopByKeywordStartingWith(keyword.trim())
-                : searchIntentRepository.fuzzySearch(keyword.trim());
+        try {
+            var response = esClient.search(s -> s
+                    .index(INDEX)
+                    .size(10)
+                    .query(q -> q
+                            .functionScore(fs -> fs
+                                    .query(inner -> inner
+                                            .multiMatch(mm -> mm
+                                                    .query(prefix.trim())
+                                                    .fields(
+                                                            "keyword",
+                                                            "keyword._2gram",
+                                                            "keyword._3gram",
+                                                            "keyword._index_prefix"
+                                                    )
+                                                    .type(TextQueryType.BoolPrefix)
+                                            )
+                                    )
+                                    // clickCount has higher weight — a suggestion users act on
+                                    // is more valuable than one they only see
+                                    .functions(fn -> fn
+                                            .fieldValueFactor(fvf -> fvf
+                                                    .field("clickCount")
+                                                    .modifier(FieldValueFactorModifier.Log1p)
+                                                    .factor(2.0)
+                                                    .missing(0.0)
+                                            )
+                                    )
+                                    .functions(fn -> fn
+                                            .fieldValueFactor(fvf -> fvf
+                                                    .field("searchCount")
+                                                    .modifier(FieldValueFactorModifier.Log1p)
+                                                    .factor(1.5)
+                                                    .missing(0.0)
+                                            )
+                                    )
+                                    .scoreMode(FunctionScoreMode.Sum)
+                                    .boostMode(FunctionBoostMode.Multiply)
+                            )
+                    ),
+                    SearchIntentDocument.class
+            );
 
-        // Increment search count for each returned intent (async, non-blocking)
-        results.forEach(si -> incrementSearchCountAsync(si.getId()));
+            List<SearchIntentDto> dtos = response.hits().hits().stream()
+                    .map(hit -> hit.source())
+                    .filter(Objects::nonNull)
+                    .map(doc -> new SearchIntentDto(
+                            doc.getKeyword(),
+                            doc.getKeyword(),
+                            doc.getImageUrl(),
+                            doc.getSuggestionType(),
+                            doc.getFilterPayload() != null
+                                    ? objectMapper.valueToTree(doc.getFilterPayload())
+                                    : null
+                    ))
+                    .toList();
 
-        List<SearchIntentDto> dtos = results.stream()
-                .map(si -> new SearchIntentDto(
-                        si.getId(),
-                        si.getKeyword(),
-                        si.getImageUrl(),
-                        si.getSuggestionType(),
-                        si.getFilterPayload()))
-                .toList();
+            // Async — does not delay the response
+            dtos.forEach(dto -> incrementSearchCountAsync(dto.id()));
 
-        return new ApiResponse<>(true, "Suggestions fetched", dtos, 200);
+            return new ApiResponse<>(true, "Suggestions fetched", dtos, 200);
+
+        } catch (Exception e) {
+            log.warn("ES autocomplete failed for prefix='{}': {}", prefix, e.getMessage());
+            return new ApiResponse<>(true, "Suggestions fetched", List.of(), 200);
+        }
     }
 
+    // ── Record click ──────────────────────────────────────────────────────────────
+
     /**
-     * Called when user taps a suggestion in the frontend.
-     * Returns the filterPayload so the frontend can call the product search API.
+     * Called when a user taps a suggestion.
+     * Returns the stored filterPayload so the frontend can call /products/search.
      *
      * Flow:
-     * frontend taps suggestion
-     * → POST /search-intent/{id}/click
-     * → receives { filterPayload: { categoryId, gender, color, ... } }
-     * → calls GET /products/search?categoryId=...&gender=...&color=...
+     *   frontend taps suggestion (keyword = doc ID)
+     *   → POST /search-intent/click?keyword=<keyword>
+     *   → receives { filterPayload: { categoryId, filters: { ... } } }
+     *   → calls GET /products/search with those params
      */
-    public ApiResponse<Object> recordClick(UUID intentId) {
-        SearchIntent intent = searchIntentRepository.findById(intentId)
-                .orElseThrow(() -> new RuntimeException("SearchIntent not found: " + intentId));
-
-        incrementClickCountAsync(intentId);
-
-        return new ApiResponse<>(true, "Filter payload resolved",
-                new SearchIntentClickResponse(intent.getId(), intent.getKeyword(), intent.getFilterPayload()),
-                200);
-    }
-
-    /**
-     * Resolves just the filterPayload for a given intent.
-     * Lightweight alternative to recordClick when you only need the filters.
-     */
-    public JsonNode resolveFilter(UUID intentId) {
-        return searchIntentRepository.findById(intentId)
-                .map(SearchIntent::getFilterPayload)
-                .orElseThrow(() -> new RuntimeException("SearchIntent not found: " + intentId));
-    }
-
-    // ── Async analytics (fire-and-forget) ────────────────────────────────────────
-
-    @Async
-    public void incrementSearchCountAsync(UUID id) {
+    public ApiResponse<Object> recordClick(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return new ApiResponse<>(false, "Keyword required", null, 400);
+        }
         try {
-            searchIntentRepository.incrementSearchCount(id);
+            GetResponse<SearchIntentDocument> res = esClient.get(g -> g
+                    .index(INDEX)
+                    .id(keyword.trim().toLowerCase()),
+                    SearchIntentDocument.class
+            );
+
+            if (!res.found() || res.source() == null) {
+                return new ApiResponse<>(false, "Intent not found", null, 404);
+            }
+
+            SearchIntentDocument doc = res.source();
+            incrementClickCountAsync(keyword.trim().toLowerCase());
+
+            JsonNode filterPayload = doc.getFilterPayload() != null
+                    ? objectMapper.valueToTree(doc.getFilterPayload())
+                    : null;
+
+            return new ApiResponse<>(true, "Filter payload resolved",
+                    new SearchIntentClickResponse(doc.getKeyword(), filterPayload), 200);
+
         } catch (Exception e) {
-            log.warn("Failed to increment search count for {}", id);
+            log.warn("recordClick failed for keyword='{}': {}", keyword, e.getMessage());
+            return new ApiResponse<>(false, "Something went wrong", null, 500);
         }
     }
 
+    // ── Async counter updates (fire-and-forget) ───────────────────────────────────
+
     @Async
-    public void incrementClickCountAsync(UUID id) {
+    public void incrementSearchCountAsync(String keyword) {
+        updateCounter(keyword, "searchCount");
+    }
+
+    @Async
+    public void incrementClickCountAsync(String keyword) {
+        updateCounter(keyword, "clickCount");
+    }
+
+    private void updateCounter(String keyword, String field) {
         try {
-            searchIntentRepository.incrementClickCount(id);
+            esClient.update(u -> u
+                    .index(INDEX)
+                    .id(keyword)
+                    .script(sc -> sc
+                            .inline(i -> i
+                                    .lang("painless")
+                                    .source("ctx._source." + field + " = (ctx._source." + field + " ?: 0L) + 1")
+                            )
+                    ),
+                    SearchIntentDocument.class
+            );
         } catch (Exception e) {
-            log.warn("Failed to increment click count for {}", id);
+            log.debug("Failed to increment {} for keyword='{}': {}", field, keyword, e.getMessage());
         }
     }
 
-    // ── DTOs (inner records for simplicity) ──────────────────────────────────────
+    // ── Inner DTOs ────────────────────────────────────────────────────────────────
 
     /**
-     * Returned by autocomplete.
-     *
-     * The frontend uses filterPayload to:
-     * 1. Display the suggestion with its thumbnail
-     * 2. On tap → call POST /search-intent/{id}/click to confirm selection
-     * and receive the definitive filterPayload to pass to product search
+     * id = keyword (also the ES doc ID).
+     * Frontend stores this to call recordClick later.
      */
     public record SearchIntentDto(
-            UUID id,
+            String id,
             String keyword,
             String imageUrl,
             String suggestionType,
-            JsonNode filterPayload // e.g. {"categoryId":"...", "gender":"men", "color":"red"}
-    ) {
-    }
+            JsonNode filterPayload
+    ) {}
 
-    /**
-     * Returned by recordClick.
-     *
-     * The frontend takes filterPayload and maps it to query params:
-     * GET /api/v1/product/products/search
-     * ?categoryId=<categoryId>
-     * &gender=<gender> (passed as attributeName=gender&attributeValue=men)
-     * &color=<color> (passed as attributeName=color&attributeValue=red)
-     * &brandId=<brandId>
-     * &size=<size>
-     */
     public record SearchIntentClickResponse(
-            UUID id,
             String keyword,
-            JsonNode filterPayload) {
-    }
+            JsonNode filterPayload
+    ) {}
 }

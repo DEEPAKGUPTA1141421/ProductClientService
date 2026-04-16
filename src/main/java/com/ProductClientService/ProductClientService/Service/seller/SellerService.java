@@ -50,6 +50,7 @@ import com.ProductClientService.ProductClientService.Repository.StandardProductR
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService.AddressResponse;
+import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
@@ -84,6 +85,7 @@ public class SellerService {
     private final BrandRepository brandRepository;
     private final OpenStreetMapService openStreetMapService;
     private final SellerAddressRepository sellerAddressRepository;
+    private final EventPublisherService eventPublisher;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -475,6 +477,7 @@ public class SellerService {
                 if (updatescore > 0) {
                     indexProduct(productId);
                     handleProductUpdate(productId);
+                    eventPublisher.publishProductLive(productId);  // triggers search-intent indexing
                     return new ApiResponse<>(true, "Product Live", null, 200);
                 } else {
                     return new ApiResponse<>(false, "Interna; Server Error", null, 500);

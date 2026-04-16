@@ -1,56 +1,15 @@
 package com.ProductClientService.ProductClientService.Model;
 
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.util.UUID;
-
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
-import com.fasterxml.jackson.databind.JsonNode;
-
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
-@Entity
-@Table(name = "search_intents", uniqueConstraints = @UniqueConstraint(columnNames = "keyword"))
-@Getter
-@Setter
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+/**
+ * SearchIntent is no longer a JPA entity.
+ * Search intents are stored exclusively in the "search-intents-v1" Elasticsearch index.
+ * See SearchIntentDocument for the ES representation.
+ * This class is retained only to avoid breaking any existing import references
+ * during the migration; it can be safely deleted once all usages are removed.
+ *
+ * @deprecated Use SearchIntentDocument (ES) instead.
+ */
+@Deprecated
 public class SearchIntent {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @Column(nullable = false, unique = true)
-    private String keyword;
-
-    @Column(nullable = false, length = 2000)
-    private String imageUrl;
-
-    private String suggestionType;
-    // CATEGORY, BRAND_CATEGORY, ATTRIBUTE_CATEGORY, TAG_CATEGORY
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private JsonNode filterPayload;
-
-    @Builder.Default
-    private Long searchCount = 0L;
-
-    /** How many times users clicked this suggestion */
-    @Builder.Default
-    private Long clickCount = 0L;
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
+    // intentionally empty — no JPA, no table
 }
-// iiuyu gyuy ygyurfhu

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 
+
 /**
  * Thin async wrapper over KafkaTemplate.
  * Every publish method is @Async — the HTTP response is never delayed by Kafka.
@@ -25,6 +26,7 @@ public class EventPublisherService {
     public static final String TOPIC_WISHLISTED = "product.wishlisted";
     public static final String TOPIC_ORDER_DONE = "order.completed";
     public static final String TOPIC_ORDER_RET  = "order.returned";
+    public static final String TOPIC_PRODUCT_LIVE = "product.live";
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -51,6 +53,17 @@ public class EventPublisherService {
     public void publishWishlistRemove(UUID productId, UUID userId) {
         publish(TOPIC_WISHLISTED, ProductWishlistedEvent.builder()
                 .productId(productId).userId(userId).action("REMOVE").build());
+    }
+
+    /**
+     * Published when a product transitions to LIVE status.
+     * Consumed by SearchIntentIndexerConsumer to generate and index
+     * search intents into Elasticsearch.
+     */
+    @Async
+    public void publishProductLive(UUID productId) {
+        publish(TOPIC_PRODUCT_LIVE, ProductLiveEvent.builder()
+                .productId(productId).build());
     }
 
     private void publish(String topic, Object event) {

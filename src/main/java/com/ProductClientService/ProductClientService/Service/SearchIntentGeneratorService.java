@@ -1,23 +1,20 @@
 package com.ProductClientService.ProductClientService.Service;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.OpType;
 import com.ProductClientService.ProductClientService.DTO.admin.ProductAttributeForIntentProjection;
+import com.ProductClientService.ProductClientService.DTO.search.SearchIntentDocument;
 import com.ProductClientService.ProductClientService.Model.CategorySearchIntentRule;
-import com.ProductClientService.ProductClientService.Model.SearchIntent;
 import com.ProductClientService.ProductClientService.Repository.CategorySearchIntentRuleRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
-import com.ProductClientService.ProductClientService.Repository.SearchIntentRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductVariantRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
-import org.apache.kafka.common.Uuid;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -26,62 +23,50 @@ import java.util.stream.Collectors;
 /**
  * SearchIntentGeneratorService
  * ─────────────────────────────
- * Builds search keywords + structured filter payloads for every live product.
+ * Builds search keywords + structured filter payloads for every live product
+ * and indexes them directly into the "search-intents-v1" Elasticsearch index.
  *
- * TWO entry points:
- * 1. @Scheduled cron – runs nightly, processes all products where
- * search_intent_created = false.
- * 2. generateForProduct(UUID) – called immediately when a product goes LIVE.
+ * No database table involved — ES is the sole store for search intents.
+ *
+ * Entry point: generateForProduct(UUID)
+ *   Called by SearchIntentIndexerConsumer when it receives a product.live Kafka event.
+ *
+ * Idempotency:
+ *   Each intent is indexed with op_type=create.  If the keyword doc already exists
+ *   (from another product in the same category), the create is a no-op and the
+ *   existing doc — with its accumulated searchCount/clickCount — is preserved.
  *
  * Keyword patterns generated per product
  * ────────────────────────────────────────
- * Given a product in category "T-Shirt", brand "Puma", attributes:
- * gender=men, color=red, size=XL, material=cotton
+ * Given category "T-Shirt", brand "Puma", attributes: gender=men, color=red, size=XL
  *
- * BRAND_CATEGORY → "Puma T-Shirt"
- * SIZE_BRAND_CATEGORY → "XL Puma T-Shirt"
- * BRAND_GENDER_CATEGORY → "Puma T-Shirt for men"
- * GENDER_CATEGORY → "T-Shirt for men"
- * COLOR_GENDER_CATEGORY → "Red T-Shirt for men"
- * COLOR_CATEGORY → "Red T-Shirt"
- * ATTRIBUTE_CATEGORY → "Cotton T-Shirt" (material)
- * SIZE_CATEGORY → "XL T-Shirt"
- *
- * Each entry stores a `filterPayload` JSON that the frontend sends back
- * to the product search API when the user taps this suggestion.
+ *   BASE                  → "t-shirt"
+ *   BRAND_CATEGORY        → "puma t-shirt"
+ *   PREFIX intents        → "red t-shirt", "xl t-shirt"        (PREFIX rules)
+ *   SUFFIX intents        → "t-shirt for men"                  (SUFFIX rules)
+ *   COMBO intents         → "red t-shirt for men"              (PREFIX + SUFFIX)
+ *   PRICE intents         → "t-shirt under 199", "... 399" … "… 1499"
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SearchIntentGeneratorService {
 
+    static final String SEARCH_INTENTS_INDEX = "search-intents-v1";
+
     private final ProductRepository productRepository;
-    private final SearchIntentRepository searchIntentRepository;
-    private final ObjectMapper objectMapper;
+    private final ProductVariantRepository variantRepository;
     private final CategorySearchIntentRuleRepository categorySearchIntentRuleRepository;
-    // ─── Attribute name constants (case-insensitive matching)
-    // ───────────────────
-    private static final Set<String> GENDER_ATTRS = Set.of("gender", "for", "agegroup");
-    private static final Set<String> COLOR_ATTRS = Set.of("color", "colour");
-    private static final Set<String> SIZE_ATTRS = Set.of("size");
-    private static final Set<String> MATERIAL_ATTRS = Set.of("material",
-            "fabric");
-    // Everything else is treated as a generic "attribute" suggestion
+    private final ElasticsearchClient esClient;
+    private final ObjectMapper objectMapper;
 
-    // ── CRON: runs every night at 2 AM
-    // ──────────────────────────────────────────
+    // ── Entry point ───────────────────────────────────────────────────────────────
 
-    // ── IMMEDIATE: called from SellerService when product goes LIVE
-    // ─────────────
-
-    @Transactional
     public void generateForProduct(UUID productId) {
-
         log.info("Generating search intents for product {}", productId);
-
         try {
-            List<ProductAttributeForIntentProjection> rows = productRepository
-                    .findAttributesForIntentByProductId(productId);
+            List<ProductAttributeForIntentProjection> rows =
+                    productRepository.findAttributesForIntentByProductId(productId);
 
             if (rows.isEmpty()) {
                 log.warn("No attribute rows found for product {}", productId);
@@ -89,105 +74,81 @@ public class SearchIntentGeneratorService {
             }
 
             ProductAttributeForIntentProjection first = rows.get(0);
+            String brand      = first.brandName();
+            UUID   brandId    = first.brandId();
+            String category   = first.categoryName();
+            UUID   categoryId = first.categoryId();
+            String base       = category.toLowerCase();
 
-            String brand = first.brandName();
-            UUID brandId = first.brandId();
-            String category = first.categoryName();
-            UUID categoryId = first.categoryId();
-
-            String base = category.toLowerCase();
-
-            // 🔥 GROUP ATTRIBUTES (UNIQUE VALUES)
+            // Group attribute values by attribute name (deduped, order-stable)
             Map<String, List<String>> attributes = rows.stream()
                     .filter(r -> r.attributeName() != null && r.attributeValue() != null)
                     .collect(Collectors.groupingBy(
-                            (ProductAttributeForIntentProjection r) -> r.attributeName().toLowerCase().trim(),
+                            r -> r.attributeName().toLowerCase().trim(),
                             LinkedHashMap::new,
                             Collectors.mapping(
-                                    (ProductAttributeForIntentProjection r) -> r.attributeValue().toLowerCase().trim(),
+                                    r -> r.attributeValue().toLowerCase().trim(),
                                     Collectors.collectingAndThen(
                                             Collectors.toCollection(LinkedHashSet::new),
                                             ArrayList::new))));
 
-            List<CategorySearchIntentRule> rules = categorySearchIntentRuleRepository.findByCategoryId(categoryId);
+            List<CategorySearchIntentRule> rules =
+                    categorySearchIntentRuleRepository.findByCategoryId(categoryId);
 
-            // 🔥 PROCESS RULES → PREFIX / SUFFIX
             Map<String, List<String>> prefixMap = new HashMap<>();
             Map<String, List<String>> suffixMap = new HashMap<>();
-
             processRules(attributes, rules, prefixMap, suffixMap);
 
-            // 🔥 1. BASE INTENT
-            saveIntent(base, buildBasePayload(categoryId));
+            // 1. Base intent: "t-shirt"
+            indexIntent(base, buildBasePayload(categoryId));
 
-            // 🔥 2. BRAND
+            // 2. Brand intent: "puma t-shirt"
             if (brand != null) {
-                saveIntent(
-                        brand.toLowerCase() + " " + base,
-                        buildBrandPayload(categoryId, brandId));
+                indexIntent(brand.toLowerCase() + " " + base, buildBrandPayload(categoryId, brandId));
             }
 
-            // 🔥 3. ATTRIBUTE PREFIX INTENTS
+            // 3. Prefix intents: "<attrValue> <base>"
             for (Map.Entry<String, List<String>> entry : prefixMap.entrySet()) {
-
-                String attrName = entry.getKey();
-
                 for (String val : entry.getValue()) {
-
-                    String keyword = val + " " + base;
-
-                    saveIntent(
-                            keyword,
-                            buildAttributePayload(categoryId, attrName, val));
+                    indexIntent(val + " " + base,
+                            buildAttributePayload(categoryId, entry.getKey(), val));
                 }
             }
 
-            // 🔥 4. ATTRIBUTE SUFFIX INTENTS
+            // 4. Suffix intents: "<base> <joinedVal>"
             for (Map.Entry<String, List<String>> entry : suffixMap.entrySet()) {
-
-                String attrName = entry.getKey();
-
                 for (String val : entry.getValue()) {
-
-                    String keyword = base + " " + val;
-
-                    saveIntent(
-                            keyword,
-                            buildAttributePayload(categoryId, attrName, val));
+                    indexIntent(base + " " + val,
+                            buildAttributePayload(categoryId, entry.getKey(), val));
                 }
             }
 
-            // 🔥 5. COMBINATIONS (PREFIX + SUFFIX)
+            // 5. Combination intents: "<prefixVal> <base> <suffixVal>"
             for (Map.Entry<String, List<String>> p : prefixMap.entrySet()) {
                 for (String pv : p.getValue()) {
-
                     for (Map.Entry<String, List<String>> s : suffixMap.entrySet()) {
                         for (String sv : s.getValue()) {
-
                             String keyword = pv + " " + base + " " + sv;
-
                             Map<String, List<String>> combo = new HashMap<>();
                             combo.put(p.getKey(), List.of(pv));
                             combo.put(s.getKey(), List.of(sv.replaceAll("for ", "")));
-
-                            saveIntent(
-                                    keyword,
-                                    buildMultiAttributePayload(categoryId, combo));
+                            indexIntent(keyword, buildMultiAttributePayload(categoryId, combo));
                         }
                     }
                 }
             }
 
-            // 🔥 6. PRICE INTENTS
-            generatePriceIntents(categoryId, base);
+            // 6. Single price intent: "t-shirt under <floor(minPrice, 100)>"
+            generatePriceIntent(productId, categoryId, base);
 
-            log.info("Search intents generated for product {}", productId);
+            log.info("Search intents indexed to ES for product {}", productId);
 
         } catch (Exception e) {
-            log.error("Failed to generate intents for product {}: {}", productId,
-                    e.getMessage());
+            log.error("Failed to generate intents for product {}: {}", productId, e.getMessage());
         }
     }
+
+    // ── Rule processing ───────────────────────────────────────────────────────────
 
     private void processRules(
             Map<String, List<String>> attributes,
@@ -196,386 +157,145 @@ public class SearchIntentGeneratorService {
             Map<String, List<String>> suffixMap) {
 
         for (CategorySearchIntentRule rule : rules) {
-
             String attrName = rule.getAttributeName().toLowerCase();
-
             List<String> values = attributes.get(attrName);
-            if (values == null)
-                continue;
+            if (values == null) continue;
 
             for (String val : values) {
-
                 if (rule.getPosition() == CategorySearchIntentRule.Position.PREFIX) {
                     prefixMap.computeIfAbsent(attrName, k -> new ArrayList<>()).add(val);
-                }
-
-                else if (rule.getPosition() == CategorySearchIntentRule.Position.SUFFIX) {
+                } else {
+                    // SUFFIX and INFIX both produce suffix-style phrases
                     String word = rule.getJoinWord() != null
                             ? rule.getJoinWord() + " " + val
                             : val;
-
-                    suffixMap.computeIfAbsent(attrName, k -> new ArrayList<>()).add(word);
-                }
-
-                else if (rule.getPosition() == CategorySearchIntentRule.Position.INFIX) {
-                    String word = rule.getJoinWord() + " " + val;
                     suffixMap.computeIfAbsent(attrName, k -> new ArrayList<>()).add(word);
                 }
             }
         }
     }
 
-    private JsonNode buildBasePayload(UUID categoryId) {
-        ObjectMapper mapper = new ObjectMapper();
+    // ── ES indexing ───────────────────────────────────────────────────────────────
 
-        ObjectNode root = mapper.createObjectNode();
-        root.put("categoryId", categoryId.toString());
-
-        return root;
-    }
-
-    private JsonNode buildBrandPayload(UUID categoryId, UUID brandId) {
-
-        ObjectMapper mapper = new ObjectMapper();
-
-        ObjectNode root = mapper.createObjectNode();
-        root.put("categoryId", categoryId.toString());
-
-        ObjectNode filters = mapper.createObjectNode();
-        ArrayNode brandArr = mapper.createArrayNode();
-        brandArr.add(brandId.toString());
-
-        filters.set("brand", brandArr);
-
-        root.set("filters", filters);
-
-        return root;
-    }
-
-    private JsonNode buildAttributePayload(UUID categoryId, String attr, String value) {
-
-        ObjectMapper mapper = new ObjectMapper();
-
-        ObjectNode root = mapper.createObjectNode();
-        root.put("categoryId", categoryId.toString());
-
-        ObjectNode filters = mapper.createObjectNode();
-        ArrayNode arr = mapper.createArrayNode();
-        arr.add(value);
-
-        filters.set(attr, arr);
-
-        root.set("filters", filters);
-
-        return root;
-    }
-
-    private JsonNode buildMultiAttributePayload(
-            UUID categoryId,
-            Map<String, List<String>> attributes) {
-
-        ObjectMapper mapper = new ObjectMapper();
-
-        ObjectNode root = mapper.createObjectNode();
-        root.put("categoryId", categoryId.toString());
-
-        ObjectNode filters = mapper.createObjectNode();
-
-        for (Map.Entry<String, List<String>> entry : attributes.entrySet()) {
-
-            ArrayNode arr = mapper.createArrayNode();
-            entry.getValue().forEach(arr::add);
-
-            filters.set(entry.getKey(), arr);
-        }
-
-        root.set("filters", filters);
-
-        return root;
-    }
-
-    private JsonNode buildPricePayload(UUID categoryId, int price) {
-
-        ObjectMapper mapper = new ObjectMapper();
-
-        ObjectNode root = mapper.createObjectNode();
-        root.put("categoryId", categoryId.toString());
-
-        ObjectNode priceNode = mapper.createObjectNode();
-        priceNode.put("lte", price);
-
-        root.set("price", priceNode);
-
-        return root;
-    }
-
-    private void generatePriceIntents(UUID categoryId, String base) {
-
-        List<Integer> buckets = List.of(199, 399, 599, 999, 1499);
-
-        for (Integer price : buckets) {
-
-            String keyword = base + " under " + price;
-
-            saveIntent(
-                    keyword,
-                    buildPricePayload(categoryId, price));
-        }
-    }
-
-    private void saveIntent(String keyword, JsonNode payload) {
+    /**
+     * Index intent with op_type=create — preserves existing docs (and their counts).
+     * Silently skips duplicate keywords.
+     */
+    private void indexIntent(String keyword, JsonNode payload) {
+        if (keyword == null || keyword.isBlank()) return;
+        final String kw = keyword.trim().toLowerCase();  // final — safe for lambda capture
 
         try {
+            Map<String, Object> payloadMap =
+                    objectMapper.convertValue(payload, new TypeReference<Map<String, Object>>() {});
 
-            SearchIntent intent = SearchIntent.builder()
-                    .keyword(keyword.toLowerCase())
-                    .imageUrl("DEFAULT_IMAGE") // later dynamic
+            SearchIntentDocument doc = SearchIntentDocument.builder()
+                    .keyword(kw)
+                    .imageUrl("")
                     .suggestionType("AUTO")
-                    .filterPayload(payload)
-                    .build();
-
-            searchIntentRepository.save(intent);
-
-        } catch (Exception e) {
-            log.debug("Duplicate skipped: {}", keyword);
-        }
-    }
-    // ── Core processing
-    // ─────────────────────────────────────────────────────────
-
-    private void processProduct(UUID productId,
-            List<ProductAttributeForIntentProjection> rows) {
-
-        // All rows share the same product meta – grab from first row
-        ProductAttributeForIntentProjection meta = rows.get(0);
-
-        String categoryName = safeLower(meta.categoryName());
-        String categoryImage = "meta.categoryImageUrl()";
-        UUID categoryId = meta.categoryId();
-        UUID brandId = meta.brandId();
-        String brandName = meta.brandName();
-        String productImage = "meta.productImageUrl()";
-
-        // Choose best image: product image > category image
-        String displayImage = productImage != null ? productImage : categoryImage;
-
-        // Collect attribute values by semantic type
-        String gender = null;
-        String color = null;
-        String size = null;
-        String material = null;
-        List<String[]> genericAttrs = new ArrayList<>(); // [name, value]
-
-        for (ProductAttributeForIntentProjection row : rows) {
-            String attrName = row.attributeName() != null ? row.attributeName().trim().toLowerCase() : "";
-            String attrValue = row.attributeValue() != null ? row.attributeValue().trim() : "";
-
-            if (attrValue.isEmpty())
-                continue;
-
-            if (GENDER_ATTRS.contains(attrName)) {
-                gender = attrValue;
-            } else if (COLOR_ATTRS.contains(attrName)) {
-                color = attrValue;
-            } else if (SIZE_ATTRS.contains(attrName)) {
-                size = attrValue;
-            } else if (MATERIAL_ATTRS.contains(attrName)) {
-                material = attrValue;
-            } else {
-                genericAttrs.add(new String[] { attrName, attrValue });
-            }
-        }
-
-        // Build base filter payload (categoryId is always present)
-        ObjectNode baseFilter = objectMapper.createObjectNode();
-        baseFilter.put("categoryId", categoryId.toString());
-        if (brandId != null)
-            baseFilter.put("brandId", brandId.toString());
-        if (gender != null)
-            baseFilter.put("gender", gender);
-        if (color != null)
-            baseFilter.put("color", color);
-        if (size != null)
-            baseFilter.put("size", size);
-        if (material != null)
-            baseFilter.put("material", material);
-
-        // ── 1. BRAND_CATEGORY → "Puma T-Shirt" ────────────────────────────────
-        if (brandName != null) {
-            String keyword = capitalize(brandName) + " " + categoryName;
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("gender");
-            filter.remove("color");
-            filter.remove("size");
-            filter.remove("material");
-            saveIntent(keyword, "BRAND_CATEGORY", filter, displayImage);
-        }
-
-        // ── 2. SIZE_BRAND_CATEGORY → "XL Puma Shoes" ──────────────────────────
-        if (size != null && brandName != null) {
-            String keyword = size.toUpperCase() + " " + capitalize(brandName) + " " +
-                    categoryName;
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("gender");
-            filter.remove("color");
-            filter.remove("material");
-            saveIntent(keyword, "SIZE_BRAND_CATEGORY", filter, displayImage);
-        }
-
-        // ── 3. BRAND_GENDER_CATEGORY → "Puma Shoes for Men" ───────────────────
-        if (brandName != null && gender != null) {
-            String keyword = capitalize(brandName) + " " + categoryName + " for " +
-                    safeLower(gender);
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("color");
-            filter.remove("size");
-            filter.remove("material");
-            saveIntent(keyword, "BRAND_GENDER_CATEGORY", filter, displayImage);
-        }
-
-        // ── 4. GENDER_CATEGORY → "Watches for Women" ──────────────────────────
-        if (gender != null) {
-            String keyword = categoryName + " for " + safeLower(gender);
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("brandId");
-            filter.remove("color");
-            filter.remove("size");
-            filter.remove("material");
-            saveIntent(keyword, "GENDER_CATEGORY", filter, categoryImage != null ? categoryImage : displayImage);
-        }
-
-        // ── 5. COLOR_GENDER_CATEGORY → "Red T-Shirt for Kids" ─────────────────
-        if (color != null && gender != null) {
-            String keyword = capitalize(color) + " " + categoryName + " for " +
-                    safeLower(gender);
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("brandId");
-            filter.remove("size");
-            filter.remove("material");
-            saveIntent(keyword, "COLOR_GENDER_CATEGORY", filter, displayImage);
-        }
-
-        // ── 6. COLOR_CATEGORY → "Red T-Shirt" ─────────────────────────────────
-        if (color != null) {
-            String keyword = capitalize(color) + " " + categoryName;
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("brandId");
-            filter.remove("gender");
-            filter.remove("size");
-            filter.remove("material");
-            saveIntent(keyword, "COLOR_CATEGORY", filter, displayImage);
-        }
-
-        // ── 7. SIZE_CATEGORY → "XL T-Shirt" ───────────────────────────────────
-        if (size != null) {
-            String keyword = size.toUpperCase() + " " + categoryName;
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("brandId");
-            filter.remove("gender");
-            filter.remove("color");
-            filter.remove("material");
-            saveIntent(keyword, "SIZE_CATEGORY", filter, displayImage);
-        }
-
-        // ── 8. MATERIAL_CATEGORY → "Cotton T-Shirt" ───────────────────────────
-        if (material != null) {
-            String keyword = capitalize(material) + " " + categoryName;
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("brandId");
-            filter.remove("gender");
-            filter.remove("color");
-            filter.remove("size");
-            saveIntent(keyword, "ATTRIBUTE_CATEGORY", filter, displayImage);
-        }
-
-        // ── 9. GENERIC ATTRIBUTE_CATEGORY → e.g. "Waterproof Jacket" ──────────
-        for (String[] attr : genericAttrs) {
-            String attrName = attr[0];
-            String attrValue = attr[1];
-            String keyword = capitalize(attrValue) + " " + categoryName;
-
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("brandId");
-            filter.remove("gender");
-            filter.remove("color");
-            filter.remove("size");
-            filter.remove("material");
-            filter.put("attributeName", attrName);
-            filter.put("attributeValue", attrValue);
-
-            saveIntent(keyword, "ATTRIBUTE_CATEGORY", filter, displayImage);
-        }
-
-        // ── 10. BRAND_COLOR_CATEGORY → "Puma Red Shoes" ───────────────────────
-        if (brandName != null && color != null) {
-            String keyword = capitalize(brandName) + " " + capitalize(color) + " " +
-                    categoryName;
-            ObjectNode filter = baseFilter.deepCopy();
-            filter.remove("gender");
-            filter.remove("size");
-            filter.remove("material");
-            saveIntent(keyword, "BRAND_COLOR_CATEGORY", filter, displayImage);
-        }
-
-        // ── 11. BRAND_SIZE_GENDER_CATEGORY → "Puma XL Shoes for Men" ──────────
-        if (brandName != null && size != null && gender != null) {
-            String keyword = capitalize(brandName) + " " + size.toUpperCase()
-                    + " " + categoryName + " for " + safeLower(gender);
-            saveIntent(keyword, "BRAND_SIZE_GENDER_CATEGORY", baseFilter.deepCopy(),
-                    displayImage);
-        }
-    }
-
-    // ── Persistence helper
-    // ───────────────────────────────────────────────────────
-
-    private void saveIntent(String keyword, String type,
-            ObjectNode filterPayload, String imageUrl) {
-        if (keyword == null || keyword.isBlank())
-            return;
-
-        keyword = keyword.trim();
-
-        // Idempotent: skip if keyword already exists
-        if (searchIntentRepository.existsByKeyword(keyword))
-            return;
-
-        try {
-            SearchIntent intent = SearchIntent.builder()
-                    .keyword(keyword)
-                    .suggestionType(type)
-                    .filterPayload(filterPayload)
-                    .imageUrl(imageUrl != null ? imageUrl : "")
+                    .filterPayload(payloadMap)
                     .searchCount(0L)
                     .clickCount(0L)
                     .build();
 
-            searchIntentRepository.save(intent);
-            log.debug("Saved intent: [{}] → {}", type, keyword);
+            esClient.index(i -> i
+                    .index(SEARCH_INTENTS_INDEX)
+                    .id(kw)
+                    .opType(OpType.Create)   // no-op if doc already exists
+                    .document(doc)
+            );
+            log.debug("Indexed search intent: {}", kw);
 
         } catch (Exception e) {
-            // Unique constraint violation is expected if another thread raced us
-            log.debug("Skipped duplicate intent: {}", keyword);
+            // 409 = doc already exists (another product shares the same keyword) — expected
+            log.debug("Skipping intent '{}': {}", kw, e.getMessage());
         }
     }
 
-    // ── Utilities
-    // ────────────────────────────────────────────────────────────────
+    // ── Payload builders ──────────────────────────────────────────────────────────
+
+    private JsonNode buildBasePayload(UUID categoryId) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("categoryId", categoryId.toString());
+        return root;
+    }
+
+    private JsonNode buildBrandPayload(UUID categoryId, UUID brandId) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("categoryId", categoryId.toString());
+        ObjectNode filters = objectMapper.createObjectNode();
+        ArrayNode brandArr = objectMapper.createArrayNode();
+        brandArr.add(brandId.toString());
+        filters.set("brand", brandArr);
+        root.set("filters", filters);
+        return root;
+    }
+
+    private JsonNode buildAttributePayload(UUID categoryId, String attr, String value) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("categoryId", categoryId.toString());
+        ObjectNode filters = objectMapper.createObjectNode();
+        ArrayNode arr = objectMapper.createArrayNode();
+        arr.add(value);
+        filters.set(attr, arr);
+        root.set("filters", filters);
+        return root;
+    }
+
+    private JsonNode buildMultiAttributePayload(UUID categoryId, Map<String, List<String>> attrs) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("categoryId", categoryId.toString());
+        ObjectNode filters = objectMapper.createObjectNode();
+        for (Map.Entry<String, List<String>> entry : attrs.entrySet()) {
+            ArrayNode arr = objectMapper.createArrayNode();
+            entry.getValue().forEach(arr::add);
+            filters.set(entry.getKey(), arr);
+        }
+        root.set("filters", filters);
+        return root;
+    }
+
+    private JsonNode buildPricePayload(UUID categoryId, int price) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("categoryId", categoryId.toString());
+        ObjectNode priceNode = objectMapper.createObjectNode();
+        priceNode.put("lte", price);
+        root.set("price", priceNode);
+        return root;
+    }
+
+    /**
+     * Generates exactly one price intent for the product.
+     * Bucket = floor(minVariantPrice / 100) * 100
+     * e.g. price=450 → "t-shirt under 400"
+     *      price=850 → "t-shirt under 800"
+     * Skipped if no variants exist or price cannot be parsed.
+     */
+    private void generatePriceIntent(UUID productId, UUID categoryId, String base) {
+        variantRepository.findByProductId(productId).stream()
+                .map(v -> {
+                    try { return Double.parseDouble(v.getPrice()); }
+                    catch (Exception ignored) { return null; }
+                })
+                .filter(p -> p != null && p > 0)
+                .min(Double::compareTo)
+                .ifPresent(minPrice -> {
+                    int bucket = (int) (Math.floor(minPrice / 100) * 100);
+                    if (bucket > 0) {
+                        indexIntent(base + " under " + bucket, buildPricePayload(categoryId, bucket));
+                    }
+                });
+    }
+
+    // ── Utilities ─────────────────────────────────────────────────────────────────
 
     private String safeLower(String value) {
         return value == null ? "" : value.trim().toLowerCase();
     }
 
     private String capitalize(String value) {
-        if (value == null || value.isBlank())
-            return value;
-        String trimmed = value.trim();
-        return trimmed.substring(0, 1).toUpperCase() +
-                trimmed.substring(1).toLowerCase();
+        if (value == null || value.isBlank()) return value;
+        String t = value.trim();
+        return t.substring(0, 1).toUpperCase() + t.substring(1).toLowerCase();
     }
 }
-// jiooiiuonju9h iuioljijnjkhjjiljjklnjlknkjkbbhuhuhbhhu
-// khhukbhuuhkkhhukuhhjkhu
-// joihukbiujjkkjjnjioijoinuiui jiuhiuhuihukhhkhnjjkhui uy ygujyygjyuuhiuhg
-// guihuhyhbhuhukjikhukhukhuk hukjkhukhunjkhjhhukh uhih huhk huu hukhuhbjhj
-// htfghy tg hgtgy thfygt tyfttftt gytyg
