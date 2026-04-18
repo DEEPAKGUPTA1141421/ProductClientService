@@ -202,7 +202,9 @@ public class ProductService {
 
     public ApiResponse<Object> getProductDetail(UUID productId) {
         try {
-            String response = productRepository.getProductDetailAsJson(productId);
+            String response = productRepository.findSnapshotById(productId)
+                    .filter(s -> !s.isBlank())
+                    .orElseGet(() -> productRepository.getProductDetailAsJson(productId));
             if (response != null) {
                 // Publish view event asynchronously — never blocks the response
                 UUID userId = tryGetUserId();

@@ -45,10 +45,13 @@ public class Product {
 
     private Step step;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id") // owns FK
     @JsonManagedReference
     private Set<ProductAttribute> productAttributes = new HashSet<>();
+
+    @Column(name = "attributes_snapshot", columnDefinition = "TEXT")
+    private String attributesSnapshot;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id") // owns F;

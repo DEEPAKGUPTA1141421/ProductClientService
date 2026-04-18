@@ -29,23 +29,25 @@ import java.util.stream.Collectors;
  * No database table involved — ES is the sole store for search intents.
  *
  * Entry point: generateForProduct(UUID)
- *   Called by SearchIntentIndexerConsumer when it receives a product.live Kafka event.
+ * Called by SearchIntentIndexerConsumer when it receives a product.live Kafka
+ * event.
  *
  * Idempotency:
- *   Each intent is indexed with op_type=create.  If the keyword doc already exists
- *   (from another product in the same category), the create is a no-op and the
- *   existing doc — with its accumulated searchCount/clickCount — is preserved.
+ * Each intent is indexed with op_type=create. If the keyword doc already exists
+ * (from another product in the same category), the create is a no-op and the
+ * existing doc — with its accumulated searchCount/clickCount — is preserved.
  *
  * Keyword patterns generated per product
  * ────────────────────────────────────────
- * Given category "T-Shirt", brand "Puma", attributes: gender=men, color=red, size=XL
+ * Given category "T-Shirt", brand "Puma", attributes: gender=men, color=red,
+ * size=XL
  *
- *   BASE                  → "t-shirt"
- *   BRAND_CATEGORY        → "puma t-shirt"
- *   PREFIX intents        → "red t-shirt", "xl t-shirt"        (PREFIX rules)
- *   SUFFIX intents        → "t-shirt for men"                  (SUFFIX rules)
- *   COMBO intents         → "red t-shirt for men"              (PREFIX + SUFFIX)
- *   PRICE intents         → "t-shirt under 199", "... 399" … "… 1499"
+ * BASE → "t-shirt"
+ * BRAND_CATEGORY → "puma t-shirt"
+ * PREFIX intents → "red t-shirt", "xl t-shirt" (PREFIX rules)
+ * SUFFIX intents → "t-shirt for men" (SUFFIX rules)
+ * COMBO intents → "red t-shirt for men" (PREFIX + SUFFIX)
+ * PRICE intents → "t-shirt under 199", "... 399" … "… 1499"
  */
 @Service
 @RequiredArgsConstructor
@@ -60,40 +62,40 @@ public class SearchIntentGeneratorService {
     private final ElasticsearchClient esClient;
     private final ObjectMapper objectMapper;
 
-    // ── Entry point ───────────────────────────────────────────────────────────────
+    // ── Entry point
+    // ───────────────────────────────────────────────────────────────
 
     public void generateForProduct(UUID productId) {
         log.info("Generating search intents for product {}", productId);
         try {
-            List<ProductAttributeForIntentProjection> rows =
-                    productRepository.findAttributesForIntentByProductId(productId);
-
+            List<ProductAttributeForIntentProjection> rows = productRepository
+                    .findAttributesForIntentByProductId(productId);
+            log.info("Found {} attribute rows for product {}", rows.size(), productId);
             if (rows.isEmpty()) {
                 log.warn("No attribute rows found for product {}", productId);
                 return;
             }
-
+            log.info("Attribute rows for product {}: {}", productId, rows.size());
             ProductAttributeForIntentProjection first = rows.get(0);
-            String brand      = first.brandName();
-            UUID   brandId    = first.brandId();
-            String category   = first.categoryName();
-            UUID   categoryId = first.categoryId();
-            String base       = category.toLowerCase();
+            String brand = first.getBrandName();
+            UUID brandId = first.getBrandId();
+            String category = first.getCategoryName();
+            UUID categoryId = first.getCategoryId();
+            String base = category.toLowerCase();
 
             // Group attribute values by attribute name (deduped, order-stable)
             Map<String, List<String>> attributes = rows.stream()
-                    .filter(r -> r.attributeName() != null && r.attributeValue() != null)
+                    .filter(r -> r.getAttributeName() != null && r.getAttributeValue() != null)
                     .collect(Collectors.groupingBy(
-                            r -> r.attributeName().toLowerCase().trim(),
+                            r -> r.getAttributeName().toLowerCase().trim(),
                             LinkedHashMap::new,
                             Collectors.mapping(
-                                    r -> r.attributeValue().toLowerCase().trim(),
+                                    r -> r.getAttributeValue().toLowerCase().trim(),
                                     Collectors.collectingAndThen(
                                             Collectors.toCollection(LinkedHashSet::new),
                                             ArrayList::new))));
 
-            List<CategorySearchIntentRule> rules =
-                    categorySearchIntentRuleRepository.findByCategoryId(categoryId);
+            List<CategorySearchIntentRule> rules = categorySearchIntentRuleRepository.findByCategoryId(categoryId);
 
             Map<String, List<String>> prefixMap = new HashMap<>();
             Map<String, List<String>> suffixMap = new HashMap<>();
@@ -148,7 +150,8 @@ public class SearchIntentGeneratorService {
         }
     }
 
-    // ── Rule processing ───────────────────────────────────────────────────────────
+    // ── Rule processing
+    // ───────────────────────────────────────────────────────────
 
     private void processRules(
             Map<String, List<String>> attributes,
@@ -159,7 +162,8 @@ public class SearchIntentGeneratorService {
         for (CategorySearchIntentRule rule : rules) {
             String attrName = rule.getAttributeName().toLowerCase();
             List<String> values = attributes.get(attrName);
-            if (values == null) continue;
+            if (values == null)
+                continue;
 
             for (String val : values) {
                 if (rule.getPosition() == CategorySearchIntentRule.Position.PREFIX) {
@@ -175,19 +179,23 @@ public class SearchIntentGeneratorService {
         }
     }
 
-    // ── ES indexing ───────────────────────────────────────────────────────────────
+    // ── ES indexing
+    // ───────────────────────────────────────────────────────────────
 
     /**
-     * Index intent with op_type=create — preserves existing docs (and their counts).
+     * Index intent with op_type=create — preserves existing docs (and their
+     * counts).
      * Silently skips duplicate keywords.
      */
     private void indexIntent(String keyword, JsonNode payload) {
-        if (keyword == null || keyword.isBlank()) return;
-        final String kw = keyword.trim().toLowerCase();  // final — safe for lambda capture
+        if (keyword == null || keyword.isBlank())
+            return;
+        final String kw = keyword.trim().toLowerCase(); // final — safe for lambda capture
 
         try {
-            Map<String, Object> payloadMap =
-                    objectMapper.convertValue(payload, new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> payloadMap = objectMapper.convertValue(payload,
+                    new TypeReference<Map<String, Object>>() {
+                    });
 
             SearchIntentDocument doc = SearchIntentDocument.builder()
                     .keyword(kw)
@@ -201,9 +209,8 @@ public class SearchIntentGeneratorService {
             esClient.index(i -> i
                     .index(SEARCH_INTENTS_INDEX)
                     .id(kw)
-                    .opType(OpType.Create)   // no-op if doc already exists
-                    .document(doc)
-            );
+                    .opType(OpType.Create) // no-op if doc already exists
+                    .document(doc));
             log.debug("Indexed search intent: {}", kw);
 
         } catch (Exception e) {
@@ -212,7 +219,8 @@ public class SearchIntentGeneratorService {
         }
     }
 
-    // ── Payload builders ──────────────────────────────────────────────────────────
+    // ── Payload builders
+    // ──────────────────────────────────────────────────────────
 
     private JsonNode buildBasePayload(UUID categoryId) {
         ObjectNode root = objectMapper.createObjectNode();
@@ -268,14 +276,17 @@ public class SearchIntentGeneratorService {
      * Generates exactly one price intent for the product.
      * Bucket = floor(minVariantPrice / 100) * 100
      * e.g. price=450 → "t-shirt under 400"
-     *      price=850 → "t-shirt under 800"
+     * price=850 → "t-shirt under 800"
      * Skipped if no variants exist or price cannot be parsed.
      */
     private void generatePriceIntent(UUID productId, UUID categoryId, String base) {
         variantRepository.findByProductId(productId).stream()
                 .map(v -> {
-                    try { return Double.parseDouble(v.getPrice()); }
-                    catch (Exception ignored) { return null; }
+                    try {
+                        return Double.parseDouble(v.getPrice());
+                    } catch (Exception ignored) {
+                        return null;
+                    }
                 })
                 .filter(p -> p != null && p > 0)
                 .min(Double::compareTo)
@@ -287,14 +298,16 @@ public class SearchIntentGeneratorService {
                 });
     }
 
-    // ── Utilities ─────────────────────────────────────────────────────────────────
+    // ── Utilities
+    // ─────────────────────────────────────────────────────────────────
 
     private String safeLower(String value) {
         return value == null ? "" : value.trim().toLowerCase();
     }
 
     private String capitalize(String value) {
-        if (value == null || value.isBlank()) return value;
+        if (value == null || value.isBlank())
+            return value;
         String t = value.trim();
         return t.substring(0, 1).toUpperCase() + t.substring(1).toLowerCase();
     }

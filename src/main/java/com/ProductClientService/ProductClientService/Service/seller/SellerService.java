@@ -62,11 +62,11 @@ import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SellerService {
     @Value("${cloud.aws.s3.bucket-name}")
     private String bucketName;
@@ -88,8 +88,6 @@ public class SellerService {
     private final EventPublisherService eventPublisher;
     @PersistenceContext
     private EntityManager entityManager;
-
-    private static Logger logger = LoggerFactory.getLogger(SellerService.class);
 
     public ApiResponse<Object> addProduct(ProductDto dto) {
 
@@ -366,7 +364,7 @@ public class SellerService {
 
     public ApiResponse<Object> attachBrandToProduct(UUID productId, UUID brandId) {
         try {
-            logger.info("Attaching brand {} to product {}", brandId, productId);
+            log.info("Attaching brand {} to product {}", brandId, productId);
             Product product = productRepository.findById(productId)
                     .orElseThrow(() -> new RuntimeException("Product not found"));
             Brand brand = brandRepository.findById(brandId)
@@ -475,18 +473,25 @@ public class SellerService {
             if (currentStep == Product.Step.PRODUCT_VARIANT) {
                 int updatescore = updateStatusById(productId, Product.Step.LIVE);
                 if (updatescore > 0) {
-                    indexProduct(productId);
+                    refreshSnapshot(productId);
                     handleProductUpdate(productId);
-                    eventPublisher.publishProductLive(productId);  // triggers search-intent indexing
+                    eventPublisher.publishProductLive(productId); // triggers search-intent indexing
                     return new ApiResponse<>(true, "Product Live", null, 200);
                 } else {
-                    return new ApiResponse<>(false, "Interna; Server Error", null, 500);
+                    return new ApiResponse<>(false, "Internal Server Error", null, 500);
                 }
 
             } else
                 return new ApiResponse<>(false, "Bad Request", null, 403);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 500);
+        }
+    }
+
+    private void refreshSnapshot(UUID productId) {
+        String snapshot = productRepository.getProductDetailAsJson(productId);
+        if (snapshot != null) {
+            productRepository.updateSnapshot(productId, snapshot);
         }
     }
 
@@ -505,7 +510,7 @@ public class SellerService {
 
         if (Boolean.TRUE.equals(product.getIsStandard()) && product.getStep() == Product.Step.LIVE) {
             try {
-                System.out.println("product value" + product.getName() + " " + product.getDescription() + " "
+                log.info("product value" + product.getName() + " " + product.getDescription() + " "
                         + product.getCategory() + " " + product.getBrand());
                 StandardProduct standardProduct = new StandardProduct();
                 standardProduct.setName(product.getName());
@@ -514,43 +519,14 @@ public class SellerService {
                 standardProduct.setBrandEntity(product.getBrand());
 
                 StandardProduct saved = standardProductRepository.save(standardProduct);
-                System.out.println("✅ StandardProduct saved: " + saved);
+                log.info("StandardProduct saved: " + saved);
 
             } catch (Exception e) {
-                System.err.println("❌ Failed to save StandardProduct: " + e.getMessage());
+                log.error("Failed to save StandardProduct: " + e.getMessage());
                 e.printStackTrace();
             }
         } else {
-            System.out.println("⚠️ Product not standard/live, skipping StandardProduct creation.");
-        }
-    }
-
-    @Async
-    public void indexProduct(UUID productId) throws IOException {
-        try {
-            ProductElasticDto dto = productRepository.findProductForIndexing(productId)
-                    .orElseThrow(() -> new RuntimeException("Product not found"));
-
-            ProductDocument productDoc = ProductDocument.builder()
-                    .id(dto.getId().toString())
-                    .name(dto.getName())
-                    .description(dto.getDescription())
-                    .sellerId(dto.getSellerId().toString())
-                    .sellerName(dto.getSellerName())
-                    .categoryId(dto.getCategoryId().toString())
-                    .categoryName(dto.getCategoryName())
-                    .brandId(dto.getBrandId() != null ? dto.getBrandId().toString() : null)
-                    .brandName(dto.getBrandName())
-                    .createdAt(dto.getCreatedAt().toString())
-                    .build();
-
-            elasticsearchClient.index(i -> i
-                    .index("products")
-                    .id(productDoc.getId())
-                    .document(productDoc));
-        } catch (Exception e) {
-            System.err.println("❌ Failed to indexProduct " + e.getMessage());
-            e.printStackTrace();
+            log.info("Product not standard/live, skipping StandardProduct creation.");
         }
     }
 

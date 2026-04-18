@@ -44,6 +44,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("UPDATE Product p SET p.step = :step WHERE p.id = :productId")
     int updateStatusById(@Param("productId") UUID productId, @Param("step") Step step);
 
+    @Query("SELECT p.attributesSnapshot FROM Product p WHERE p.id = :productId")
+    Optional<String> findSnapshotById(@Param("productId") UUID productId);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Product p SET p.attributesSnapshot = :snapshot WHERE p.id = :productId")
+    void updateSnapshot(@Param("productId") UUID productId, @Param("snapshot") String snapshot);
+
     boolean existsById(UUID id);
 
     @Query("SELECT DISTINCT p FROM Product p " +

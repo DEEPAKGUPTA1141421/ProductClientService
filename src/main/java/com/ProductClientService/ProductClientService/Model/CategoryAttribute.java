@@ -26,7 +26,7 @@ public class CategoryAttribute {
     @Column(name = "name", nullable = false)
     private String name;
 
-    @ManyToMany(fetch = FetchType.EAGER)
+    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "category_attribute_mapping", // 👈 join table
             joinColumns = @JoinColumn(name = "category_attribute_id"), inverseJoinColumns = @JoinColumn(name = "attribute_id"))
     private Set<Attribute> attributes = new HashSet<>();
