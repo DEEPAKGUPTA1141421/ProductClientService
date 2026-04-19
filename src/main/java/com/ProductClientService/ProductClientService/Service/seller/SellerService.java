@@ -23,6 +23,8 @@ import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CategoryAttributeDto;
+import com.ProductClientService.ProductClientService.DTO.seller.CatalogSearchResultDto;
+import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFromCatalogDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductFullResponseDto;
@@ -37,6 +39,7 @@ import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Model.Attribute;
 import com.ProductClientService.ProductClientService.Model.StandardProduct;
 import com.ProductClientService.ProductClientService.Model.Address;
+import org.springframework.data.domain.PageRequest;
 import com.ProductClientService.ProductClientService.Repository.AttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryAttributeRepository;
@@ -50,6 +53,7 @@ import com.ProductClientService.ProductClientService.Repository.StandardProductR
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService.AddressResponse;
+import com.ProductClientService.ProductClientService.Service.ElasticsearchProductIndexer;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import com.cloudinary.Cloudinary;
@@ -86,6 +90,7 @@ public class SellerService {
     private final OpenStreetMapService openStreetMapService;
     private final SellerAddressRepository sellerAddressRepository;
     private final EventPublisherService eventPublisher;
+    private final ElasticsearchProductIndexer elasticsearchProductIndexer;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -470,19 +475,23 @@ public class SellerService {
         try {
             Product.Step currentStep = productRepository.findStepById(productId)
                     .orElseThrow(() -> new RuntimeException("Product not found"));
-            if (currentStep == Product.Step.PRODUCT_VARIANT) {
+            if (currentStep == Product.Step.PRODUCT_VARIANT
+                    || currentStep == Product.Step.CATALOG_SELECTED) {
                 int updatescore = updateStatusById(productId, Product.Step.LIVE);
                 if (updatescore > 0) {
                     refreshSnapshot(productId);
                     handleProductUpdate(productId);
                     eventPublisher.publishProductLive(productId); // triggers search-intent indexing
+                    elasticsearchProductIndexer.indexProduct(productId);
                     return new ApiResponse<>(true, "Product Live", null, 200);
                 } else {
                     return new ApiResponse<>(false, "Internal Server Error", null, 500);
                 }
 
             } else
-                return new ApiResponse<>(false, "Bad Request", null, 403);
+                return new ApiResponse<>(false,
+                        "Product is Not In  PRODUCT_VARIANT or CATALOG_SELECTED , Current Step is " + currentStep,
+                        null, 403);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 500);
         }
@@ -509,25 +518,60 @@ public class SellerService {
                 .orElseThrow(() -> new RuntimeException("Product not found"));
 
         if (Boolean.TRUE.equals(product.getIsStandard()) && product.getStep() == Product.Step.LIVE) {
-            try {
-                log.info("product value" + product.getName() + " " + product.getDescription() + " "
-                        + product.getCategory() + " " + product.getBrand());
-                StandardProduct standardProduct = new StandardProduct();
-                standardProduct.setName(product.getName());
-                standardProduct.setDescription(product.getDescription());
-                standardProduct.setCategory(product.getCategory());
-                standardProduct.setBrandEntity(product.getBrand());
-
-                StandardProduct saved = standardProductRepository.save(standardProduct);
-                log.info("StandardProduct saved: " + saved);
-
-            } catch (Exception e) {
-                log.error("Failed to save StandardProduct: " + e.getMessage());
-                e.printStackTrace();
-            }
-        } else {
-            log.info("Product not standard/live, skipping StandardProduct creation.");
+            // Product flagged as a new catalog candidate — requires admin review before
+            // it can be added to the standard product catalog. No auto-creation here.
+            log.info("Product {} is a new catalog candidate. Pending admin review for promotion.", productId);
         }
+    }
+
+    // ── Catalog listing flow
+    // ──────────────────────────────────────────────────────
+
+    public ApiResponse<Object> searchCatalog(String query, int page, int size) {
+        List<StandardProduct> results = standardProductRepository
+                .searchCatalog(query, PageRequest.of(page, size));
+        List<CatalogSearchResultDto> dtos = results.stream().map(sp -> new CatalogSearchResultDto(
+                sp.getId(),
+                sp.getName(),
+                sp.getDescription(),
+                sp.getPrimaryImageUrl(),
+                sp.getBrandEntity() != null ? sp.getBrandEntity().getName() : null,
+                sp.getCategory() != null ? sp.getCategory().getName() : null,
+                sp.getSpecifications(),
+                sp.getEan(),
+                sp.getProductCode())).toList();
+        return new ApiResponse<>(true, "Catalog search results", dtos, 200);
+    }
+
+    @jakarta.transaction.Transactional
+    public ApiResponse<Object> createListingFromCatalog(CreateListingFromCatalogDto dto) {
+        StandardProduct std = standardProductRepository.findById(dto.standardProductId())
+                .orElseThrow(() -> new RuntimeException("Standard product not found in catalog"));
+
+        if (!Boolean.TRUE.equals(std.getIsVerified()) || std.getStatus() != StandardProduct.Status.ACTIVE) {
+            return new ApiResponse<>(false, "This catalog entry is not available for listing", null, 400);
+        }
+
+        Seller seller = sellerRepository.findById(getUserId())
+                .orElseThrow(() -> new RuntimeException("Seller not found"));
+
+        Product product = new Product();
+        product.setName(std.getName());
+        product.setDescription(std.getDescription());
+        product.setCategory(std.getCategory());
+        product.setBrand(std.getBrandEntity());
+        product.setStandardProduct(std);
+        product.setSeller(seller);
+        // This is a seller listing linked to a catalog entry, not a new catalog item
+        product.setIsStandard(false);
+        // Skip attribute + image steps — inherited from standard product
+        product.setStep(Product.Step.CATALOG_SELECTED);
+        // Inherit the catalog's specifications snapshot so reads are zero-join
+        product.setAttributesSnapshot(std.getSpecifications());
+
+        UUID savedId = productRepository.save(product).getId();
+        return new ApiResponse<>(true, "Listing created from catalog. Add variants to go live.",
+                Map.of("productId", savedId), 201);
     }
 
     public ApiResponse<Object> uploadAndUpdateImages(List<Object[]> attributeImageData, String step) {
@@ -687,5 +731,4 @@ public class SellerService {
     }
 }
 // hukiiu iuui jkjbhjhhjhj huhu uhh,j uh yiu ujhhuhjuhui uhh juyyuuik uhhu
-// jliij oijij uhjinhuk hkuhj uhiu uhiuhuhkui uihhjhhhijji hukhu guy uy7 yuyu
-// yuuyy yuyu
+// huiu8i iyu iy7uiu8u8uiui

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,12 +13,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
+import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Service.ProductService;
 import com.ProductClientService.ProductClientService.Service.SearchIntentService;
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.Strategy.SearchHistoryStragecy.TrendingSearchStrategy;
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -31,16 +35,11 @@ public class ProductController {
 
     @GetMapping("/products/search")
     public ResponseEntity<?> searchProducts(
-            @RequestParam(required = false) UUID categoryId,
-            @RequestParam(required = false) UUID brandId,
-            @RequestParam(required = false) UUID sellerId,
-            @RequestParam(required = false) String attributeName,
-            @RequestParam(required = false) String attributeValue,
-            @RequestParam(required = false) boolean includeFilter,
-            @RequestParam(required = false) String discounttype,
-            @RequestParam(required = false) Integer discount) {
-        ApiResponse<Object> response = productService.searchProducts(categoryId, brandId, sellerId, attributeName,
-                attributeValue, includeFilter, discounttype, discount);
+            @Valid SearchRequest req,
+            @RequestParam(required = false, defaultValue = "false") boolean includeFilter,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        UUID userId = principal != null ? principal.getId() : null;
+        ApiResponse<Object> response = productService.searchProducts(req, includeFilter, userId);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 

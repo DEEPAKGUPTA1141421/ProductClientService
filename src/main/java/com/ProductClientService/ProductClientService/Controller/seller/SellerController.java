@@ -7,6 +7,8 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.Settings.AadhaarVerificationDto;
+import com.ProductClientService.ProductClientService.DTO.seller.CatalogSearchResultDto;
+import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFromCatalogDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductTagRequestDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
@@ -323,6 +325,25 @@ public class SellerController {
     // return ResponseEntity.status(501).body(e.getMessage());
     // }
     // }
+
+    // ── Standard Product Catalog flow ────────────────────────────────────────────
+
+    @GetMapping("/catalog/search")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> searchCatalog(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        ApiResponse<Object> response = sellerService.searchCatalog(query, page, size);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PostMapping("/listing/from-catalog")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> createListingFromCatalog(@RequestBody CreateListingFromCatalogDto dto) {
+        ApiResponse<Object> response = sellerService.createListingFromCatalog(dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
 
     // Aadhaar Verification Endpoints
 

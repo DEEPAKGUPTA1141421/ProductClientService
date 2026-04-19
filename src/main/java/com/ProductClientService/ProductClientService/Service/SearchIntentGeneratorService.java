@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.Service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.OpType;
 import com.ProductClientService.ProductClientService.DTO.admin.ProductAttributeForIntentProjection;
 import com.ProductClientService.ProductClientService.DTO.search.SearchIntentDocument;
@@ -75,7 +76,6 @@ public class SearchIntentGeneratorService {
                 log.warn("No attribute rows found for product {}", productId);
                 return;
             }
-            log.info("Attribute rows for product {}: {}", productId, rows.size());
             ProductAttributeForIntentProjection first = rows.get(0);
             String brand = first.getBrandName();
             UUID brandId = first.getBrandId();
@@ -101,19 +101,22 @@ public class SearchIntentGeneratorService {
             Map<String, List<String>> suffixMap = new HashMap<>();
             processRules(attributes, rules, prefixMap, suffixMap);
 
+            // Tracks keywords already indexed in this run — avoids duplicate ES round-trips
+            Set<String> indexed = new HashSet<>();
+
             // 1. Base intent: "t-shirt"
-            indexIntent(base, buildBasePayload(categoryId));
+            indexIntent(base, buildBasePayload(categoryId), indexed);
 
             // 2. Brand intent: "puma t-shirt"
             if (brand != null) {
-                indexIntent(brand.toLowerCase() + " " + base, buildBrandPayload(categoryId, brandId));
+                indexIntent(brand.toLowerCase() + " " + base, buildBrandPayload(categoryId, brandId), indexed);
             }
 
             // 3. Prefix intents: "<attrValue> <base>"
             for (Map.Entry<String, List<String>> entry : prefixMap.entrySet()) {
                 for (String val : entry.getValue()) {
                     indexIntent(val + " " + base,
-                            buildAttributePayload(categoryId, entry.getKey(), val));
+                            buildAttributePayload(categoryId, entry.getKey(), val), indexed);
                 }
             }
 
@@ -121,7 +124,7 @@ public class SearchIntentGeneratorService {
             for (Map.Entry<String, List<String>> entry : suffixMap.entrySet()) {
                 for (String val : entry.getValue()) {
                     indexIntent(base + " " + val,
-                            buildAttributePayload(categoryId, entry.getKey(), val));
+                            buildAttributePayload(categoryId, entry.getKey(), val), indexed);
                 }
             }
 
@@ -134,16 +137,16 @@ public class SearchIntentGeneratorService {
                             Map<String, List<String>> combo = new HashMap<>();
                             combo.put(p.getKey(), List.of(pv));
                             combo.put(s.getKey(), List.of(sv.replaceAll("for ", "")));
-                            indexIntent(keyword, buildMultiAttributePayload(categoryId, combo));
+                            indexIntent(keyword, buildMultiAttributePayload(categoryId, combo), indexed);
                         }
                     }
                 }
             }
 
             // 6. Single price intent: "t-shirt under <floor(minPrice, 100)>"
-            generatePriceIntent(productId, categoryId, base);
+            generatePriceIntent(productId, categoryId, base, indexed);
 
-            log.info("Search intents indexed to ES for product {}", productId);
+            log.info("Search intents indexed to ES for product {} ({} unique keywords)", productId, indexed.size());
 
         } catch (Exception e) {
             log.error("Failed to generate intents for product {}: {}", productId, e.getMessage());
@@ -187,10 +190,16 @@ public class SearchIntentGeneratorService {
      * counts).
      * Silently skips duplicate keywords.
      */
-    private void indexIntent(String keyword, JsonNode payload) {
+    private void indexIntent(String keyword, JsonNode payload, Set<String> indexed) {
         if (keyword == null || keyword.isBlank())
             return;
         final String kw = keyword.trim().toLowerCase(); // final — safe for lambda capture
+
+        // Within-run deduplication: skip if already indexed in this generateForProduct() call
+        if (!indexed.add(kw)) {
+            log.debug("Skipping duplicate keyword '{}' within this run", kw);
+            return;
+        }
 
         try {
             Map<String, Object> payloadMap = objectMapper.convertValue(payload,
@@ -209,13 +218,19 @@ public class SearchIntentGeneratorService {
             esClient.index(i -> i
                     .index(SEARCH_INTENTS_INDEX)
                     .id(kw)
-                    .opType(OpType.Create) // no-op if doc already exists
+                    .opType(OpType.Create) // no-op if doc already exists in ES
                     .document(doc));
             log.debug("Indexed search intent: {}", kw);
 
+        } catch (ElasticsearchException e) {
+            if (e.status() == 409) {
+                // Doc already exists in ES (another product shares the same keyword) — expected
+                log.debug("Skipping intent '{}': already exists in ES", kw);
+            } else {
+                log.warn("ES error indexing intent '{}': status={}, msg={}", kw, e.status(), e.getMessage());
+            }
         } catch (Exception e) {
-            // 409 = doc already exists (another product shares the same keyword) — expected
-            log.debug("Skipping intent '{}': {}", kw, e.getMessage());
+            log.warn("Unexpected error indexing intent '{}': {}", kw, e.getMessage());
         }
     }
 
@@ -279,7 +294,7 @@ public class SearchIntentGeneratorService {
      * price=850 → "t-shirt under 800"
      * Skipped if no variants exist or price cannot be parsed.
      */
-    private void generatePriceIntent(UUID productId, UUID categoryId, String base) {
+    private void generatePriceIntent(UUID productId, UUID categoryId, String base, Set<String> indexed) {
         variantRepository.findByProductId(productId).stream()
                 .map(v -> {
                     try {
@@ -293,7 +308,7 @@ public class SearchIntentGeneratorService {
                 .ifPresent(minPrice -> {
                     int bucket = (int) (Math.floor(minPrice / 100) * 100);
                     if (bucket > 0) {
-                        indexIntent(base + " under " + bucket, buildPricePayload(categoryId, bucket));
+                        indexIntent(base + " under " + bucket, buildPricePayload(categoryId, bucket), indexed);
                     }
                 });
     }

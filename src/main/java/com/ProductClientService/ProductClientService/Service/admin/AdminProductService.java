@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.kafka.common.protocol.types.Field.Str;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -19,14 +20,22 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.admin.CategoryAttributeRequest;
 import com.ProductClientService.ProductClientService.DTO.admin.CategoryDto;
+import com.ProductClientService.ProductClientService.DTO.admin.StandardProductCreateDto;
+import com.ProductClientService.ProductClientService.DTO.seller.CatalogSearchResultDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CategoryAttributeDto;
 import com.ProductClientService.ProductClientService.Model.Attribute;
+import com.ProductClientService.ProductClientService.Model.Brand;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Model.CategoryAttribute;
 import com.ProductClientService.ProductClientService.Model.Product;
+import com.ProductClientService.ProductClientService.Model.StandardProduct;
 import com.ProductClientService.ProductClientService.Repository.AttributeRepository;
+import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryAttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductRepository;
+import com.ProductClientService.ProductClientService.Repository.StandardProductRepository;
+import com.ProductClientService.ProductClientService.Service.ElasticsearchProductIndexer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,7 +54,11 @@ public class AdminProductService {
     private final CategoryRepository categoryRepository;
     private final AttributeRepository attributeRepository;
     private final CategoryAttributeRepository categoryAttributeRepository;
+    private final StandardProductRepository standardProductRepository;
+    private final ProductRepository productRepository;
+    private final BrandRepository brandRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final ElasticsearchProductIndexer elasticsearchProductIndexer;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -412,6 +425,115 @@ public class AdminProductService {
             throw new RuntimeException("Error updating options JSON", e);
         }
 
+    }
+
+    // ── Standard Product Catalog ──────────────────────────────────────────────────
+
+    public ApiResponse<Object> createStandardProduct(StandardProductCreateDto dto) {
+        if (dto.ean() != null && standardProductRepository.existsByEan(dto.ean())) {
+            return new ApiResponse<>(false, "A catalog entry with this EAN already exists", null, 409);
+        }
+        if (dto.productCode() != null && standardProductRepository.existsByProductCode(dto.productCode())) {
+            return new ApiResponse<>(false, "A catalog entry with this product code already exists", null, 409);
+        }
+
+        Category category = categoryRepository.findById(dto.categoryId())
+                .orElseThrow(() -> new RuntimeException("Category not found"));
+
+        StandardProduct sp = new StandardProduct();
+        sp.setName(dto.name());
+        sp.setDescription(dto.description());
+        sp.setCategory(category);
+        sp.setEan(dto.ean());
+        sp.setProductCode(dto.productCode());
+        sp.setSpecifications(dto.specifications());
+        sp.setPrimaryImageUrl(dto.primaryImageUrl());
+        sp.setSearchKeywords(dto.searchKeywords());
+        sp.setStatus(StandardProduct.Status.DRAFT);
+        sp.setIsVerified(false);
+
+        if (dto.brandId() != null) {
+            Brand brand = brandRepository.findById(dto.brandId())
+                    .orElseThrow(() -> new RuntimeException("Brand not found"));
+            sp.setBrandEntity(brand);
+        }
+
+        StandardProduct saved = standardProductRepository.save(sp);
+        return new ApiResponse<>(true, "Catalog entry created", saved.getId(), 201);
+    }
+
+    public ApiResponse<Object> updateStandardProduct(UUID id, StandardProductCreateDto dto) {
+        StandardProduct sp = standardProductRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Catalog entry not found"));
+
+        if (dto.name() != null) sp.setName(dto.name());
+        if (dto.description() != null) sp.setDescription(dto.description());
+        if (dto.specifications() != null) sp.setSpecifications(dto.specifications());
+        if (dto.primaryImageUrl() != null) sp.setPrimaryImageUrl(dto.primaryImageUrl());
+        if (dto.searchKeywords() != null) sp.setSearchKeywords(dto.searchKeywords());
+        if (dto.ean() != null) sp.setEan(dto.ean());
+        if (dto.productCode() != null) sp.setProductCode(dto.productCode());
+
+        if (dto.categoryId() != null) {
+            Category category = categoryRepository.findById(dto.categoryId())
+                    .orElseThrow(() -> new RuntimeException("Category not found"));
+            sp.setCategory(category);
+        }
+        if (dto.brandId() != null) {
+            Brand brand = brandRepository.findById(dto.brandId())
+                    .orElseThrow(() -> new RuntimeException("Brand not found"));
+            sp.setBrandEntity(brand);
+        }
+
+        standardProductRepository.save(sp);
+        return new ApiResponse<>(true, "Catalog entry updated", null, 200);
+    }
+
+    public ApiResponse<Object> verifyAndActivate(UUID id) {
+        StandardProduct sp = standardProductRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Catalog entry not found"));
+        sp.setIsVerified(true);
+        sp.setStatus(StandardProduct.Status.ACTIVE);
+        standardProductRepository.save(sp);
+        return new ApiResponse<>(true, "Catalog entry is now active", null, 200);
+    }
+
+    public ApiResponse<Object> discontinue(UUID id) {
+        StandardProduct sp = standardProductRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Catalog entry not found"));
+        sp.setStatus(StandardProduct.Status.DISCONTINUED);
+        standardProductRepository.save(sp);
+        return new ApiResponse<>(true, "Catalog entry discontinued", null, 200);
+    }
+
+    public ApiResponse<Object> adminSearchCatalog(String query, int page, int size) {
+        List<StandardProduct> results = standardProductRepository
+                .adminSearchCatalog(query, PageRequest.of(page, size));
+        List<CatalogSearchResultDto> dtos = results.stream().map(this::toSearchResult).toList();
+        return new ApiResponse<>(true, "Catalog search results", dtos, 200);
+    }
+
+    private CatalogSearchResultDto toSearchResult(StandardProduct sp) {
+        return new CatalogSearchResultDto(
+                sp.getId(),
+                sp.getName(),
+                sp.getDescription(),
+                sp.getPrimaryImageUrl(),
+                sp.getBrandEntity() != null ? sp.getBrandEntity().getName() : null,
+                sp.getCategory() != null ? sp.getCategory().getName() : null,
+                sp.getSpecifications(),
+                sp.getEan(),
+                sp.getProductCode());
+    }
+
+    @Transactional
+    public ApiResponse<Object> makeProductLive(UUID productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new EntityNotFoundException("Product not found: " + productId));
+        product.setStep(Product.Step.LIVE);
+        productRepository.save(product);
+        elasticsearchProductIndexer.indexProduct(productId);
+        return new ApiResponse<>(true, "Product is now live and indexed", null, 200);
     }
 
     public CategoryAttribute createCategoryAttribute(UUID categoryId, UUID attributeId,

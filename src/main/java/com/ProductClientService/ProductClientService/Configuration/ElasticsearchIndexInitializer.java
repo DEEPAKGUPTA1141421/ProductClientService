@@ -8,18 +8,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Creates the search-intents-v1 Elasticsearch index on startup if it does not
- * already exist.
+ * Creates required Elasticsearch indices on startup if they do not already
+ * exist.
  *
- * Mapping highlights:
- *   keyword          → search_as_you_type (max 3-gram)
- *                      ES auto-creates ._2gram, ._3gram, ._index_prefix sub-fields
- *                      which are used by the bool_prefix multi_match for autocomplete.
- *   searchCount      → long — used as ranking signal in function_score
- *   clickCount       → long — used as ranking signal (weight > searchCount)
- *   filterPayload    → object, enabled=false (stored, not indexed or searched)
- *   imageUrl         → keyword, not analyzed, not indexed (pure display)
- *   suggestionType   → keyword (for future admin filtering)
+ * Indices managed:
+ * search-intents-v1 — autocomplete suggestions (search_as_you_type)
+ * products-v1 — live product search index (filtered / ranked / sorted)
  */
 @Component
 @RequiredArgsConstructor
@@ -27,42 +21,128 @@ import org.springframework.stereotype.Component;
 public class ElasticsearchIndexInitializer {
 
     static final String SEARCH_INTENTS_INDEX = "search-intents-v1";
+    static final String PRODUCTS_INDEX = "products-v1";
 
     private final ElasticsearchClient esClient;
 
     @PostConstruct
-    public void createSearchIntentsIndex() {
-        try {
-            boolean exists = esClient.indices()
-                    .exists(ExistsRequest.of(r -> r.index(SEARCH_INTENTS_INDEX)))
-                    .value();
+    public void initializeIndices() {
+        createSearchIntentsIndex();
+        createProductsIndex();
+    }
 
-            if (exists) {
-                log.info("Index {} already exists — skipping creation", SEARCH_INTENTS_INDEX);
+    // ── search-intents-v1 ─────────────────────────────────────────────────────
+
+    private void createSearchIntentsIndex() {
+        try {
+            if (indexExists(SEARCH_INTENTS_INDEX)) {
+                log.info("Index {} already exists \u00f9 skipping creation", SEARCH_INTENTS_INDEX);
                 return;
             }
-
             esClient.indices().create(c -> c
                     .index(SEARCH_INTENTS_INDEX)
                     .mappings(m -> m
                             .properties("keyword", p -> p
                                     .searchAsYouType(s -> s.maxShingleSize(3)))
-                            .properties("searchCount", p -> p
-                                    .long_(l -> l))
-                            .properties("clickCount", p -> p
-                                    .long_(l -> l))
-                            .properties("filterPayload", p -> p
-                                    .object(o -> o.enabled(false)))
-                            .properties("imageUrl", p -> p
-                                    .keyword(k -> k.index(false)))
-                            .properties("suggestionType", p -> p
-                                    .keyword(k -> k))
-                    )
-            );
+                            .properties("searchCount", p -> p.long_(l -> l))
+                            .properties("clickCount", p -> p.long_(l -> l))
+                            .properties("filterPayload", p -> p.object(o -> o.enabled(false)))
+                            .properties("imageUrl", p -> p.keyword(k -> k.index(false)))
+                            .properties("suggestionType", p -> p.keyword(k -> k))));
             log.info("Created Elasticsearch index: {}", SEARCH_INTENTS_INDEX);
-
         } catch (Exception e) {
             log.warn("Could not initialize {} index: {}", SEARCH_INTENTS_INDEX, e.getMessage());
         }
+    }
+
+    // ── products-v1 ───────────────────────────────────────────────────────────
+
+    /**
+     * Mapping highlights:
+     * name, description → text (full-text search + fuzziness)
+     * brand_name → text + keyword sub-field (search + exact filter)
+     * category_id, brand_id → keyword (term filter)
+     * step, in_stock → keyword / boolean (mandatory filters)
+     * min_price_paise → long (fast range filter — no CAST)
+     * discount_percent → integer (range filter for "X% off" badge)
+     * avg_rating → float (range filter + sort)
+     * ranking_score → float (function_score booster)
+     * attributes → nested — prevents cross-attribute false positives
+     * e.g. color=red AND size=M must match on same object
+     * images → keyword, index=false (display only, not searched)
+     * created_at → date (new-arrivals filter + sort)
+     */
+    public void createProductsIndex() {
+        try {
+          log.info("step1");
+            if (indexExists(PRODUCTS_INDEX)) {
+                log.info("Index {} already exists — skipping creation", PRODUCTS_INDEX);
+                return;
+            }
+            log.info("step3");
+            
+            esClient.indices().create(c -> c
+                    .index(PRODUCTS_INDEX)
+                    .settings(s -> s
+                            .numberOfShards("1")
+                            .numberOfReplicas("1"))
+                    .mappings(m -> m
+                            // ── identity ─────────────────────────────────────
+                            .properties("product_id", p -> p.keyword(k -> k))
+                            .properties("variant_id", p -> p.keyword(k -> k))
+                            .properties("seller_id", p -> p.keyword(k -> k))
+                            // ── searchable text ───────────────────────────────
+                            .properties("name", p -> p.text(t -> t
+                                    .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(256)))))
+                            .properties("description", p -> p.text(t -> t))
+                            .properties("tags", p -> p.text(t -> t))
+                            // ── category / brand ──────────────────────────────
+                            .properties("category_id", p -> p.keyword(k -> k))
+                            .properties("category_name", p -> p.text(t -> t
+                                    .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(128)))))
+                            .properties("brand_id", p -> p.keyword(k -> k))
+                            .properties("brand_name", p -> p.text(t -> t
+                                    .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(128)))))
+                            // ── lifecycle / stock ─────────────────────────────
+                            .properties("step", p -> p.keyword(k -> k))
+                            .properties("in_stock", p -> p.boolean_(b -> b))
+                            // ── pricing ───────────────────────────────────────
+                            .properties("min_price_paise", p -> p.long_(l -> l))
+                            .properties("original_price_paise", p -> p.long_(l -> l))
+                            .properties("discount_percent", p -> p.integer(i -> i))
+                            // ── delivery ──────────────────────────────────────
+                            .properties("delivery_days", p -> p.integer(i -> i))
+                            .properties("free_delivery", p -> p.boolean_(b -> b))
+                            // ── media ─────────────────────────────────────────
+                            .properties("images", p -> p.keyword(k -> k.index(false)))
+                            // ── ratings ───────────────────────────────────────
+                            .properties("avg_rating", p -> p.float_(f -> f))
+                            .properties("review_count", p -> p.integer(i -> i))
+                            // ── ranking / metrics ─────────────────────────────
+                            .properties("ranking_score", p -> p.float_(f -> f))
+                            .properties("number_of_orders", p -> p.long_(l -> l))
+                            .properties("number_of_purchases", p -> p.long_(l -> l))
+                            .properties("conversion_rate", p -> p.float_(f -> f))
+                            .properties("click_through_rate", p -> p.float_(f -> f))
+                            .properties("wishlist_count", p -> p.long_(l -> l))
+                            .properties("cart_add_count", p -> p.long_(l -> l))
+                            .properties("return_rate", p -> p.float_(f -> f))
+                            .properties("recent_sales_7d", p -> p.integer(i -> i))
+                            // ── timestamps ────────────────────────────────────
+                            .properties("created_at", p -> p.date(d -> d))
+                            // ── nested attributes (critical for correct filtering) ──
+                            .properties("attributes", p -> p.nested(n -> n
+                                    .properties("name", np -> np.keyword(k -> k))
+                                    .properties("value", np -> np.keyword(k -> k))))));
+            log.info("Created Elasticsearch index: {}", PRODUCTS_INDEX);
+        } catch (Exception e) {
+            log.warn("Could not initialize {} index: {}", PRODUCTS_INDEX, e.getMessage());
+        }
+    }
+
+    private boolean indexExists(String index) throws Exception {
+        return esClient.indices()
+                .exists(ExistsRequest.of(r -> r.index(index)))
+                .value();
     }
 }

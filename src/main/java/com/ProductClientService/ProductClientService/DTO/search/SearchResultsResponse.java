@@ -54,6 +54,7 @@ public class SearchResultsResponse {
 
         private boolean isSponsored;
         private boolean isWishlisted; // requires userId from JWT
+        private boolean isInCart;     // requires userId from JWT
 
         private UUID variantId; // cheapest in-stock variant
     }

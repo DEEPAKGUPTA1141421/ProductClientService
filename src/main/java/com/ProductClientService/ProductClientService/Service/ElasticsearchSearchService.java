@@ -248,7 +248,8 @@ public class ElasticsearchSearchService {
         else if (doc.getAvgRating() >= 4.3)                            badge = "Top Rated";
         else if (discPct != null && discPct >= 20)                     badge = discPct + "% Off";
 
-        String delivText = buildDeliveryText(doc.getDeliveryDays(), doc.isFreeDelivery());
+        // TODO: compute per-seller delivery estimate once logistics data is available
+        String delivText = "EXPRESS · Delivering Tomorrow";
 
         return SearchProductDto.builder()
                 .id(doc.getProductId() != null ? UUID.fromString(doc.getProductId()) : null)

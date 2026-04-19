@@ -5,6 +5,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.admin.CategoryAttributeRequest;
 import com.ProductClientService.ProductClientService.DTO.admin.CategoryDto;
+import com.ProductClientService.ProductClientService.DTO.admin.StandardProductCreateDto;
 import com.ProductClientService.ProductClientService.Model.CategoryAttribute;
 import com.ProductClientService.ProductClientService.Service.admin.AdminProductService;
 
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -69,6 +71,48 @@ public class AdminProductController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
+    }
+
+    // ── Standard Product Catalog ──────────────────────────────────────────────────
+
+    @PostMapping("/catalog")
+    public ResponseEntity<?> createCatalogEntry(@RequestBody StandardProductCreateDto dto) {
+        ApiResponse<Object> response = adminProductService.createStandardProduct(dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PutMapping("/catalog/{id}")
+    public ResponseEntity<?> updateCatalogEntry(@PathVariable UUID id,
+            @RequestBody StandardProductCreateDto dto) {
+        ApiResponse<Object> response = adminProductService.updateStandardProduct(id, dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PutMapping("/catalog/{id}/verify")
+    public ResponseEntity<?> verifyCatalogEntry(@PathVariable UUID id) {
+        ApiResponse<Object> response = adminProductService.verifyAndActivate(id);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PutMapping("/catalog/{id}/discontinue")
+    public ResponseEntity<?> discontinueCatalogEntry(@PathVariable UUID id) {
+        ApiResponse<Object> response = adminProductService.discontinue(id);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PutMapping("/{id}/go-live")
+    public ResponseEntity<?> makeProductLive(@PathVariable UUID id) {
+        ApiResponse<Object> response = adminProductService.makeProductLive(id);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @GetMapping("/catalog/search")
+    public ResponseEntity<?> searchCatalog(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        ApiResponse<Object> response = adminProductService.adminSearchCatalog(query, page, size);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
 }

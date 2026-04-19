@@ -3,6 +3,8 @@ package com.ProductClientService.ProductClientService.Service;
 import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse.SearchProductDto;
+import com.ProductClientService.ProductClientService.Model.Cart;
+import com.ProductClientService.ProductClientService.Repository.CartRepository;
 import com.ProductClientService.ProductClientService.Repository.WishlistRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class SearchResultsService {
 
     private final ElasticsearchSearchService esSearchService;
     private final WishlistRepository wishlistRepo;
+    private final CartRepository cartRepo;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
@@ -57,17 +60,20 @@ public class SearchResultsService {
         String cacheKey = buildCacheKey(req);
 
         // ── 1. Try Redis cache ────────────────────────────────────────────────
-        String cached = redis.opsForValue().get(cacheKey);
-        if (cached != null) {
-            try {
-                SearchResultsResponse response = objectMapper.readValue(cached, SearchResultsResponse.class);
-                injectWishlistFlags(response.getProducts(), userId);
-                log.debug("Cache HIT for key={}", cacheKey);
-                return response;
-            } catch (Exception e) {
-                log.warn("Cache deserialisation failed for key={}: {}", cacheKey, e.getMessage());
-            }
-        }
+        // String cached = redis.opsForValue().get(cacheKey);
+        // if (cached != null) {
+        // try {
+        // SearchResultsResponse response = objectMapper.readValue(cached,
+        // SearchResultsResponse.class);
+        // injectWishlistFlags(response.getProducts(), userId);
+        // injectCartFlags(response.getProducts(), userId);
+        // log.debug("Cache HIT for key={}", cacheKey);
+        // return response;
+        // } catch (Exception e) {
+        // log.warn("Cache deserialisation failed for key={}: {}", cacheKey,
+        // e.getMessage());
+        // }
+        // }
 
         // ── 2. Elasticsearch query (replaces native SQL) ──────────────────────
         log.debug("Cache MISS for key={}, querying ES", cacheKey);
@@ -83,8 +89,9 @@ public class SearchResultsService {
             log.warn("Failed to cache response for key={}: {}", cacheKey, e.getMessage());
         }
 
-        // ── 4. Inject per-user wishlist flags ─────────────────────────────────
+        // ── 4. Inject per-user wishlist + cart flags ──────────────────────────
         injectWishlistFlags(response.getProducts(), userId);
+        injectCartFlags(response.getProducts(), userId);
 
         return response;
     }
@@ -110,6 +117,27 @@ public class SearchResultsService {
             products.forEach(p -> p.setWishlisted(wishlisted.contains(p.getId())));
         } catch (Exception e) {
             log.warn("Wishlist injection failed for userId={}: {}", userId, e.getMessage());
+        }
+    }
+
+    /**
+     * Single DB call: load the user's active cart, extract all product IDs,
+     * then flag each product in O(n) using a HashSet.
+     */
+    private void injectCartFlags(List<SearchProductDto> products, UUID userId) {
+        if (userId == null || products == null || products.isEmpty())
+            return;
+
+        try {
+            Set<UUID> inCart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
+                    .map(cart -> cart.getItems().stream()
+                            .map(item -> item.getProductId())
+                            .collect(Collectors.toSet()))
+                    .orElse(Set.of());
+
+            products.forEach(p -> p.setInCart(inCart.contains(p.getId())));
+        } catch (Exception e) {
+            log.warn("Cart flag injection failed for userId={}: {}", userId, e.getMessage());
         }
     }
 
@@ -162,3 +190,4 @@ public class SearchResultsService {
         }
     }
 }
+// kook jiklfjknjilj ljifj klkfk

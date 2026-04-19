@@ -23,6 +23,8 @@ import com.ProductClientService.ProductClientService.DTO.ProductWithImagesDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.CategoryTreeProjection;
+import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
+import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductRating;
@@ -35,17 +37,12 @@ import com.ProductClientService.ProductClientService.Repository.BrandRepository;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRatingRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
-import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository;
-import com.ProductClientService.ProductClientService.Repository.ProductSearchRepository.ProductSearchDto;
 import com.ProductClientService.ProductClientService.Repository.SectionRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Repository.Projection.CategoryProjection;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.elasticsearch.core.search.Hit;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
@@ -54,8 +51,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ProductService {
-    private final ProductSearchRepository productSearchRepository;
-    private final ElasticsearchClient elasticsearchClient;
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
     private final BrandRepository brandRepository;
@@ -66,37 +61,24 @@ public class ProductService {
     private final AttributeRepositoryImpl attributeRepositoryImpl;
     private final HttpServletRequest request;
     private final EventPublisherService eventPublisher;
+    private final SearchResultsService searchResultsService;
 
-    @Transactional(readOnly = true)
+    public ApiResponse<Object> searchProducts(SearchRequest req, boolean includeFilter, UUID userId) {
+        SearchResultsResponse products = searchResultsService.search(req, userId);
 
-    public ApiResponse<Object> searchProducts(UUID categoryId, UUID brandId, UUID sellerId,
-            String attributeName, String attributeValue, boolean includeFilter, String discounttype, Integer discount) {
-        ProductSearchBuilder builder = new ProductSearchBuilder();
-
-        if (categoryId != null)
-            builder.category(categoryId);
-        if (brandId != null)
-            builder.brand(brandId);
-        if (sellerId != null)
-            builder.seller(sellerId);
-        if (attributeName != null && attributeValue != null) {
-            builder.attribute(attributeName, attributeValue);
-        }
-        if (discounttype != null && discount != null) {
-            builder.discount(discounttype, discount);
+        if (!includeFilter) {
+            return new ApiResponse<>(true, "Fetched products", products, 200);
         }
 
-        List<ProductSearchDto> products = builder.execute(productSearchRepository);
+        // Include attribute filters for the category alongside product cards
+        List<AttributeDto> filters = req.getCategoryId() != null
+                ? attributeRepositoryImpl.findFiltersByCategoryId(req.getCategoryId())
+                : List.of();
+
         Map<String, Object> response = new HashMap<>();
         response.put("products", products);
-        if (includeFilter) {
-            System.out.println("Category ID for filters: " + categoryId);
-            List<AttributeDto> filters = attributeRepositoryImpl.findFiltersByCategoryId(categoryId);
-            response.put("filters", filters);
-            System.out.println("Filters: " + filters);
-        }
-        return new ApiResponse<>(true, "Fetched products and brands", response, 200);
-
+        response.put("filters", filters);
+        return new ApiResponse<>(true, "Fetched products and filters", response, 200);
     }
 
     public ApiResponse<Object> searchProducts(String keyword) {

@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
+import com.ProductClientService.ProductClientService.Configuration.ElasticsearchIndexInitializer;
 import com.ProductClientService.ProductClientService.DTO.search.ProductSearchDocument;
 import com.ProductClientService.ProductClientService.Model.ProductMetrics;
 import com.ProductClientService.ProductClientService.Repository.ProductMetricsRepository;
@@ -45,6 +46,7 @@ public class ElasticsearchProductIndexer {
 
     private final ElasticsearchClient esClient;
     private final ProductMetricsRepository metricsRepository;
+    private final ElasticsearchIndexInitializer indexInitializer;
 
     @PersistenceContext
     private final EntityManager em;
@@ -54,6 +56,9 @@ public class ElasticsearchProductIndexer {
     @Async
     public void indexProduct(UUID productId) {
         try {
+            // Ensure the index exists — no-op if already created at startup
+            indexInitializer.createProductsIndex();
+
             ProductSearchDocument doc = buildDocument(productId);
             if (doc == null) {
                 log.warn("Could not build ES document for productId={}", productId);
@@ -192,15 +197,13 @@ public class ElasticsearchProductIndexer {
                 .minPricePaise(minPricePaise)
                 .originalPricePaise(origPricePaise)
                 .discountPercent(discPct)
-                .inStock(parseLong(r[15]) > 0)
+                .inStock(parseLong(r[13]) > 0)
                 .images(images)
-                .avgRating(r[16] != null ? ((Number) r[16]).doubleValue() : 0.0)
-                .reviewCount(r[17] != null ? ((Number) r[17]).intValue() : 0)
-                .createdAt(r[18] != null
-                        ? ((java.sql.Timestamp) r[18]).toInstant()
-                        : java.time.Instant.now())
-                .deliveryDays(((Number) r[19]).intValue())
-                .freeDelivery(((Number) r[20]).intValue() == 1)
+                .avgRating(r[15] != null ? ((Number) r[15]).doubleValue() : 0.0)
+                .reviewCount(r[16] != null ? ((Number) r[16]).intValue() : 0)
+                .createdAt(toInstant(r[17]))
+                .deliveryDays(((Number) r[18]).intValue())
+                .freeDelivery(((Number) r[19]).intValue() == 1)
                 .attributes(attrs)
                 // metrics
                 .rankingScore(metrics.getRankingScore())
@@ -246,6 +249,14 @@ public class ElasticsearchProductIndexer {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private java.time.Instant toInstant(Object o) {
+        if (o == null) return java.time.Instant.now();
+        if (o instanceof java.sql.Timestamp ts) return ts.toInstant();
+        if (o instanceof java.time.OffsetDateTime odt) return odt.toInstant();
+        if (o instanceof java.time.Instant i) return i;
+        return java.time.Instant.now();
+    }
 
     private String str(Object o)   { return o != null ? o.toString() : null; }
     private long parseLong(Object o) {
