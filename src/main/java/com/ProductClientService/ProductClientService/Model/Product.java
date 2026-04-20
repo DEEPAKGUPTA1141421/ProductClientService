@@ -8,7 +8,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,8 +28,6 @@ import lombok.ToString;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-// @EqualsAndHashCode(exclude = { "productAttributes", "productImages" })
-// @ToString(exclude = { "productAttributes", "productImages" })
 public class Product {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -56,6 +56,9 @@ public class Product {
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id") // owns F;
     private Set<ProductVariant> variants = new HashSet<>();
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<ProductMedia> media = new ArrayList<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "seller_id", nullable = false)
@@ -99,12 +102,13 @@ public class Product {
     }
 
     public enum Step {
-        PRODUCT_NAME,       // ordinal 0
-        PRODUCT_ATTRIBUTE,  // ordinal 1
-        PRODUCT_IMAGE,      // ordinal 2
-        PRODUCT_VARIANT,    // ordinal 3
-        LIVE,               // ordinal 4
-        CATALOG_SELECTED    // ordinal 5 — seller picked from standard catalog (skip attributes + images)
+        PRODUCT_NAME, // ordinal 0
+        PRODUCT_ATTRIBUTE, // ordinal 1
+        PRODUCT_VARIANT, // ordinal 3
+        PRODUCT_IMAGE, // ordinal 2
+        PRODUCT_BRAND_AND_TAGS, // ordinal 3
+        LIVE, // ordinal 4
+        CATALOG_SELECTED // ordinal 5 — seller picked from standard catalog (skip attributes + images)
     }
 }
 

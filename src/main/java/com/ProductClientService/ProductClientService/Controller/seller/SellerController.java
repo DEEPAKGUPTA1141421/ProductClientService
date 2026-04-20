@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -43,7 +44,6 @@ import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.util.MultiValueMap;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -230,35 +230,52 @@ public class SellerController {
         }
     }
 
-    @PostMapping("/upload-images")
+    @PostMapping(value = "/upload-images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<?> uploadAttributeImages(
-            @RequestParam("data") String data,
-            @RequestParam("step") String step,
-            @RequestParam MultiValueMap<String, MultipartFile> images // handles images[0], images[1], ...
-    ) {
+    public ResponseEntity<?> uploadProductMedia(
+            @RequestParam("productId") UUID productId,
+            @RequestParam(value = "images", required = false) List<MultipartFile> coverFiles,
+            @RequestParam(value = "attributeImageKeys", required = false) List<String> attributeImageKeys,
+            @RequestParam(value = "attributeImages", required = false) List<MultipartFile> attributeImages) {
         try {
-            // Parse productAttributeIds from data string
-            List<String> attributeIds = new ObjectMapper().readValue(data, new TypeReference<List<String>>() {
-            });
-
-            List<Object[]> attributeImageData = new ArrayList<>();
-
-            // Match images[i] with attributeIds[i]
-            for (int i = 0; i < attributeIds.size(); i++) {
-                String key = "images[" + i + "]";
-                if (images.containsKey(key)) {
-                    UUID attrId = UUID.fromString(attributeIds.get(i));
-                    List<MultipartFile> files = images.get(key); // directly get list
-                    attributeImageData.add(new Object[] { attrId, files });
-                }
-            }
-
-            ApiResponse<Object> response = sellerService.uploadAndUpdateImages(attributeImageData, step);
-            return ResponseEntity.ok(response);
-
+            ApiResponse<Object> response = sellerService.uploadProductMedia(
+                    productId, coverFiles, attributeImageKeys, attributeImages);
+            return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Upload failed: " + e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/media/{mediaId}")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> removeProductMedia(@PathVariable UUID mediaId) {
+        try {
+            ApiResponse<Object> response = sellerService.removeProductMedia(mediaId);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(e.getMessage());
+        }
+    }
+
+    @PatchMapping("/media/{mediaId}/set-cover")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> setCoverImage(@PathVariable UUID mediaId) {
+        try {
+            ApiResponse<Object> response = sellerService.setCoverImage(mediaId);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{productId}/media")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getProductMedia(@PathVariable UUID productId) {
+        try {
+            ApiResponse<Object> response = sellerService.getProductMedia(productId);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(e.getMessage());
         }
     }
 
