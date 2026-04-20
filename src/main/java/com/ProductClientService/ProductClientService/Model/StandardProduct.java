@@ -38,7 +38,8 @@ public class StandardProduct {
     @Column(name = "product_code", length = 50, unique = true)
     private String productCode;
 
-    // Denormalized JSON snapshot of all specifications — avoids joins on seller reads
+    // Denormalized JSON snapshot of all specifications — avoids joins on seller
+    // reads
     @Column(name = "specifications", columnDefinition = "TEXT")
     private String specifications;
 
@@ -46,7 +47,8 @@ public class StandardProduct {
     @Column(name = "primary_image_url", columnDefinition = "TEXT")
     private String primaryImageUrl;
 
-    // Comma-separated extra keywords to improve search recall (e.g. "noodles,instant,2-min")
+    // Comma-separated extra keywords to improve search recall (e.g.
+    // "noodles,instant,2-min")
     @Column(name = "search_keywords", columnDefinition = "TEXT")
     private String searchKeywords;
 
@@ -57,11 +59,7 @@ public class StandardProduct {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private Status status = Status.DRAFT;
-
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @JoinColumn(name = "standard_product_id")
-    private Set<ProductImage> productImages = new HashSet<>();
-
+    
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)
     @JsonIgnore

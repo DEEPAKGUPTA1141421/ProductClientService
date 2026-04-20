@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import com.ProductClientService.ProductClientService.Utils.CommaSeparatedConverter;
+import com.ProductClientService.ProductClientService.Utils.JsonStringListConverter;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 
 import jakarta.persistence.*;
@@ -49,9 +49,13 @@ public class ProductAttribute {
     @JsonBackReference
     private Product product;
 
-    @Column(length = 2000)
-    @Convert(converter = CommaSeparatedConverter.class)
+    @Convert(converter = JsonStringListConverter.class)
+    @Column(name = "images", length = 4000)
     private List<String> images = new ArrayList<>();
+
+    @Convert(converter = JsonStringListConverter.class)
+    @Column(name = "image_public_ids", length = 4000)
+    private List<String> imagePublicIds = new ArrayList<>();
 
     @Column(name = "is_primary_image")
     private boolean isPrimaryImage = false;

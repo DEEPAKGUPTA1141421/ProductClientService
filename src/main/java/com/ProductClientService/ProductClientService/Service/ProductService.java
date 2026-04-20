@@ -10,6 +10,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.cache.annotation.Cacheable;
+import com.ProductClientService.ProductClientService.Configuration.CacheConfig;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -103,6 +105,7 @@ public class ProductService {
         return new ApiResponse<>(true, "Fetched products and brands", response, 200);
     }
 
+    @Cacheable(value = CacheConfig.CATEGORY_TREE, key = "'all'")
     public ApiResponse<Object> getFullCategoryTree() {
 
         try {

@@ -28,11 +28,14 @@ import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFro
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductFullResponseDto;
+import com.ProductClientService.ProductClientService.DTO.seller.ProductMediaResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Model.CategoryAttribute;
 import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
+import com.ProductClientService.ProductClientService.Model.ProductMedia;
+import com.ProductClientService.ProductClientService.Model.ProductMedia.MediaType;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Brand;
@@ -46,6 +49,7 @@ import com.ProductClientService.ProductClientService.Repository.CategoryAttribut
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductAttributeRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductMediaRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductVariantRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
@@ -91,6 +95,7 @@ public class SellerService {
     private final SellerAddressRepository sellerAddressRepository;
     private final EventPublisherService eventPublisher;
     private final ElasticsearchProductIndexer elasticsearchProductIndexer;
+    private final ProductMediaRepository productMediaRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -348,18 +353,20 @@ public class SellerService {
         try {
             Product product = productRepository.findById(dto.productId())
                     .orElseThrow(() -> new RuntimeException("Product not found"));
-            product.setStep(Product.Step.valueOf(dto.step()));
+            product.setStep(Product.Step.PRODUCT_VARIANT);
 
-            for (int i = 0; i < dto.skus().size(); i++) {
+            for (ProductVariantsDto.VariantItem item : dto.variants()) {
                 ProductVariant variant = new ProductVariant();
-                variant.setSku(dto.skus().get(i));
-                variant.setStock(Integer.parseInt(dto.stock().get(i)));
-                double multipliedPrice = 100 * Double.parseDouble(dto.price().get(i));
-                variant.setPrice(String.valueOf(multipliedPrice));
-                variant = productVariantRepository.save(variant); // Save to get ID
+                variant.setSku(item.sku());
+                variant.setLabel(item.label());
+                variant.setStock(item.stock());
+                variant.setPrice(String.valueOf((long) (item.price() * 100)));
+                variant.setMrp(String.valueOf((long) (item.mrp() * 100)));
+                variant.setCombination(item.combination());
+                variant = productVariantRepository.save(variant);
                 product.getVariants().add(variant);
             }
-            productRepository.save(product); // Update step
+            productRepository.save(product);
 
             return new ApiResponse<>(true, "Variants added successfully", null, 200);
         } catch (Exception e) {
@@ -612,6 +619,215 @@ public class SellerService {
         }
     }
 
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/webp");
+    private static final Set<String> ALLOWED_VIDEO_TYPES = Set.of(
+            "video/mp4", "video/quicktime", "video/webm");
+
+    @Transactional
+    public ApiResponse<Object> uploadProductMedia(
+            UUID productId,
+            List<MultipartFile> coverFiles,
+            List<String> attributeImageKeys,
+            List<MultipartFile> attributeImages) {
+        try {
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+
+            // ── 1. Cover / primary media ────────────────────────────────────────
+            String coverUrl = null;
+            if (coverFiles != null && !coverFiles.isEmpty()) {
+                MultipartFile cover = coverFiles.get(0);
+                String ct = cover.getContentType() != null ? cover.getContentType() : "";
+                if (!ALLOWED_IMAGE_TYPES.contains(ct) && !ALLOWED_VIDEO_TYPES.contains(ct)) {
+                    return new ApiResponse<>(false,
+                            "Unsupported cover file type: " + ct, null, 400);
+                }
+                // idempotent: clear old cover media
+                List<ProductMedia> existing = productMediaRepository.findByProductIdOrderByPositionAsc(productId);
+                for (ProductMedia old : existing) {
+                    try {
+                        cloudinary.uploader().destroy(old.getPublicId(),
+                                ObjectUtils.asMap("resource_type",
+                                        old.getMediaType() == MediaType.VIDEO ? "video" : "image"));
+                    } catch (Exception ignored) {
+                    }
+                }
+                productMediaRepository.deleteAll(existing);
+
+                boolean isVideo = ALLOWED_VIDEO_TYPES.contains(ct);
+                Map uploadResult = cloudinary.uploader().upload(cover.getBytes(),
+                        ObjectUtils.asMap(
+                                "resource_type", isVideo ? "video" : "image",
+                                "folder", "products/" + productId + "/cover"));
+
+                ProductMedia media = new ProductMedia();
+                media.setProduct(product);
+                media.setUrl(uploadResult.get("secure_url").toString());
+                media.setPublicId(uploadResult.get("public_id").toString());
+                media.setMediaType(isVideo ? MediaType.VIDEO : MediaType.IMAGE);
+                media.setPosition(0);
+                media.setCover(true);
+                productMediaRepository.save(media);
+                coverUrl = media.getUrl();
+            }
+
+            // ── 2. Attribute images ─────────────────────────────────────────────
+            // attributeImageKeys[i] = "{categoryAttributeId}::{value}"
+            // attributeImages[i]    = the image file for that key
+            // Images are appended directly onto the matching ProductAttribute row.
+            Map<String, List<String>> attributeMediaResult = new java.util.LinkedHashMap<>();
+
+            if (attributeImageKeys != null && !attributeImageKeys.isEmpty()
+                    && attributeImages != null && !attributeImages.isEmpty()) {
+
+                if (attributeImageKeys.size() != attributeImages.size()) {
+                    return new ApiResponse<>(false,
+                            "Mismatch: attributeImageKeys count (" + attributeImageKeys.size()
+                                    + ") != attributeImages count (" + attributeImages.size() + ")",
+                            null, 400);
+                }
+
+                for (MultipartFile f : attributeImages) {
+                    String ct = f.getContentType() != null ? f.getContentType() : "";
+                    if (!ALLOWED_IMAGE_TYPES.contains(ct)) {
+                        return new ApiResponse<>(false,
+                                "Attribute images must be JPEG, PNG, or WEBP. Got: " + ct, null, 400);
+                    }
+                }
+
+                // Idempotent: wipe existing Cloudinary assets + clear images/publicIds
+                // on every ProductAttribute for this product that already has images.
+                for (ProductAttribute pa : productAttributeRepository.findImageAttributesByProductId(productId)) {
+                    if (pa.getImagePublicIds() != null) {
+                        for (String pid : pa.getImagePublicIds()) {
+                            try { cloudinary.uploader().destroy(pid, ObjectUtils.emptyMap()); }
+                            catch (Exception ignored) {}
+                        }
+                    }
+                    pa.setImages(new ArrayList<>());
+                    pa.setImagePublicIds(new ArrayList<>());
+                    productAttributeRepository.save(pa);
+                }
+
+                for (int i = 0; i < attributeImageKeys.size(); i++) {
+                    String key = attributeImageKeys.get(i);
+                    String[] parts = key.split("::");
+                    if (parts.length != 2) {
+                        return new ApiResponse<>(false,
+                                "Invalid key format: '" + key + "'. Expected '{categoryAttributeId}::{value}'",
+                                null, 400);
+                    }
+                    UUID categoryAttributeId = UUID.fromString(parts[0].trim());
+                    String attributeValue = parts[1].trim();
+
+                    ProductAttribute pa = productAttributeRepository
+                            .findByProductAndCategoryAttributeAndValue(productId, categoryAttributeId, attributeValue)
+                            .orElseThrow(() -> new RuntimeException(
+                                    "No ProductAttribute found for key: " + key));
+
+                    Map uploadResult = cloudinary.uploader().upload(attributeImages.get(i).getBytes(),
+                            ObjectUtils.asMap(
+                                    "resource_type", "image",
+                                    "folder", "products/" + productId + "/" + attributeValue));
+
+                    pa.getImages().add(uploadResult.get("secure_url").toString());
+                    pa.getImagePublicIds().add(uploadResult.get("public_id").toString());
+                    productAttributeRepository.save(pa);
+
+                    attributeMediaResult
+                            .computeIfAbsent(attributeValue, v -> new ArrayList<>())
+                            .add(uploadResult.get("secure_url").toString());
+                }
+            }
+
+            product.setStep(Product.Step.PRODUCT_IMAGE);
+            productRepository.save(product);
+
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("productId", productId.toString());
+            if (coverUrl != null)
+                data.put("coverImageUrl", coverUrl);
+            if (!attributeMediaResult.isEmpty())
+                data.put("attributeMedia", attributeMediaResult);
+
+            return new ApiResponse<>(true, "Media uploaded successfully", data, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Upload failed: " + e.getMessage(), null, 500);
+        }
+    }
+
+    @Transactional
+    public ApiResponse<Object> removeProductMedia(UUID mediaId) {
+        try {
+            ProductMedia media = productMediaRepository.findById(mediaId)
+                    .orElseThrow(() -> new RuntimeException("Media not found"));
+
+            UUID productId = media.getProduct().getId();
+            boolean wasCover = media.isCover();
+
+            cloudinary.uploader().destroy(
+                    media.getPublicId(),
+                    ObjectUtils.asMap("resource_type",
+                            media.getMediaType() == MediaType.VIDEO ? "video" : "image"));
+
+            productMediaRepository.delete(media);
+
+            // auto-assign cover to first remaining image if the deleted one was cover
+            if (wasCover) {
+                productMediaRepository.findByProductIdOrderByPositionAsc(productId)
+                        .stream()
+                        .filter(m -> m.getMediaType() == MediaType.IMAGE)
+                        .findFirst()
+                        .ifPresent(m -> {
+                            m.setCover(true);
+                            productMediaRepository.save(m);
+                        });
+            }
+
+            return new ApiResponse<>(true, "Media removed", null, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Remove failed: " + e.getMessage(), null, 500);
+        }
+    }
+
+    @Transactional
+    public ApiResponse<Object> setCoverImage(UUID mediaId) {
+        try {
+            ProductMedia media = productMediaRepository.findById(mediaId)
+                    .orElseThrow(() -> new RuntimeException("Media not found"));
+
+            if (media.getMediaType() == MediaType.VIDEO) {
+                return new ApiResponse<>(false, "Videos cannot be set as cover", null, 400);
+            }
+
+            productMediaRepository.clearCoverForProduct(media.getProduct().getId());
+            media.setCover(true);
+            productMediaRepository.save(media);
+
+            return new ApiResponse<>(true, "Cover image updated", ProductMediaResponseDto.from(media), 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Failed to set cover: " + e.getMessage(), null, 500);
+        }
+    }
+
+    public ApiResponse<Object> getProductMedia(UUID productId) {
+        try {
+            productRepository.findById(productId)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+
+            List<ProductMediaResponseDto> result = productMediaRepository
+                    .findByProductIdOrderByPositionAsc(productId)
+                    .stream()
+                    .map(ProductMediaResponseDto::from)
+                    .collect(Collectors.toList());
+
+            return new ApiResponse<>(true, "Media fetched", result, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 500);
+        }
+    }
+
     public ApiResponse<Object> searchProducts(String keyword) throws IOException {
         SearchResponse<Map> response = elasticsearchClient.search(s -> s
                 .index("products")
@@ -731,4 +947,4 @@ public class SellerService {
     }
 }
 // hukiiu iuui jkjbhjhhjhj huhu uhh,j uh yiu ujhhuhjuhui uhh juyyuuik uhhu
-// huiu8i iyu iy7uiu8u8uiui
+// huiu8i iyu iy7uiu8u8uiui hujij juji uhj hij iji ijji
