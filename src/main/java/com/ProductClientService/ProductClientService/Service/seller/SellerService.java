@@ -28,6 +28,8 @@ import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFro
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductFullResponseDto;
+import com.ProductClientService.ProductClientService.DTO.seller.DraftProductFullDto;
+import com.ProductClientService.ProductClientService.DTO.seller.DraftProductFullDto.*;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductMediaResponseDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
 import com.ProductClientService.ProductClientService.Model.Category;
@@ -116,6 +118,15 @@ public class SellerService {
         // CREATE FLOW
         // =============================
         else {
+            UUID sellerId = getUserId();
+            boolean hasDraft = productRepository
+                    .findTopBySellerIdAndStepNotOrderByCreatedAtDesc(sellerId, Product.Step.LIVE)
+                    .isPresent();
+            if (hasDraft) {
+                return new ApiResponse<>(false,
+                        "You have an unfinished product. Please complete or discard it before creating a new one.",
+                        null, 409);
+            }
             product = new Product();
         }
 
@@ -193,6 +204,100 @@ public class SellerService {
         productRepository.delete(draftProduct.get());
 
         return new ApiResponse<>(true, "Draft discarded successfully", null, 200);
+    }
+
+    public ApiResponse<Object> getDraftProductFull() {
+        try {
+            UUID sellerId = getUserId();
+
+            Product product = productRepository
+                    .findTopBySellerIdAndStepNotOrderByCreatedAtDesc(sellerId, Product.Step.LIVE)
+                    .orElse(null);
+
+            if (product == null) {
+                return new ApiResponse<>(true, "No draft product found", null, 200);
+            }
+
+            UUID productId = product.getId();
+
+            // ── Step 1: basic info ──────────────────────────────────────────────
+            StepBasicInfo basicInfo = new StepBasicInfo(
+                    product.getName(),
+                    product.getDescription(),
+                    product.getCategory() != null ? product.getCategory().getId() : null,
+                    product.getCategory() != null ? product.getCategory().getName() : null);
+
+            // ── Step 2: attributes ──────────────────────────────────────────────
+            List<StepAttribute> attributes = product.getProductAttributes().stream()
+                    .map(pa -> {
+                        String attrName = pa.getCategoryAttribute() != null
+                                && pa.getCategoryAttribute().getAttributes() != null
+                                        ? pa.getCategoryAttribute().getAttributes().stream()
+                                                .findFirst()
+                                                .map(a -> a.getName())
+                                                .orElse(null)
+                                        : null;
+                        boolean isImage = pa.getCategoryAttribute() != null
+                                && Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute());
+                        boolean isVariant = pa.getCategoryAttribute() != null
+                                && Boolean.TRUE.equals(pa.getCategoryAttribute().getIsVariantAttribute());
+                        return new StepAttribute(
+                                pa.getId(),
+                                pa.getCategoryAttribute() != null ? pa.getCategoryAttribute().getId() : null,
+                                attrName,
+                                pa.getValue(),
+                                isImage,
+                                isVariant,
+                                pa.getImages() != null ? pa.getImages() : List.of());
+                    })
+                    .collect(Collectors.toList());
+
+            // ── Step 3: variants ────────────────────────────────────────────────
+            List<StepVariant> variants = product.getVariants().stream()
+                    .map(v -> {
+                        double price = 0, mrp = 0;
+                        try { price = Double.parseDouble(v.getPrice()) / 100; } catch (Exception ignored) {}
+                        try { mrp = Double.parseDouble(v.getMrp()) / 100; } catch (Exception ignored) {}
+                        return new StepVariant(
+                                v.getId(), v.getSku(), v.getLabel(),
+                                price, mrp, v.getStock(), v.getCombination());
+                    })
+                    .collect(Collectors.toList());
+
+            // ── Step 4: media ───────────────────────────────────────────────────
+            List<ProductMedia> mediaList = productMediaRepository.findByProductIdOrderByPositionAsc(productId);
+            String coverUrl = mediaList.stream()
+                    .filter(ProductMedia::isCover)
+                    .map(ProductMedia::getUrl)
+                    .findFirst().orElse(null);
+
+            // attribute media: attributeValue -> [urls] from ProductAttribute.images
+            Map<String, List<String>> attrMedia = new java.util.LinkedHashMap<>();
+            product.getProductAttributes().stream()
+                    .filter(pa -> pa.getImages() != null && !pa.getImages().isEmpty())
+                    .forEach(pa -> attrMedia.put(pa.getValue(), pa.getImages()));
+
+            StepMedia media = new StepMedia(coverUrl, attrMedia.isEmpty() ? null : attrMedia);
+
+            // ── Step 5: tags ────────────────────────────────────────────────────
+            List<StepTag> tags = product.getTags().stream()
+                    .map(t -> new StepTag(t.getId(), t.getName()))
+                    .collect(Collectors.toList());
+
+            // ── Step 6: brand ───────────────────────────────────────────────────
+            StepBrand brand = product.getBrand() != null
+                    ? new StepBrand(product.getBrand().getId(), product.getBrand().getName())
+                    : null;
+
+            DraftProductFullDto dto = new DraftProductFullDto(
+                    productId,
+                    product.getStep().name(),
+                    basicInfo, attributes, variants, media, tags, brand);
+
+            return new ApiResponse<>(true, "Draft product data fetched", dto, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Failed to fetch draft: " + e.getMessage(), null, 500);
+        }
     }
 
     public ApiResponse<Object> loadAttribute(UUID id) {

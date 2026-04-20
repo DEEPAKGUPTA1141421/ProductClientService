@@ -85,19 +85,32 @@ public class SellerController {
     }
 
     @GetMapping("/draft-product")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> draftProduct() {
         ApiResponse<Object> response = sellerService.getLatestDraftProduct();
-        return ResponseEntity
-                .status(200)
-                .body(response);
+        return ResponseEntity.status(200).body(response);
+    }
+
+    /**
+     * Returns the seller's current draft product with ALL step data populated.
+     * Frontend uses this to resume product creation from where the seller left off.
+     */
+    @GetMapping("/draft-product/full")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getDraftProductFull() {
+        try {
+            ApiResponse<Object> response = sellerService.getDraftProductFull();
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(e.getMessage());
+        }
     }
 
     @DeleteMapping("/discard-draft-product")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> discardDraftProduct() {
         ApiResponse<Object> response = sellerService.discardDraftProduct();
-        return ResponseEntity
-                .status(200)
-                .body(response);
+        return ResponseEntity.status(200).body(response);
     }
 
     @PostMapping(value = "/load-attribute")
