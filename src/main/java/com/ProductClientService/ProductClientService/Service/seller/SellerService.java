@@ -206,6 +206,7 @@ public class SellerService {
         return new ApiResponse<>(true, "Draft discarded successfully", null, 200);
     }
 
+    @Transactional
     public ApiResponse<Object> getDraftProductFull() {
         try {
             UUID sellerId = getUserId();
