@@ -6,6 +6,7 @@ import lombok.*;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.HashSet;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -56,6 +57,16 @@ public class User {
     @Enumerated(EnumType.ORDINAL)
     @Column(nullable = false)
     private UserStatus status = UserStatus.PENDING_VERIFICATION;
+
+    /**
+     * Flat set of product UUIDs the user has purchased.
+     * Populated by the order service via the /internal/users/{id}/purchases endpoint.
+     * Used to gate review submission — no join required.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "user_purchased_products", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "product_id")
+    private Set<UUID> purchasedProductIds = new HashSet<>();
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

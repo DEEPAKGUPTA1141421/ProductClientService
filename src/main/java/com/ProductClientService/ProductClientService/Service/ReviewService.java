@@ -12,7 +12,6 @@ import com.ProductClientService.ProductClientService.Repository.ProductRepositor
 import com.ProductClientService.ProductClientService.Repository.ReviewLikeRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
-import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -20,7 +19,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,7 +28,7 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class ReviewService {
+public class ReviewService extends BaseService {
 
     private final ProductRatingRepository ratingRepository;
     private final ReviewLikeRepository likeRepository;
@@ -53,7 +51,7 @@ public class ReviewService {
             return new ApiResponse<>(false, "Rating must be between 1 and 5", null, 400);
         }
 
-        UUID userId = currentUserId();
+        UUID userId = getUserId();
 
         if (!productRepository.existsById(productId)) {
             return new ApiResponse<>(false, "Product not found", null, 404);
@@ -61,6 +59,10 @@ public class ReviewService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!user.getPurchasedProductIds().contains(productId)) {
+            return new ApiResponse<>(false, "Only verified buyers can review this product", null, 403);
+        }
 
         // Upload review images synchronously (max 5)
         List<String> imageUrls = new ArrayList<>();
@@ -105,6 +107,7 @@ public class ReviewService {
             review.setTitle(sanitize(title));
             review.setReview(sanitize(reviewText));
             review.getReviewImages().addAll(imageUrls);
+            review.setVerifiedPurchase(true);
             isNew = true;
         }
 
@@ -120,10 +123,10 @@ public class ReviewService {
 
     public ApiResponse<Object> getReviews(UUID productId, int page, int size, String sort) {
         Sort sortSpec = switch (sort) {
-            case "helpful"  -> Sort.by(Sort.Direction.DESC, "helpfulCount");
-            case "highest"  -> Sort.by(Sort.Direction.DESC, "rating");
-            case "lowest"   -> Sort.by(Sort.Direction.ASC,  "rating");
-            default         -> Sort.by(Sort.Direction.DESC, "createdAt");
+            case "helpful" -> Sort.by(Sort.Direction.DESC, "helpfulCount");
+            case "highest" -> Sort.by(Sort.Direction.DESC, "rating");
+            case "lowest" -> Sort.by(Sort.Direction.ASC, "rating");
+            default -> Sort.by(Sort.Direction.DESC, "createdAt");
         };
 
         Pageable pageable = PageRequest.of(page, Math.min(size, 50), sortSpec);
@@ -148,7 +151,8 @@ public class ReviewService {
         Long total = ratingRepository.countRatingsByProductId(productId);
 
         Map<Integer, Long> distribution = new LinkedHashMap<>();
-        for (int i = 5; i >= 1; i--) distribution.put(i, 0L);
+        for (int i = 5; i >= 1; i--)
+            distribution.put(i, 0L);
         for (Object[] row : distRows) {
             int star = ((Number) row[0]).intValue();
             long count = ((Number) row[1]).longValue();
@@ -168,7 +172,7 @@ public class ReviewService {
 
     @Transactional
     public ApiResponse<Object> toggleHelpful(UUID reviewId) {
-        UUID userId = currentUserId();
+        UUID userId = getUserId();
 
         if (!ratingRepository.existsById(reviewId)) {
             return new ApiResponse<>(false, "Review not found", null, 404);
@@ -191,7 +195,7 @@ public class ReviewService {
 
     @Transactional
     public ApiResponse<Object> deleteReview(UUID reviewId) {
-        UUID userId = currentUserId();
+        UUID userId = getUserId();
 
         ProductRating review = ratingRepository.findById(reviewId)
                 .orElse(null);
@@ -233,14 +237,11 @@ public class ReviewService {
         }
     }
 
-    private UUID currentUserId() {
-        return ((UserPrincipal) SecurityContextHolder.getContext()
-                .getAuthentication().getPrincipal()).getId();
-    }
-
     /** Strip HTML tags and trim to prevent XSS stored in review text. */
     private String sanitize(String input) {
-        if (input == null) return null;
+        if (input == null)
+            return null;
         return input.replaceAll("<[^>]*>", "").trim();
     }
 }
+// dnjfj NJJ dj
