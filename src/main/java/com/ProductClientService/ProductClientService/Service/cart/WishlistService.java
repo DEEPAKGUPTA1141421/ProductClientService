@@ -7,6 +7,7 @@ import com.ProductClientService.ProductClientService.Model.Wishlist;
 import com.ProductClientService.ProductClientService.Model.WishlistItem;
 import com.ProductClientService.ProductClientService.Repository.*;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
+import lombok.extern.slf4j.Slf4j;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.DTO.wishlist.PriceDropItemDto;
 
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WishlistService {
     private final WishlistRepository wishlistRepo;
     private final WishlistItemRepository itemRepo;
@@ -35,6 +37,7 @@ public class WishlistService {
     private final ProductRepository productRepo;
     private final SharedWishlistRepository sharedWishlistRepo;
     private final EventPublisherService eventPublisher;
+    private final UserRepojectory userRepo;
 
     @Value("${app.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -64,6 +67,7 @@ public class WishlistService {
         }
 
         wishlistRepo.save(wl);
+        syncWishlistItemIds(userId, wl);
         return new ApiResponse<>(true, "Item added to wishlist", wl, 200);
     }
 
@@ -78,7 +82,9 @@ public class WishlistService {
                 .ifPresent(i -> eventPublisher.publishWishlistRemove(i.getProductId(), userId));
 
         itemRepo.deleteById(itemId);
+        wl.getItems().removeIf(i -> i.getId().equals(itemId));
         wishlistRepo.save(wl);
+        syncWishlistItemIds(userId, wl);
         return new ApiResponse<>(true, "Item removed from wishlist", wl, 200);
     }
 
@@ -89,7 +95,7 @@ public class WishlistService {
 
         wl.getItems().clear();
         wishlistRepo.save(wl);
-
+        syncWishlistItemIds(userId, wl);
         return new ApiResponse<>(true, "Wishlist cleared", null, 200);
     }
 
@@ -299,6 +305,19 @@ public class WishlistService {
         data.put("token", share.getToken());
         data.put("expiresAt", share.getExpiresAt());
         return new ApiResponse<>(true, "Shareable link generated", data, 200);
+    }
+
+    private void syncWishlistItemIds(UUID userId, Wishlist wl) {
+        try {
+            userRepo.findById(userId).ifPresent(user -> {
+                Set<UUID> ids = wl.getItems() == null ? new HashSet<>() :
+                        wl.getItems().stream().map(WishlistItem::getId).collect(Collectors.toSet());
+                user.setWishlistItemIds(ids);
+                userRepo.save(user);
+            });
+        } catch (Exception e) {
+            log.warn("Failed to sync wishlistItemIds for userId={}: {}", userId, e.getMessage());
+        }
     }
 
     private String generateToken(int length) {

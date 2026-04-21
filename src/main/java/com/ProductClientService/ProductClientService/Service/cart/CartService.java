@@ -47,6 +47,7 @@ public class CartService extends BaseService {
     private final ProductVariantRepository    variantRepository;
     private final ProductAttributeRepository  productAttributeRepository;
     private final EventPublisherService       eventPublisher;
+    private final com.ProductClientService.ProductClientService.Repository.UserRepojectory userRepo;
 
     // ── Internal data holders ─────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ public class CartService extends BaseService {
             mergeOrAddItem(cart, req);
             recompute(cart);
             cartRepo.save(cart);
+            syncCartItemIds(getUserId(), cart);
             eventPublisher.publishCartAdded(req.getProductId(), req.getVariantId(), getUserId());
             return getCart();
         } catch (Exception e) {
@@ -96,6 +98,7 @@ public class CartService extends BaseService {
             }
             recompute(cart);
             cartRepo.save(cart);
+            syncCartItemIds(getUserId(), cart);
             return getCart();
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
@@ -110,6 +113,7 @@ public class CartService extends BaseService {
         itemRepo.delete(item);
         recompute(cart);
         cartRepo.save(cart);
+        syncCartItemIds(getUserId(), cart);
         return getCart();
     }
 
@@ -655,6 +659,21 @@ public class CartService extends BaseService {
         if (coupon.getUptoAmount() != null)
             return Math.round(Long.parseLong(coupon.getUptoAmount()) * percent / 100.0);
         return Math.round(cartAmount * percent / 100.0);
+    }
+
+    // ── User jsonb sync ───────────────────────────────────────────────────────
+
+    private void syncCartItemIds(UUID userId, Cart cart) {
+        try {
+            userRepo.findById(userId).ifPresent(user -> {
+                Set<UUID> ids = cart.getItems() == null ? new HashSet<>() :
+                        cart.getItems().stream().map(CartItem::getId).collect(Collectors.toSet());
+                user.setCartItemIds(ids);
+                userRepo.save(user);
+            });
+        } catch (Exception e) {
+            log.warn("Failed to sync cartItemIds for userId={}: {}", userId, e.getMessage());
+        }
     }
 
     // ── Math utilities ─────────────────────────────────────────────────────────
