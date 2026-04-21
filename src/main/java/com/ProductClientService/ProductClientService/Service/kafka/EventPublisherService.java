@@ -27,8 +27,9 @@ public class EventPublisherService {
     public static final String TOPIC_ORDER_DONE = "order.completed";
     public static final String TOPIC_ORDER_RET  = "order.returned";
     public static final String TOPIC_PRODUCT_LIVE      = "product.live";
-    public static final String TOPIC_REVIEW_SUBMITTED  = "review.submitted";
-    public static final String TOPIC_REVIEW_HELPFUL    = "review.helpful";
+    public static final String TOPIC_REVIEW_SUBMIT_REQUESTED = "review.submit.requested";
+    public static final String TOPIC_REVIEW_SUBMITTED         = "review.submitted";
+    public static final String TOPIC_REVIEW_HELPFUL           = "review.helpful";
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -66,6 +67,11 @@ public class EventPublisherService {
     public void publishProductLive(UUID productId) {
         publish(TOPIC_PRODUCT_LIVE, ProductLiveEvent.builder()
                 .productId(productId).build());
+    }
+
+    @Async
+    public void publishReviewSubmitRequested(ReviewSubmitRequestedEvent event) {
+        publish(TOPIC_REVIEW_SUBMIT_REQUESTED, event);
     }
 
     @Async

@@ -3,7 +3,7 @@ package com.ProductClientService.ProductClientService.Service;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductRatingDTO;
 import com.ProductClientService.ProductClientService.DTO.RatingSummaryDTO;
-import com.ProductClientService.ProductClientService.Model.Product;
+import com.ProductClientService.ProductClientService.DTO.events.ReviewSubmitRequestedEvent;
 import com.ProductClientService.ProductClientService.Model.ProductRating;
 import com.ProductClientService.ProductClientService.Model.ReviewLike;
 import com.ProductClientService.ProductClientService.Model.User;
@@ -34,12 +34,10 @@ public class ReviewService extends BaseService {
     private final ReviewLikeRepository likeRepository;
     private final ProductRepository productRepository;
     private final UserRepojectory userRepository;
-    private final ImageUploadService imageUploadService;
     private final EventPublisherService eventPublisher;
 
     // ── Submit / update review ────────────────────────────────────────────────
 
-    @Transactional
     public ApiResponse<Object> submitReview(
             UUID productId,
             int rating,
@@ -47,6 +45,7 @@ public class ReviewService extends BaseService {
             String reviewText,
             List<MultipartFile> images) {
 
+        // ── Fast validations only — user must not wait for anything else ──────
         if (rating < 1 || rating > 5) {
             return new ApiResponse<>(false, "Rating must be between 1 and 5", null, 400);
         }
@@ -64,59 +63,35 @@ public class ReviewService extends BaseService {
             return new ApiResponse<>(false, "Only verified buyers can review this product", null, 403);
         }
 
-        // Upload review images synchronously (max 5)
-        List<String> imageUrls = new ArrayList<>();
+        // ── Read image bytes from request scope before HTTP response is sent ──
+        // MultipartFile data lives only in the request — must be captured here.
+        List<byte[]> imageBytes = new ArrayList<>();
         if (images != null) {
-            List<MultipartFile> limited = images.stream()
-                    .filter(f -> f != null && !f.isEmpty())
-                    .limit(5)
-                    .toList();
-            for (MultipartFile file : limited) {
-                try {
-                    String url = imageUploadService.uploadImage(file);
-                    imageUrls.add(url);
-                } catch (Exception e) {
-                    log.warn("Failed to upload review image for userId={}: {}", userId, e.getMessage());
+            for (MultipartFile file : images) {
+                if (file != null && !file.isEmpty()) {
+                    try {
+                        imageBytes.add(file.getBytes());
+                        if (imageBytes.size() == 5) break;
+                    } catch (Exception e) {
+                        log.warn("Could not read image bytes for userId={}: {}", userId, e.getMessage());
+                    }
                 }
             }
         }
 
-        Optional<ProductRating> existing = ratingRepository.findByProductIdAndUserId(productId, userId);
+        // ── Publish to Kafka and return immediately (202) ─────────────────────
+        // Consumer handles: Cloudinary upload → DB save → avg-rating sync
+        eventPublisher.publishReviewSubmitRequested(
+                ReviewSubmitRequestedEvent.builder()
+                        .productId(productId)
+                        .userId(userId)
+                        .rating(rating)
+                        .title(sanitize(title))
+                        .reviewText(sanitize(reviewText))
+                        .imageBytes(imageBytes)
+                        .build());
 
-        ProductRating review;
-        boolean isNew;
-
-        if (existing.isPresent()) {
-            review = existing.get();
-            review.setRating(rating);
-            review.setTitle(sanitize(title));
-            review.setReview(sanitize(reviewText));
-            if (!imageUrls.isEmpty()) {
-                review.getReviewImages().clear();
-                review.getReviewImages().addAll(imageUrls);
-            }
-            isNew = false;
-        } else {
-            Product productRef = new Product();
-            productRef.setId(productId);
-
-            review = new ProductRating();
-            review.setProduct(productRef);
-            review.setUser(user);
-            review.setRating(rating);
-            review.setTitle(sanitize(title));
-            review.setReview(sanitize(reviewText));
-            review.getReviewImages().addAll(imageUrls);
-            review.setVerifiedPurchase(true);
-            isNew = true;
-        }
-
-        ProductRating saved = ratingRepository.save(review);
-        updateProductRatingSummaryAsync(productId);
-        eventPublisher.publishReviewSubmitted(saved.getId(), productId, userId, rating);
-
-        String msg = isNew ? "Review submitted successfully" : "Review updated successfully";
-        return new ApiResponse<>(true, msg, ProductRatingDTO.fromEntity(saved), 201);
+        return new ApiResponse<>(true, "Review is being processed", null, 202);
     }
 
     // ── Get paginated reviews ─────────────────────────────────────────────────

@@ -16,7 +16,16 @@ public class ImageUploadService {
     private Cloudinary cloudinary;
 
     public String uploadImage(MultipartFile file) throws IOException {
-        Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.emptyMap());
-        return uploadResult.get("url").toString(); // ✅ returns Cloudinary image URL
+        return uploadBytes(file.getBytes());
+    }
+
+    public String uploadImage(byte[] bytes) throws IOException {
+        return uploadBytes(bytes);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String uploadBytes(byte[] bytes) throws IOException {
+        Map<String, Object> uploadResult = cloudinary.uploader().upload(bytes, ObjectUtils.emptyMap());
+        return uploadResult.get("url").toString();
     }
 }

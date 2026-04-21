@@ -28,6 +28,9 @@ public class KafkaConfig {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        // Allow up to 15 MB per message to carry base64-encoded review images (5 × ~2 MB + overhead)
+        props.put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, 15 * 1024 * 1024);
+        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG,   32 * 1024 * 1024);
         return new DefaultKafkaProducerFactory<>(props);
     }
 
