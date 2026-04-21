@@ -16,15 +16,19 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.GetResponse;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.CategoryTreeDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.ProductRatingDTO;
+import com.ProductClientService.ProductClientService.DTO.RatingSummaryDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesDTO;
 import com.ProductClientService.ProductClientService.DTO.ProductWithImagesProjection;
 import com.ProductClientService.ProductClientService.DTO.SingleProductDetailDto;
 import com.ProductClientService.ProductClientService.DTO.Cart.CategoryTreeProjection;
+import com.ProductClientService.ProductClientService.DTO.search.ProductSearchDocument;
 import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
 import com.ProductClientService.ProductClientService.Model.Product;
@@ -47,11 +51,14 @@ import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
+import com.ProductClientService.ProductClientService.Service.ElasticsearchProductIndexer;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ProductService {
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
@@ -64,6 +71,7 @@ public class ProductService {
     private final HttpServletRequest request;
     private final EventPublisherService eventPublisher;
     private final SearchResultsService searchResultsService;
+    private final ElasticsearchClient esClient;
 
     public ApiResponse<Object> searchProducts(SearchRequest req, boolean includeFilter, UUID userId) {
         SearchResultsResponse products = searchResultsService.search(req, userId);
@@ -187,21 +195,73 @@ public class ProductService {
 
     public ApiResponse<Object> getProductDetail(UUID productId) {
         try {
-            String response = productRepository.findSnapshotById(productId)
-                    .filter(s -> !s.isBlank())
-                    .orElseGet(() -> productRepository.getProductDetailAsJson(productId));
-            if (response != null) {
-                // Publish view event asynchronously — never blocks the response
-                UUID userId = tryGetUserId();
-                UUID categoryId = productRepository.findCategoryIdByProductId(productId).orElse(null);
-                eventPublisher.publishProductViewed(productId, userId, categoryId);
-                return new ApiResponse<>(true, "Get Product Detail", objectMapper.readTree(response), 200);
+            // Primary: Elasticsearch — no Postgres join at query time
+            ProductSearchDocument esDoc = fetchFromElasticsearch(productId);
+
+            Object productPayload;
+            UUID categoryId = null;
+
+            if (esDoc != null) {
+                categoryId = esDoc.getCategoryId() != null ? UUID.fromString(esDoc.getCategoryId()) : null;
+                productPayload = esDoc;
             } else {
-                return new ApiResponse<>(false, "Product not found", null, 404);
+                // Fallback: Postgres snapshot (keeps backward compat while ES is warming up)
+                String snapshot = productRepository.findSnapshotById(productId)
+                        .filter(s -> !s.isBlank())
+                        .orElseGet(() -> productRepository.getProductDetailAsJson(productId));
+
+                if (snapshot == null) {
+                    return new ApiResponse<>(false, "Product not found", null, 404);
+                }
+                productPayload = objectMapper.readTree(snapshot);
+                categoryId = productRepository.findCategoryIdByProductId(productId).orElse(null);
             }
+
+            // Attach rating summary (star distribution) from Postgres
+            RatingSummaryDTO ratingSummary = buildRatingSummary(productId);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("product", productPayload);
+            result.put("ratingSummary", ratingSummary);
+
+            // Publish view event async — never blocks the response
+            UUID userId = tryGetUserId();
+            eventPublisher.publishProductViewed(productId, userId, categoryId);
+
+            return new ApiResponse<>(true, "Get Product Detail", result, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, e.getMessage(), null, 501);
         }
+    }
+
+    private ProductSearchDocument fetchFromElasticsearch(UUID productId) {
+        try {
+            GetResponse<ProductSearchDocument> resp = esClient.get(
+                    g -> g.index(ElasticsearchProductIndexer.INDEX).id(productId.toString()),
+                    ProductSearchDocument.class);
+            return resp.found() ? resp.source() : null;
+        } catch (Exception e) {
+            log.warn("ES lookup failed for productId={}: {}", productId, e.getMessage());
+            return null;
+        }
+    }
+
+    private RatingSummaryDTO buildRatingSummary(UUID productId) {
+        List<Object[]> distRows = productRatingRepository.findStarDistributionByProductId(productId);
+        Double avg = productRatingRepository.findAverageRatingByProductId(productId);
+        Long total = productRatingRepository.countRatingsByProductId(productId);
+
+        Map<Integer, Long> distribution = new java.util.LinkedHashMap<>();
+        for (int i = 5; i >= 1; i--) distribution.put(i, 0L);
+        for (Object[] row : distRows) {
+            distribution.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+        }
+
+        return RatingSummaryDTO.builder()
+                .averageRating(avg != null ? Math.round(avg * 10.0) / 10.0 : 0.0)
+                .totalRatings(total != null ? total : 0L)
+                .distribution(distribution)
+                .build();
     }
 
     /** Returns userId from the JWT if authenticated, null for guest requests. */
