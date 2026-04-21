@@ -26,7 +26,9 @@ public class EventPublisherService {
     public static final String TOPIC_WISHLISTED = "product.wishlisted";
     public static final String TOPIC_ORDER_DONE = "order.completed";
     public static final String TOPIC_ORDER_RET  = "order.returned";
-    public static final String TOPIC_PRODUCT_LIVE = "product.live";
+    public static final String TOPIC_PRODUCT_LIVE      = "product.live";
+    public static final String TOPIC_REVIEW_SUBMITTED  = "review.submitted";
+    public static final String TOPIC_REVIEW_HELPFUL    = "review.helpful";
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -64,6 +66,24 @@ public class EventPublisherService {
     public void publishProductLive(UUID productId) {
         publish(TOPIC_PRODUCT_LIVE, ProductLiveEvent.builder()
                 .productId(productId).build());
+    }
+
+    @Async
+    public void publishReviewSubmitted(UUID reviewId, UUID productId, UUID userId, int rating) {
+        publish(TOPIC_REVIEW_SUBMITTED, ReviewSubmittedEvent.builder()
+                .reviewId(reviewId).productId(productId).userId(userId).rating(rating).build());
+    }
+
+    @Async
+    public void publishReviewHelpfulAdd(UUID reviewId, UUID userId) {
+        publish(TOPIC_REVIEW_HELPFUL, ReviewHelpfulEvent.builder()
+                .reviewId(reviewId).userId(userId).action("ADD").build());
+    }
+
+    @Async
+    public void publishReviewHelpfulRemove(UUID reviewId, UUID userId) {
+        publish(TOPIC_REVIEW_HELPFUL, ReviewHelpfulEvent.builder()
+                .reviewId(reviewId).userId(userId).action("REMOVE").build());
     }
 
     private void publish(String topic, Object event) {
