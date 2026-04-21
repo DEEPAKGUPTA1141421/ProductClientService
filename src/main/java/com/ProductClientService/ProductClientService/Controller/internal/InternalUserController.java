@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.Controller.internal;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
+import com.ProductClientService.ProductClientService.Model.User;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -39,14 +40,14 @@ public class InternalUserController {
             @PathVariable UUID userId,
             @RequestBody List<UUID> productIds) {
 
-        if (!userRepository.existsById(userId)) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
             return ResponseEntity.status(404)
                     .body(new ApiResponse<>(false, "User not found", null, 404));
         }
 
-        for (UUID productId : productIds) {
-            userRepository.addPurchasedProduct(userId, productId);
-        }
+        user.getPurchasedProductIds().addAll(productIds);
+        userRepository.save(user);
 
         return ResponseEntity.ok(
                 new ApiResponse<>(true, "Purchases recorded", null, 200));

@@ -2,6 +2,8 @@ package com.ProductClientService.ProductClientService.Model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -59,13 +61,12 @@ public class User {
     private UserStatus status = UserStatus.PENDING_VERIFICATION;
 
     /**
-     * Flat set of product UUIDs the user has purchased.
-     * Populated by the order service via the /internal/users/{id}/purchases endpoint.
-     * Used to gate review submission — no join required.
+     * Flat list of purchased product UUIDs stored as a jsonb array on the users row.
+     * No separate table — just a column. Populated by the order service.
+     * Used to gate review submission without any join.
      */
-    @ElementCollection(fetch = FetchType.LAZY)
-    @CollectionTable(name = "user_purchased_products", joinColumns = @JoinColumn(name = "user_id"))
-    @Column(name = "product_id")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "purchased_product_ids", columnDefinition = "jsonb")
     private Set<UUID> purchasedProductIds = new HashSet<>();
 
     @CreationTimestamp
