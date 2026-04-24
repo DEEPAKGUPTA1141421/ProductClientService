@@ -60,7 +60,11 @@ public class ReviewService extends BaseService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (!user.getPurchasedProductIds().contains(productId)) {
-            return new ApiResponse<>(false, "Only verified buyers can review this product", null, 403);
+            return new ApiResponse<>(
+                    false,
+                    "Review not allowed. You must purchase the product before submitting a review.",
+                    null,
+                    422);
         }
 
         // ── Read image bytes from request scope before HTTP response is sent ──
@@ -71,7 +75,8 @@ public class ReviewService extends BaseService {
                 if (file != null && !file.isEmpty()) {
                     try {
                         imageBytes.add(file.getBytes());
-                        if (imageBytes.size() == 5) break;
+                        if (imageBytes.size() == 5)
+                            break;
                     } catch (Exception e) {
                         log.warn("Could not read image bytes for userId={}: {}", userId, e.getMessage());
                     }
@@ -219,4 +224,4 @@ public class ReviewService extends BaseService {
         return input.replaceAll("<[^>]*>", "").trim();
     }
 }
-// dnjfj NJJ dj
+// dnjfj NJJ djkhjiuhuiuj

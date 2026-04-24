@@ -8,6 +8,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.SectionRequest;
 import com.ProductClientService.ProductClientService.Model.Section;
 import com.ProductClientService.ProductClientService.Model.SectionItem;
+import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
 import com.ProductClientService.ProductClientService.Service.SectionService;
 
 import java.util.List;
@@ -19,11 +20,15 @@ import java.util.UUID;
 public class SectionController {
 
     private final SectionService sectionService;
+    private final CategoryRepository categoryRepository;
 
     @GetMapping("/{category}")
     public ResponseEntity<?> getSections(@PathVariable String category) {
         try {
-            List<Section> sections = sectionService.getSectionsByCategory(category);
+            String categoryname = categoryRepository.findById(UUID.fromString(category))
+                    .orElseThrow(() -> new RuntimeException("Category not found"))
+                    .getName();
+            List<Section> sections = sectionService.getSectionsByCategory(categoryname);
             ApiResponse<Object> response = new ApiResponse<>(
                     true, "Sections fetched successfully", sections, 200);
             return ResponseEntity.status(response.statusCode()).body(response);
@@ -76,4 +81,4 @@ public class SectionController {
         }
     }
 }
-// lkjoijijjjkjjoiujiojioj jkbiuhi
+// lkjoijijjjkjjoiujiojioj jkbiuhi lknkkokokokkokkmk

@@ -155,39 +155,6 @@ public class SellerService {
                 200);
     }
 
-    public ApiResponse<Object> getLatestDraftProduct() {
-        UUID sellerId = (UUID) request.getAttribute("id");
-        Optional<Product> draftProduct = productRepository
-                .findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
-                        sellerId,
-                        Product.Step.LIVE);
-        if (draftProduct.isEmpty()) {
-            return new ApiResponse<>(false, "No Draft Product Found", null, 200);
-        }
-        // ProductFullResponseDto responseDto = new ProductFullResponseDto(
-        // draftProduct.get().getId(),
-        // draftProduct.get().getName(),
-        // draftProduct.get().getDescription(),
-        // draftProduct.get().getProductAttributes().stream()
-        // .map(pa -> new ProductAttributeResponseDto(
-        // pa.getId(),
-        // pa.getCategoryAttribute().getId(),
-        // pa.getCategoryAttribute().getAttributes().stream()
-        // .findFirst()
-        // .map(Attribute::getName)
-        // .orElse(null),
-        // pa.getValue(),
-        // pa.getVariants().stream()
-        // .map(variant -> new ProductVariantResponseDto(
-        // variant.getId(),
-        // variant.getSku(),
-        // variant.getPrice(),
-        // variant.getStock())
-        // )
-        // .toList());
-        return new ApiResponse<>(true, "Latest Draft Product Found", "responseDto", 200);
-    }
-
     public ApiResponse<Object> discardDraftProduct() {
 
         UUID sellerId = (UUID) request.getAttribute("id");
@@ -257,8 +224,14 @@ public class SellerService {
             List<StepVariant> variants = product.getVariants().stream()
                     .map(v -> {
                         double price = 0, mrp = 0;
-                        try { price = Double.parseDouble(v.getPrice()) / 100; } catch (Exception ignored) {}
-                        try { mrp = Double.parseDouble(v.getMrp()) / 100; } catch (Exception ignored) {}
+                        try {
+                            price = Double.parseDouble(v.getPrice()) / 100;
+                        } catch (Exception ignored) {
+                        }
+                        try {
+                            mrp = Double.parseDouble(v.getMrp()) / 100;
+                        } catch (Exception ignored) {
+                        }
                         return new StepVariant(
                                 v.getId(), v.getSku(), v.getLabel(),
                                 price, mrp, v.getStock(), v.getCombination());
@@ -588,7 +561,7 @@ public class SellerService {
         try {
             Product.Step currentStep = productRepository.findStepById(productId)
                     .orElseThrow(() -> new RuntimeException("Product not found"));
-            if (currentStep == Product.Step.PRODUCT_VARIANT
+            if (currentStep == Product.Step.PRODUCT_BRAND_AND_TAGS
                     || currentStep == Product.Step.CATALOG_SELECTED) {
                 int updatescore = updateStatusById(productId, Product.Step.LIVE);
                 if (updatescore > 0) {
@@ -603,7 +576,8 @@ public class SellerService {
 
             } else
                 return new ApiResponse<>(false,
-                        "Product is Not In  PRODUCT_VARIANT or CATALOG_SELECTED , Current Step is " + currentStep,
+                        "Product is Not In  PRODUCT_BRAND_AND_TAGS or CATALOG_SELECTED , Current Step is "
+                                + currentStep,
                         null, 403);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 500);
@@ -780,7 +754,7 @@ public class SellerService {
 
             // ── 2. Attribute images ─────────────────────────────────────────────
             // attributeImageKeys[i] = "{categoryAttributeId}::{value}"
-            // attributeImages[i]    = the image file for that key
+            // attributeImages[i] = the image file for that key
             // Images are appended directly onto the matching ProductAttribute row.
             Map<String, List<String>> attributeMediaResult = new java.util.LinkedHashMap<>();
 
@@ -807,8 +781,10 @@ public class SellerService {
                 for (ProductAttribute pa : productAttributeRepository.findImageAttributesByProductId(productId)) {
                     if (pa.getImagePublicIds() != null) {
                         for (String pid : pa.getImagePublicIds()) {
-                            try { cloudinary.uploader().destroy(pid, ObjectUtils.emptyMap()); }
-                            catch (Exception ignored) {}
+                            try {
+                                cloudinary.uploader().destroy(pid, ObjectUtils.emptyMap());
+                            } catch (Exception ignored) {
+                            }
                         }
                     }
                     pa.setImages(new ArrayList<>());

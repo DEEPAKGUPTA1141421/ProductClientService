@@ -84,13 +84,6 @@ public class SellerController {
                 .body(response);
     }
 
-    @GetMapping("/draft-product")
-    @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<?> draftProduct() {
-        ApiResponse<Object> response = sellerService.getLatestDraftProduct();
-        return ResponseEntity.status(200).body(response);
-    }
-
     /**
      * Returns the seller's current draft product with ALL step data populated.
      * Frontend uses this to resume product creation from where the seller left off.

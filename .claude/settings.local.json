@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(grep -E \"\\\\.java$\")",
-      "Bash(mvn compile:*)"
+      "Bash(mvn compile:*)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(xargs grep *)",
+      "Bash(xargs cat *)",
+      "Bash(./mvnw -q -DskipTests compile)",
+      "Bash(git reset *)"
     ]
   }
 }

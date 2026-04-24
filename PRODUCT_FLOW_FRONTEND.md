@@ -14,7 +14,7 @@ The product creation flow has **6 steps**. A seller can close the app at any ste
 | 2      | Attributes           | `PRODUCT_ATTRIBUTE` | `POST /create-product-attribute`          |
 | 3      | Variants             | `PRODUCT_VARIANT`   | `POST /add-variants`                      |
 | 4      | Images & Media       | `PRODUCT_IMAGE`     | `POST /upload-images`                     |
-| 5      | Tags & Brand         | *(no step change)*  | `POST /add-tag` · `POST /attach-brand`    |
+| 5      | Tags & Brand         | *PRODUCT_BRAND_AND_TAGS*  | `POST /add-tag` · `POST /attach-brand`    |
 | 6      | Go Live              | `LIVE`              | `GET /make-product-live/{productId}`      |
 
 ---
