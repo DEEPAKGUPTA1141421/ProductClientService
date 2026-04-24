@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.Service.kafka;
 
 import com.ProductClientService.ProductClientService.DTO.events.*;
+import com.ProductClientService.ProductClientService.DTO.events.UserInteractionEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,7 @@ public class EventPublisherService {
     public static final String TOPIC_REVIEW_SUBMIT_REQUESTED = "review.submit.requested";
     public static final String TOPIC_REVIEW_SUBMITTED         = "review.submitted";
     public static final String TOPIC_REVIEW_HELPFUL           = "review.helpful";
+    public static final String TOPIC_USER_INTERACTION         = "user.interaction";
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -90,6 +92,24 @@ public class EventPublisherService {
     public void publishReviewHelpfulRemove(UUID reviewId, UUID userId) {
         publish(TOPIC_REVIEW_HELPFUL, ReviewHelpfulEvent.builder()
                 .reviewId(reviewId).userId(userId).action("REMOVE").build());
+    }
+
+    /**
+     * Publish a batch of user interactions using productId as the partition key
+     * so all events for the same product land on the same partition (preserves
+     * per-product ordering for downstream CF feature windows).
+     */
+    @Async
+    public void publishInteractionBatch(java.util.List<UserInteractionEvent> events) {
+        if (events == null || events.isEmpty()) return;
+        for (UserInteractionEvent ev : events) {
+            try {
+                String key = ev.getProductId() != null ? ev.getProductId().toString() : null;
+                kafkaTemplate.send(TOPIC_USER_INTERACTION, key, objectMapper.writeValueAsString(ev));
+            } catch (Exception e) {
+                log.warn("Failed to publish user.interaction: {}", e.getMessage());
+            }
+        }
     }
 
     private void publish(String topic, Object event) {
