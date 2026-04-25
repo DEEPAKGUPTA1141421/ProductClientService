@@ -9,7 +9,8 @@
       "Bash(xargs grep *)",
       "Bash(xargs cat *)",
       "Bash(./mvnw -q -DskipTests compile)",
-      "Bash(git reset *)"
+      "Bash(git reset *)",
+      "Bash(mvn clean *)"
     ]
   }
 }

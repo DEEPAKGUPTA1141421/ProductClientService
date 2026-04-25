@@ -29,10 +29,12 @@ public class SectionItem {
     @JsonIgnore
     private Section section;
 
-    @Enumerated(EnumType.ORDINAL)
+    @Enumerated(EnumType.STRING)
     private ItemType itemType; // PRODUCT, BANNER, MARKETING_PAGE
 
     private String itemRefId; // Reference ID (Product ID, Banner ID, Marketing Page ID, etc.)
+
+    private int position; // sort order within section
 
     @JdbcTypeCode(SqlTypes.JSON) // ✅ Hibernate 6 built-in JSON
     @Column(columnDefinition = "jsonb")

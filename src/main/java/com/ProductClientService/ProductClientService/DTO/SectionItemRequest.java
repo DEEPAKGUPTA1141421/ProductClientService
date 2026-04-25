@@ -19,5 +19,6 @@ import lombok.Setter;
 public class SectionItemRequest {
     private ItemType itemType;
     private String itemRefId;
+    private int position;    // sort order within section
     private JsonNode metadata;
 }

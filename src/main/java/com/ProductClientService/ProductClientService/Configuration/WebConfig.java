@@ -103,6 +103,10 @@ public class WebConfig {
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/product/**")
                                                 .permitAll()
 
+                                                // ✅ Sections page — public read
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/sections/**")
+                                                .permitAll()
+
                                                 // ✅ Interaction tracking — accept guests (userId attached if JWT present)
                                                 .requestMatchers(HttpMethod.POST, "/api/v1/track/**")
                                                 .permitAll()
