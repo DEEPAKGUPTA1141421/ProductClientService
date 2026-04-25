@@ -32,6 +32,9 @@ public class UserProfileDto {
     // Nested address list
     private List<AddressDto> addresses;
 
+    private Set<UUID> cartItemIds;
+    private Set<UUID> wishlistItemIds;
+
     @Getter
     @Setter
     @NoArgsConstructor
@@ -89,6 +92,8 @@ public class UserProfileDto {
                 .referralCode("REF-" + user.getId().toString().substring(0, 6).toUpperCase())
                 .createdAt(user.getCreatedAt())
                 .addresses(addressDtos)
+                .cartItemIds(user.getCartItemIds())
+                .wishlistItemIds(user.getWishlistItemIds())
                 .build();
     }
 }

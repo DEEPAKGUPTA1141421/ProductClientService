@@ -60,23 +60,23 @@ public class SearchResultsService {
         String cacheKey = buildCacheKey(req);
 
         // ── 1. Try Redis cache ────────────────────────────────────────────────
-        // String cached = redis.opsForValue().get(cacheKey);
-        // if (cached != null) {
-        // try {
-        // SearchResultsResponse response = objectMapper.readValue(cached,
-        // SearchResultsResponse.class);
-        // injectWishlistFlags(response.getProducts(), userId);
-        // injectCartFlags(response.getProducts(), userId);
-        // log.debug("Cache HIT for key={}", cacheKey);
-        // return response;
-        // } catch (Exception e) {
-        // log.warn("Cache deserialisation failed for key={}: {}", cacheKey,
-        // e.getMessage());
-        // }
-        // }
+        String cached = redis.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                SearchResultsResponse response = objectMapper.readValue(cached,
+                        SearchResultsResponse.class);
+                injectWishlistFlags(response.getProducts(), userId);
+                injectCartFlags(response.getProducts(), userId);
+                log.info("Cache HIT for key={}", cacheKey);
+                return response;
+            } catch (Exception e) {
+                log.warn("Cache deserialisation failed for key={}: {}", cacheKey,
+                        e.getMessage());
+            }
+        }
 
         // ── 2. Elasticsearch query (replaces native SQL) ──────────────────────
-        log.debug("Cache MISS for key={}, querying ES", cacheKey);
+        log.info("Cache MISS for key={}, querying ES", cacheKey);
         SearchResultsResponse response = esSearchService.search(req, userId);
 
         // ── 3. Cache user-agnostic response ───────────────────────────────────
@@ -190,4 +190,4 @@ public class SearchResultsService {
         }
     }
 }
-// kook jiklfjknjilj ljifj klkfk
+// kook jiklfjknjilj ljifj klkfkkhiuihukui huiyui8 uih uhiuhhuui

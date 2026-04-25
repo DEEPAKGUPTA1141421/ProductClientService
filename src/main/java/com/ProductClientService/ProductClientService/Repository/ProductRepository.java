@@ -228,7 +228,8 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     @EntityGraph(attributePaths = {
             "productAttributes",
-            "productAttributes.categoryAttribute"
+            "productAttributes.categoryAttribute",
+            "productAttributes.categoryAttribute.attributes"
     })
     Optional<Product> findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
             UUID sellerId,

@@ -7,6 +7,7 @@ import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import com.ProductClientService.ProductClientService.Configuration.ElasticsearchIndexInitializer;
 import com.ProductClientService.ProductClientService.DTO.search.ProductSearchDocument;
+import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductMetrics;
 import com.ProductClientService.ProductClientService.Repository.ProductMetricsRepository;
 import jakarta.persistence.EntityManager;
@@ -187,7 +188,7 @@ public class ElasticsearchProductIndexer {
                 .productId(r[0].toString())
                 .name(str(r[1]))
                 .description(str(r[2]))
-                .step(str(r[3]))
+                .step(toStepName(r[3]))
                 .brandId(r[4] != null ? r[4].toString() : null)
                 .brandName(str(r[5]))
                 .categoryId(r[6] != null ? r[6].toString() : null)
@@ -249,6 +250,16 @@ public class ElasticsearchProductIndexer {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private String toStepName(Object o) {
+        if (o == null) return null;
+        try {
+            int ordinal = Integer.parseInt(o.toString());
+            return Product.Step.values()[ordinal].name();
+        } catch (Exception e) {
+            return o.toString();
+        }
+    }
 
     private java.time.Instant toInstant(Object o) {
         if (o == null) return java.time.Instant.now();

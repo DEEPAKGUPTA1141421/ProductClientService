@@ -2,12 +2,14 @@ package com.ProductClientService.ProductClientService.Model;
 
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
+
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import lombok.Setter;
@@ -27,11 +29,17 @@ public class ProductVariant {
     @JsonBackReference
     private Product product;
 
-    @Column(name = "sku", length = 100, unique = true)
+    @Column(name = "sku", length = 100)
     private String sku;
+
+    @Column(name = "label", length = 100)
+    private String label;
 
     @Column(name = "price")
     private String price;
+
+    @Column(name = "mrp")
+    private String mrp;
 
     @Column(name = "discount_price")
     private String discountPrice;
@@ -42,6 +50,10 @@ public class ProductVariant {
     @Column(name = "stock", nullable = false)
     private int stock = 0;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "combination", columnDefinition = "json")
+    private Map<String, String> combination;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
@@ -50,3 +62,4 @@ public class ProductVariant {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 }
+// gtyguhyhuijijji mklkio huyiuuuhhhuhu

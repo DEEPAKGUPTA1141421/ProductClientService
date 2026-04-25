@@ -29,6 +29,32 @@ public class ElasticsearchIndexInitializer {
     public void initializeIndices() {
         createSearchIntentsIndex();
         createProductsIndex();
+        patchProductsIndexForSimilarity();
+    }
+
+    // ── Additive patch: dense_vector + popularity_7d for similarity search ────
+    //
+    // Called on every boot; ES ignores additions for fields that already exist.
+    // Backfill of text_embedding/image_embedding is owned by the offline
+    // embedding DAG in reco-serving/ — until that lands, values are absent and
+    // SimilarityService falls back to more_like_this.
+    //
+    // Dimensions:
+    //   text_embedding  = 384  (multilingual-e5-base)
+    //   image_embedding = 512  (OpenCLIP ViT-B/32)
+    private void patchProductsIndexForSimilarity() {
+        try {
+            esClient.indices().putMapping(m -> m
+                    .index(PRODUCTS_INDEX)
+                    .properties("text_embedding", p -> p.denseVector(d -> d
+                            .dims(384).index(true).similarity("cosine")))
+                    .properties("image_embedding", p -> p.denseVector(d -> d
+                            .dims(512).index(true).similarity("cosine")))
+                    .properties("popularity_7d", p -> p.rankFeature(r -> r)));
+            log.info("Patched index {} with dense_vector + popularity_7d fields", PRODUCTS_INDEX);
+        } catch (Exception e) {
+            log.warn("Similarity mapping patch failed on {}: {}", PRODUCTS_INDEX, e.getMessage());
+        }
     }
 
     // ── search-intents-v1 ─────────────────────────────────────────────────────

@@ -95,6 +95,22 @@ public class WebConfig {
                                                                 "/api/v1/brands/category/**")
                                                 .permitAll()
 
+                                                // ✅ Review reads are public; writes require auth (handled below)
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/reviews/**")
+                                                .permitAll()
+
+                                                // ✅ Product detail — public read
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/product/**")
+                                                .permitAll()
+
+                                                // ✅ Sections page — public read
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/sections/**")
+                                                .permitAll()
+
+                                                // ✅ Interaction tracking — accept guests (userId attached if JWT present)
+                                                .requestMatchers(HttpMethod.POST, "/api/v1/track/**")
+                                                .permitAll()
+
                                                 // ✅ Category filters — GET is public, DELETE (cache evict) requires
                                                 // auth
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/categories/*/filters")

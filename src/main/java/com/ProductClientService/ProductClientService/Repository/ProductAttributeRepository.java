@@ -38,6 +38,17 @@ public interface ProductAttributeRepository extends JpaRepository<ProductAttribu
               AND ca.isImageAttribute = true
         """)
     List<ProductAttribute> findImageAttributesByProductIds(@Param("productIds") Collection<UUID> productIds);
+
+    @Query("""
+            SELECT pa FROM ProductAttribute pa
+            WHERE pa.product.id = :productId
+              AND pa.categoryAttribute.id = :categoryAttributeId
+              AND pa.value = :value
+            """)
+    java.util.Optional<ProductAttribute> findByProductAndCategoryAttributeAndValue(
+            @Param("productId") UUID productId,
+            @Param("categoryAttributeId") UUID categoryAttributeId,
+            @Param("value") String value);
 }
 
 // khgky jht7u6t khguygiu jhghh nkhui8uhi gyujtyutggygyuu

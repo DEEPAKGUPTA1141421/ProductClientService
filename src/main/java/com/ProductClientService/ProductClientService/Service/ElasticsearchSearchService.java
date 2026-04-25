@@ -97,7 +97,12 @@ public class ElasticsearchSearchService {
         List<Query> filters = new ArrayList<>();
 
         // Always: only LIVE, in-stock products
-        filters.add(term("step", "LIVE"));
+        // Accepts both "LIVE" (re-indexed docs) and "4" (legacy ordinal docs)
+        filters.add(Query.of(q -> q.terms(t -> t
+                .field("step")
+                .terms(tv -> tv.value(List.of(
+                        FieldValue.of("LIVE"),
+                        FieldValue.of("4")))))));
         filters.add(term("in_stock", "true"));
 
         // Category

@@ -1,0 +1,79 @@
+# Prometheus alerting rules for the recommendation surface.
+# Load into the existing alertmanager stack alongside the platform rules.
+groups:
+  - name: reco-slo
+    interval: 30s
+    rules:
+
+      # ── SLO: /reco/for-you p99 ≤ 80ms ───────────────────────────────────
+      - alert: RecoP99LatencyBreached
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(reco_request_seconds_bucket[5m]))
+          ) > 0.08
+        for: 5m
+        labels: { severity: page, team: reco }
+        annotations:
+          summary: "Reco p99 above 80ms for 5m"
+          runbook: "docs/runbooks/reco-oncall.md#p99-breach"
+
+      # ── SLO: /similar p99 ≤ 50ms ────────────────────────────────────────
+      - alert: SimP99LatencyBreached
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(sim_request_seconds_bucket[5m]))
+          ) > 0.05
+        for: 5m
+        labels: { severity: page, team: reco }
+        annotations:
+          summary: "Similarity p99 above 50ms for 5m"
+          runbook: "docs/runbooks/reco-oncall.md#sim-p99-breach"
+
+      # ── Cache hit ratio — drops mean cold model responses under load ───
+      - alert: RecoCacheHitRatioLow
+        expr: |
+          rate(reco_cache_hit_total[10m])
+          /
+          (rate(reco_cache_hit_total[10m]) + rate(reco_cache_miss_total[10m]))
+          < 0.70
+        for: 15m
+        labels: { severity: warn, team: reco }
+        annotations:
+          summary: "Reco cache hit ratio < 70% — pre-warm may be stale"
+
+      # ── Fallback rate — >5% cold-start use means model is unhealthy ────
+      - alert: RecoFallbackHigh
+        expr: |
+          rate(reco_fallback_total[5m])
+          /
+          clamp_min(rate(reco_cache_miss_total[5m]), 1)
+          > 0.05
+        for: 10m
+        labels: { severity: page, team: reco }
+        annotations:
+          summary: "Reco-serving fallback rate > 5% — check reco-serving health"
+
+      # ── Empty results — signals broken index or empty precompute ───────
+      - alert: RecoEmptyResults
+        expr: rate(reco_empty_result_total[5m]) > 1
+        for: 5m
+        labels: { severity: page, team: reco }
+        annotations:
+          summary: "Reco returning empty items at >1/s — check ES + hydrator"
+
+      # ── Degraded mode left on — should only be on during incidents ─────
+      - alert: RecoDegradedModeActive
+        expr: rate(reco_degraded_served_total[5m]) > 0
+        for: 30m
+        labels: { severity: warn, team: reco }
+        annotations:
+          summary: "reco.degradedMode has been serving traffic for 30m"
+
+      # ── Model drift — offline recall regression during nightly eval ────
+      - alert: RecoRecallDrift
+        expr: reco_offline_recall_at_20 < (avg_over_time(reco_offline_recall_at_20[7d]) * 0.90)
+        for: 5m
+        labels: { severity: page, team: ml }
+        annotations:
+          summary: "Nightly recall@20 dropped >10% vs 7d mean"
+          runbook: "docs/runbooks/reco-oncall.md#drift"

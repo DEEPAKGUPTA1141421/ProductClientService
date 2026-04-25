@@ -19,3 +19,6 @@ and one join table which is category_attribute_mapping
 means category_attribute is mapped with Attributes
 attribute is like Size color material fabric type
 
+
+
+
