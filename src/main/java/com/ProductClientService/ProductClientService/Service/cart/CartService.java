@@ -329,7 +329,7 @@ public class CartService extends BaseService {
                 .variantId(item.getVariantId())
                 .shopId(ctx.productToShop().get(item.getProductId()))
                 .quantity(item.getQuantity())
-                .price(parseDecimal(variant.getPrice()).doubleValue())
+                .price(parseDecimal(variant.getPrice()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).doubleValue())
                 .name(summary != null ? summary.getName() : "Unknown")
                 .description(summary != null ? summary.getDescription() : "")
                 .image(image)
@@ -649,7 +649,12 @@ public class CartService extends BaseService {
     }
 
     private String getPriceFromVariant(UUID variantId) {
-        return variantRepository.findById(variantId).map(ProductVariant::getPrice).orElse("0");
+        String paise = variantRepository.findById(variantId).map(ProductVariant::getPrice).orElse("0");
+        try {
+            return new BigDecimal(paise).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException e) {
+            return "0";
+        }
     }
 
     public static long calculateDiscount(Coupon coupon, long cartAmount) {

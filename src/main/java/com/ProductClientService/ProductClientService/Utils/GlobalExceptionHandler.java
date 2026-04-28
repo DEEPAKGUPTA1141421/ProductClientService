@@ -8,11 +8,16 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -48,20 +53,38 @@ public class GlobalExceptionHandler {
                 .body(new ApiResponse<>(false, message, null, 400));
     }
 
-    // Handle bad JSON parse errors
+    // Handle bad JSON — unwraps Jackson cause to give a field-level message
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<String>> handleBadJson(HttpMessageNotReadableException ex) {
-        String message = "Invalid request format (check JSON or data types)";
+        String message = resolveJsonError(ex.getCause());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiResponse<>(false, message, null, 400));
     }
 
-    // Handle invalid enum or type casting issues
-    @ExceptionHandler(InvalidFormatException.class)
-    public ResponseEntity<ApiResponse<String>> handleInvalidFormat(InvalidFormatException ex) {
-        String message = "Invalid value for field: " + ex.getPath().get(0).getFieldName();
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiResponse<>(false, message, null, 400));
+    private String resolveJsonError(Throwable cause) {
+        if (cause instanceof InvalidFormatException ife) {
+            String field = ife.getPath().isEmpty() ? "unknown" : ife.getPath().get(0).getFieldName();
+            Class<?> targetType = ife.getTargetType();
+            if (targetType != null && targetType.isEnum()) {
+                String allowed = Arrays.stream(targetType.getEnumConstants())
+                        .map(Object::toString)
+                        .collect(Collectors.joining(", "));
+                return "Field '" + field + "' has invalid value '" + ife.getValue()
+                        + "'. Allowed values: " + allowed;
+            }
+            String typeName = targetType != null ? targetType.getSimpleName() : "unknown";
+            return "Field '" + field + "' has invalid value '" + ife.getValue()
+                    + "'. Expected type: " + typeName;
+        }
+        if (cause instanceof MismatchedInputException mie) {
+            String field = mie.getPath().isEmpty() ? "unknown" : mie.getPath().get(0).getFieldName();
+            String typeName = mie.getTargetType() != null ? mie.getTargetType().getSimpleName() : "unknown";
+            return "Field '" + field + "' is missing or has wrong type (expected: " + typeName + ")";
+        }
+        if (cause instanceof JsonParseException jpe) {
+            return "Malformed JSON: " + jpe.getOriginalMessage();
+        }
+        return "Invalid request body";
     }
 
     // Catch-all for other exceptions

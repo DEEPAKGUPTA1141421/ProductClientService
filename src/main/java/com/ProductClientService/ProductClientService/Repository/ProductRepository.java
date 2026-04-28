@@ -235,6 +235,58 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             UUID sellerId,
             Product.Step step);
 
+    /** All LIVE products for a seller — used by the seller's product list screen. */
+    @Query(value = """
+            SELECT
+                p.id                                                    AS id,
+                p.name                                                  AS name,
+                p.description                                           AS description,
+                p.step                                                  AS step,
+                p.created_at                                            AS createdAt,
+                COALESCE(MIN(v.price), '0')                             AS minPrice,
+                COALESCE(SUM(v.stock), 0)                               AS totalStock,
+                (SELECT pm.url FROM product_media pm
+                 WHERE pm.product_id = p.id AND pm.is_cover = true
+                 LIMIT 1)                                               AS coverImage,
+                p.is_active                                             AS isActive
+            FROM products p
+            LEFT JOIN product_variants v  ON v.product_id = p.id
+            LEFT JOIN product_media    pm ON pm.product_id = p.id
+            WHERE p.seller_id = :sellerId
+              AND p.step = 5
+            GROUP BY p.id
+            ORDER BY p.created_at DESC
+            LIMIT :size OFFSET :offset
+            """, nativeQuery = true)
+    List<Object[]> findLiveProductsBySeller(
+            @Param("sellerId") UUID sellerId,
+            @Param("size")     int  size,
+            @Param("offset")   int  offset);
+
+    /** Active products whose total variant stock is at or below the threshold. */
+    @Query(value = """
+            SELECT
+                p.id,
+                p.name,
+                COALESCE(SUM(v.stock), 0) AS totalStock,
+                COALESCE(MIN(v.price),  '0') AS minPrice,
+                (SELECT pm.url FROM product_media pm
+                 WHERE pm.product_id = p.id AND pm.is_cover = true LIMIT 1) AS coverImage
+            FROM products p
+            LEFT JOIN product_variants v ON v.product_id = p.id
+            WHERE p.seller_id  = :sellerId
+              AND p.step       = 5
+              AND p.is_active  = true
+            GROUP BY p.id
+            HAVING COALESCE(SUM(v.stock), 0) <= :threshold
+            ORDER BY COALESCE(SUM(v.stock), 0) ASC
+            LIMIT :size
+            """, nativeQuery = true)
+    List<Object[]> findLowStockProductsBySeller(
+            @Param("sellerId")  UUID sellerId,
+            @Param("threshold") int  threshold,
+            @Param("size")      int  size);
+
     @Query(value = """
                     SELECT
                         p.id AS productId,

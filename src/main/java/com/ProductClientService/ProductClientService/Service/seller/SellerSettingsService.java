@@ -97,6 +97,12 @@ public class SellerSettingsService {
         data.put("notifications", notif.map(this::buildNotifInfo).orElse(defaultNotifications()));
         data.put("preferences", prefs.map(this::buildPrefsInfo).orElse(defaultPreferences()));
 
+        Seller.ONBOARDSTAGE stage = seller.getOnboardingStage();
+        boolean onboardingComplete = stage == Seller.ONBOARDSTAGE.DOCUMENT_VERIFIED
+                || stage == Seller.ONBOARDSTAGE.DOCUMENT_VERIFICATION_PENDING;
+        data.put("onboardingStage", stage != null ? stage.name() : "REGISTER");
+        data.put("onboardingComplete", onboardingComplete);
+
         return new ApiResponse<>(true, "Settings fetched", data, 200);
     }
 
@@ -111,7 +117,8 @@ public class SellerSettingsService {
     @Transactional
     public ApiResponse<Object> updatePersonalInfo(PersonalInfoDto dto) {
         Seller seller = getSellerOrThrow();
-        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.LOCATION) {
+        Seller.ONBOARDSTAGE currentStage = seller.getOnboardingStage();
+        if (currentStage == null || currentStage.ordinal() < Seller.ONBOARDSTAGE.BASIC_INFO_NAME.ordinal()) {
             seller.setOnboardingStage(Seller.ONBOARDSTAGE.BASIC_INFO_NAME);
             sellerRepository.save(seller);
         }

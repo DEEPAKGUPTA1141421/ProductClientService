@@ -43,7 +43,7 @@ class UserInteractionEventSerdeTest {
         assertEquals(1, InteractionType.VIEW.code());
         assertEquals(2, InteractionType.CLICK.code());
         assertEquals(3, InteractionType.WISHLIST.code());
-        assertEquals(4, InteractionType.CART.code());
+        assertEquals(4, InteractionType.ADD_TO_CART.code());
         assertEquals(5, InteractionType.PURCHASE_PREPAID.code());
         assertEquals(6, InteractionType.PURCHASE_COD.code());
     }

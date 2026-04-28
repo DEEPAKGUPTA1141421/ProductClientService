@@ -88,6 +88,16 @@ public class SellerController {
      * Returns the seller's current draft product with ALL step data populated.
      * Frontend uses this to resume product creation from where the seller left off.
      */
+    // ── GET /api/v1/seller/product/my-products?page=0&size=20 ────────────────
+    @GetMapping("/my-products")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getMyLiveProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        ApiResponse<Object> response = sellerService.getMyLiveProducts(page, size);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/draft-product/full")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getDraftProductFull() {
@@ -104,6 +114,59 @@ public class SellerController {
     public ResponseEntity<?> discardDraftProduct() {
         ApiResponse<Object> response = sellerService.discardDraftProduct();
         return ResponseEntity.status(200).body(response);
+    }
+
+    @DeleteMapping("/{productId}")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> deleteProduct(@PathVariable UUID productId) {
+        ApiResponse<Object> response = sellerService.deleteMyProduct(productId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PatchMapping("/{productId}/toggle-active")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> toggleActive(@PathVariable UUID productId) {
+        ApiResponse<Object> response = sellerService.toggleActive(productId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @GetMapping("/low-stock")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getLowStockProducts(
+            @RequestParam(defaultValue = "5") int threshold) {
+        ApiResponse<Object> response = sellerService.getLowStockProducts(threshold);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @GetMapping("/{productId}/variants")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getProductVariants(@PathVariable UUID productId) {
+        ApiResponse<Object> response = sellerService.getProductVariants(productId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PatchMapping("/{productId}/variants/{variantId}")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> updateVariant(
+            @PathVariable UUID productId,
+            @PathVariable UUID variantId,
+            @RequestBody Map<String, Object> body) {
+        Long    priceInPaise = body.get("priceInPaise") instanceof Number n ? n.longValue() : null;
+        Integer stock        = body.get("stock")        instanceof Number n ? n.intValue()  : null;
+        ApiResponse<Object> response = sellerService.updateVariant(productId, variantId, priceInPaise, stock);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PatchMapping("/{productId}/quick-update")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> quickUpdate(
+            @PathVariable UUID productId,
+            @RequestBody Map<String, Object> body) {
+        String  name         = body.get("name")  instanceof String  s ? s : null;
+        Long    priceInPaise = body.get("priceInPaise") instanceof Number n ? n.longValue() : null;
+        Integer stock        = body.get("stock") instanceof Number  n ? n.intValue()  : null;
+        ApiResponse<Object> response = sellerService.quickUpdate(productId, name, priceInPaise, stock);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @PostMapping(value = "/load-attribute")
@@ -398,8 +461,4 @@ public class SellerController {
 }
 
 // jhiu jhuiyuiu huymnkjnkhkihiyh nbuygyu bgyg bvytg mkj9oi fjnhk jhbh
-// kiyui nhuihu uihyiu hjh nhjhj hjhj bhjhj hkhu hyihu hjhj hjhiujnjnjnn
-// hyuihu huihk khiurf guihrfbk hukhur jhbrkf fgrtt tgte tggrrerehjjuhyh
-// uhiui nhuuhiuhhu huh hj hkj hukhukjhukhu hukkjk nhk
-// jhh jhhjhbb hj jkj hujkj hkj jkbhjhhuhu uhhumjbhhj hjhuj hbhjuk khhuk
-// hjhukjkjjihukjbhjkjk jkkj njj
+// jjijjioi hjuhjijhkijoijijjhjhk

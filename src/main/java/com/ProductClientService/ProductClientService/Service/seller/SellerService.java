@@ -155,6 +155,106 @@ public class SellerService {
                 200);
     }
 
+    // ── GET /api/v1/seller/product/my-products ────────────────────────────────
+    public ApiResponse<Object> getMyLiveProducts(int page, int size) {
+        UUID sellerId = getUserId();
+        int clampedSize   = Math.min(Math.max(1, size), 100);
+        int offset        = Math.max(0, page) * clampedSize;
+
+        List<Object[]> rows = productRepository.findLiveProductsBySeller(sellerId, clampedSize, offset);
+
+        List<Map<String, Object>> products = rows.stream().map(row -> {
+            Map<String, Object> p = new java.util.LinkedHashMap<>();
+            p.put("id",          row[0] != null ? row[0].toString() : null);
+            p.put("name",        row[1]);
+            p.put("description", row[2]);
+            p.put("step",        row[3]);
+            p.put("createdAt",   row[4]);
+            p.put("price",       row[5]);           // min variant price
+            p.put("stock",       row[6]);           // total stock across variants
+            p.put("imageUrl",    row[7]);           // cover image URL (may be null)
+            p.put("isActive",    row[8] == null || (Boolean) row[8]);
+            return p;
+        }).toList();
+
+        return new ApiResponse<>(true, "Products fetched", products, 200);
+    }
+
+    // ── DELETE /api/v1/seller/product/{productId} ─────────────────────────────
+    @Transactional
+    public ApiResponse<Object> deleteMyProduct(UUID productId) {
+        UUID sellerId = getUserId();
+        Optional<Product> opt = productRepository.findById(productId);
+        if (opt.isEmpty()) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        Product product = opt.get();
+        if (!product.getSeller().getId().equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        try {
+            productRepository.delete(product);
+            return new ApiResponse<>(true, "Product deleted", null, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Cannot delete — product may have associated orders", null, 409);
+        }
+    }
+
+    // ── PATCH /api/v1/seller/product/{productId}/quick-update ────────────────
+    @Transactional
+    public ApiResponse<Object> quickUpdate(UUID productId, String name, Long priceInPaise, Integer stock) {
+        UUID sellerId = getUserId();
+        Optional<Product> opt = productRepository.findById(productId);
+        if (opt.isEmpty()) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        Product product = opt.get();
+        if (!product.getSeller().getId().equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        if (name != null && !name.isBlank()) {
+            product.setName(name.trim());
+        }
+        if (priceInPaise != null || stock != null) {
+            product.getVariants().forEach(v -> {
+                if (priceInPaise != null) {
+                    v.setPrice(String.valueOf(priceInPaise));
+                    // recompute MRP to match if lower, keep existing otherwise
+                    long existingMrp = v.getMrp() == null ? 0 : Long.parseLong(v.getMrp());
+                    if (priceInPaise > existingMrp) v.setMrp(String.valueOf(priceInPaise));
+                }
+                if (stock != null) {
+                    v.setStock(stock);
+                }
+            });
+        }
+        productRepository.save(product);
+        return new ApiResponse<>(true, "Product updated", java.util.Map.of(
+                "id",   productId.toString(),
+                "name", product.getName()
+        ), 200);
+    }
+
+    // ── PATCH /api/v1/seller/product/{productId}/toggle-active ───────────────
+    @Transactional
+    public ApiResponse<Object> toggleActive(UUID productId) {
+        UUID sellerId = getUserId();
+        Optional<Product> opt = productRepository.findById(productId);
+        if (opt.isEmpty()) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        Product product = opt.get();
+        if (!product.getSeller().getId().equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        boolean newActive = !Boolean.TRUE.equals(product.getIsActive());
+        product.setIsActive(newActive);
+        productRepository.save(product);
+        return new ApiResponse<>(true,
+                newActive ? "Product activated" : "Product deactivated",
+                java.util.Map.of("isActive", newActive), 200);
+    }
+
     public ApiResponse<Object> discardDraftProduct() {
 
         UUID sellerId = (UUID) request.getAttribute("id");
@@ -1018,6 +1118,80 @@ public class SellerService {
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
         }
+    }
+
+    // ── GET /api/v1/seller/product/low-stock?threshold=5 ─────────────────────
+    public ApiResponse<Object> getLowStockProducts(int threshold) {
+        UUID sellerId = getUserId();
+        int t = Math.max(0, Math.min(50, threshold));
+        List<Object[]> rows = productRepository.findLowStockProductsBySeller(sellerId, t, 30);
+        List<Map<String, Object>> result = rows.stream().map(row -> {
+            Map<String, Object> p = new java.util.LinkedHashMap<>();
+            p.put("id",    row[0] != null ? row[0].toString() : null);
+            p.put("name",  row[1]);
+            p.put("stock", row[2] != null ? ((Number) row[2]).intValue() : 0);
+            long price = 0;
+            try { price = Long.parseLong(row[3].toString()); } catch (Exception ignored) {}
+            p.put("priceRupees", String.format("%.2f", price / 100.0));
+            p.put("imageUrl",    row[4]);
+            return p;
+        }).toList();
+        return new ApiResponse<>(true, "Low stock products", result, 200);
+    }
+
+    // ── GET /api/v1/seller/product/{productId}/variants ──────────────────────
+    public ApiResponse<Object> getProductVariants(UUID productId) {
+        UUID sellerId = getUserId();
+        Optional<Product> opt = productRepository.findById(productId);
+        if (opt.isEmpty()) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        if (!opt.get().getSeller().getId().equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        List<ProductVariant> variants = productVariantRepository.findByProductId(productId);
+        List<Map<String, Object>> result = variants.stream().map(v -> {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("id",    v.getId().toString());
+            m.put("sku",   v.getSku()   != null ? v.getSku()   : "");
+            m.put("label", v.getLabel() != null ? v.getLabel() : "");
+            long price = 0, mrp = 0;
+            try { price = Long.parseLong(v.getPrice()); } catch (Exception ignored) {}
+            try { mrp   = Long.parseLong(v.getMrp());   } catch (Exception ignored) {}
+            m.put("priceInPaise", price);
+            m.put("priceRupees",  String.format("%.2f", price / 100.0));
+            m.put("mrpInPaise",   mrp);
+            m.put("mrpRupees",    String.format("%.2f", mrp / 100.0));
+            m.put("stock",        v.getStock());
+            m.put("combination",  v.getCombination() != null ? v.getCombination() : Map.of());
+            return m;
+        }).toList();
+        return new ApiResponse<>(true, "Variants fetched", result, 200);
+    }
+
+    // ── PATCH /api/v1/seller/product/{productId}/variants/{variantId} ─────────
+    @Transactional
+    public ApiResponse<Object> updateVariant(UUID productId, UUID variantId, Long priceInPaise, Integer stock) {
+        UUID sellerId = getUserId();
+        Optional<Product> opt = productRepository.findById(productId);
+        if (opt.isEmpty()) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        if (!opt.get().getSeller().getId().equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        ProductVariant variant = productVariantRepository.findById(variantId)
+                .orElseThrow(() -> new RuntimeException("Variant not found"));
+        if (priceInPaise != null) {
+            variant.setPrice(String.valueOf(priceInPaise));
+            long existingMrp = variant.getMrp() == null ? 0 : Long.parseLong(variant.getMrp());
+            if (priceInPaise > existingMrp) variant.setMrp(String.valueOf(priceInPaise));
+        }
+        if (stock != null) {
+            variant.setStock(stock);
+        }
+        productVariantRepository.save(variant);
+        return new ApiResponse<>(true, "Variant updated", java.util.Map.of("id", variantId.toString()), 200);
     }
 
     private UUID getUserId() {
