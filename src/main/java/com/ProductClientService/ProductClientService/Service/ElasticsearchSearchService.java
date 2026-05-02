@@ -110,6 +110,11 @@ public class ElasticsearchSearchService {
             filters.add(term("category_id", req.getCategoryId().toString()));
         }
 
+        // Seller / shop scope — restricts results to one shop's products
+        if (req.getSellerId() != null) {
+            filters.add(term("seller_id", req.getSellerId().toString()));
+        }
+
         // Brand (terms = OR across multiple IDs)
         if (req.getBrandIds() != null && !req.getBrandIds().isEmpty()) {
             List<FieldValue> brandValues = req.getBrandIds().stream()

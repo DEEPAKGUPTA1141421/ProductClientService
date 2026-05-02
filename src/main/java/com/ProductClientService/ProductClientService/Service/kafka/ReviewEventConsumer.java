@@ -46,6 +46,7 @@ public class ReviewEventConsumer {
     private final ProductRepository productRepository;
     private final UserRepojectory userRepository;
     private final ReviewService reviewService;
+    private final com.ProductClientService.ProductClientService.Service.ShopRatingUpdater shopRatingUpdater;
 
     @KafkaListener(topics = "review.submit.requested", groupId = "review-events-group",
                    containerFactory = "kafkaListenerContainerFactory")
@@ -96,6 +97,12 @@ public class ReviewEventConsumer {
 
             // ── 3. Sync cached avg_rating + rating_count on Product ───────────
             reviewService.updateProductRatingSummaryAsync(productId);
+
+            // ── 4. Sync shop avg_rating in shops-v1 ES ────────────────────────
+            productRepository.findById(productId)
+                    .map(p -> p.getSeller())
+                    .filter(seller -> seller != null)
+                    .ifPresent(seller -> shopRatingUpdater.syncShopRating(seller.getId()));
 
             log.info("Review saved reviewId={} productId={}", saved.getId(), productId);
         } catch (Exception e) {

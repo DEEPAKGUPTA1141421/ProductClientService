@@ -62,4 +62,9 @@ public class SearchRequest {
 
     // ── Sponsored toggle (internal/admin) ────────────────────────────
     private Boolean includeSponsored = true;
+
+    // ── Shop scope ────────────────────────────────────────────────────
+    // When set, restricts results to products belonging to this seller.
+    // Used by GET /api/v1/shops/{id}/products and in-shop search on the app.
+    private UUID sellerId;
 }

@@ -36,6 +36,15 @@ public interface ProductRatingRepository extends JpaRepository<ProductRating, UU
     @Query("SELECT r.rating, COUNT(r) FROM ProductRating r WHERE r.product.id = :productId GROUP BY r.rating ORDER BY r.rating DESC")
     List<Object[]> findStarDistributionByProductId(@Param("productId") UUID productId);
 
+    /**
+     * Computes avg rating and total review count across all LIVE products
+     * belonging to a seller. Used by ShopRatingUpdater to sync shops-v1 ES.
+     * Returns [avgRating (Double), totalCount (Long)] — both null if no reviews.
+     */
+    @Query("SELECT AVG(r.rating), COUNT(r) FROM ProductRating r " +
+           "WHERE r.product.seller.id = :sellerId AND r.product.step = 4")
+    List<Object[]> findSellerRatingSummary(@Param("sellerId") UUID sellerId);
+
     @Modifying
     @Query("UPDATE ProductRating r SET r.helpfulCount = r.helpfulCount + 1 WHERE r.id = :reviewId")
     void incrementHelpfulCount(@Param("reviewId") UUID reviewId);

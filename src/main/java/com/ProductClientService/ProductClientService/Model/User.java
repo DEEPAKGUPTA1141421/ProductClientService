@@ -82,6 +82,10 @@ public class User {
     @Column(name = "wishlist_item_ids", columnDefinition = "jsonb")
     private Set<UUID> wishlistItemIds = new HashSet<>();
 
+    /** FCM device token — updated on each app launch, used to push order status notifications. */
+    @Column(name = "fcm_token", length = 512)
+    private String fcmToken;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
