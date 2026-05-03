@@ -543,3 +543,6 @@ ORDER BY s.position;
 - **position** orders sections top-to-bottom on the page
 - All sections are `active=true` and `starts_at=NOW()` (visible immediately)
 - Adjust product IDs to match your actual product IDs in the database
+
+
+C:\Users\HIMAN\AppData\Roaming\Python\Python314\Scripts\graphify.exe install

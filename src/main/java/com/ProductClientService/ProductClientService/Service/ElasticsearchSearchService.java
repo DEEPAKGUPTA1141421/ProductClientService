@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * ElasticsearchSearchService
@@ -271,7 +273,7 @@ public class ElasticsearchSearchService {
                 .discountPercent(discPct)
                 .rating(doc.getAvgRating())
                 .reviewCount(doc.getReviewCount())
-                .images(doc.getImages() != null ? doc.getImages() : List.of())
+                .images(cleanImages(doc.getImages()))
                 .hasVideo(false)
                 .badge(badge)
                 .deliveryText(delivText)
@@ -279,10 +281,29 @@ public class ElasticsearchSearchService {
                 .isSponsored(false)
                 .isWishlisted(false)     // injected post-cache by SearchResultsService
                 .variantId(doc.getVariantId() != null ? UUID.fromString(doc.getVariantId()) : null)
+                .categoryId(doc.getCategoryId() != null ? UUID.fromString(doc.getCategoryId()) : null)
+                .categoryName(doc.getCategoryName())
                 .build();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    // Images stored in ES may carry extra JSON encoding artefacts, e.g.:
+    //   "\"https://...png\""   or   "[\"https://...png\""   or   "\"https://...png\"]"
+    // Extract just the URL from each string element.
+    private static final Pattern URL_PATTERN =
+            Pattern.compile("https?://[^\\s\"\\\\\\[\\]]+");
+
+    private static List<String> cleanImages(List<String> raw) {
+        if (raw == null) return List.of();
+        List<String> result = new ArrayList<>();
+        for (String s : raw) {
+            if (s == null) continue;
+            Matcher m = URL_PATTERN.matcher(s);
+            if (m.find()) result.add(m.group());
+        }
+        return result;
+    }
 
     private Query term(String field, String value) {
         return Query.of(q -> q.term(t -> t.field(field).value(FieldValue.of(value))));

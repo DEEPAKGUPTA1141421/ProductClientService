@@ -328,7 +328,7 @@ public class AuthService {
         // QR code text → redirect link
 
         // Generate QR and upload
-        String qrUrl = generateAndUpload(seller.getId(), "src/main/resources/static/logo.png", 400, 400);
+        String qrUrl = generateAndUpload(seller.getId(), "src/main/resources/static/DashlyLogo.jpeg", 400, 400);
         System.out.println("qrText" + qrUrl);
         seller.setQrCodeUrl(qrUrl);
         sellerRepository.save(seller);

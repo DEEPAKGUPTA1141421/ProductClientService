@@ -3,6 +3,7 @@ package com.ProductClientService.ProductClientService.Controller.admin;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
+import com.ProductClientService.ProductClientService.Service.SellerQrService;
 import com.ProductClientService.ProductClientService.Service.ShopIndexer;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -33,20 +35,33 @@ public class AdminSellerController {
     private final SellerRepository sellerRepository;
     private final ShopIndexer shopIndexer;
     private final EventPublisherService eventPublisher;
+    private final SellerQrService sellerQrService;
 
     @PatchMapping("/{sellerId}/activate")
-    public ResponseEntity<ApiResponse<Void>> activate(@PathVariable UUID sellerId) {
+    public ResponseEntity<ApiResponse<Map<String, String>>> activate(@PathVariable UUID sellerId) {
         Seller seller = sellerRepository.findById(sellerId)
                 .orElseThrow(() -> new RuntimeException("Seller not found: " + sellerId));
 
-        seller.setStatus("ACTIVE");
+        try {
+            seller.setStatus("ACTIVE");
+            String qrCodeUrl = sellerQrService.generateAndUploadSellerQr(seller);
+            seller.setQrCodeUrl(qrCodeUrl);
+        } catch (Exception e) {
+            throw new RuntimeException("Seller QR generation failed: " + e.getMessage(), e);
+        }
+
         sellerRepository.save(seller);
 
         // Index immediately (async) + publish event for fan-out consumers
         shopIndexer.indexSeller(sellerId);
         eventPublisher.publishSellerLive(sellerId);
 
-        return ResponseEntity.ok(new ApiResponse<>(true, "Seller activated and shop indexed", null, 200));
+        Map<String, String> data = Map.of(
+                "sellerId", seller.getId().toString(),
+                "sellerPageUrl", sellerQrService.buildSellerPageUrl(seller),
+                "qrCodeUrl", seller.getQrCodeUrl());
+
+        return ResponseEntity.ok(new ApiResponse<>(true, "Seller activated, QR generated, and shop indexed", data, 200));
     }
 
     @PatchMapping("/{sellerId}/deactivate")

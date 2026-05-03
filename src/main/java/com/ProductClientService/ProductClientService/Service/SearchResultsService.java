@@ -171,6 +171,7 @@ public class SearchResultsService {
             sb.append(":brands=").append(
                     req.getBrandIds().stream().map(UUID::toString).sorted().collect(Collectors.joining(",")));
         }
+        sb.append(":seller=").append(req.getSellerId());
         return sb.toString();
     }
 

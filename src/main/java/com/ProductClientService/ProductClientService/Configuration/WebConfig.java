@@ -108,6 +108,10 @@ public class WebConfig {
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/sections/**")
                                                 .permitAll()
 
+                                                // ✅ Shops — all GET endpoints are public (listing, search, detail, storefront)
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/shops/**")
+                                                .permitAll()
+
                                                 // ✅ Interaction tracking — accept guests (userId attached if JWT
                                                 // present)
                                                 .requestMatchers(HttpMethod.POST, "/api/v1/track/**")

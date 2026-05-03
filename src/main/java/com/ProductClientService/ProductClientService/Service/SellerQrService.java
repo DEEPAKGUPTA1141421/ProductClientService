@@ -7,6 +7,7 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.EncodeHintType;
 import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.WriterException;
+import com.google.zxing.client.j2se.MatrixToImageConfig;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
@@ -18,12 +19,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.RenderingHints;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -76,9 +79,10 @@ public class SellerQrService {
         hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.H);
 
         BitMatrix bitMatrix = new MultiFormatWriter().encode(text, BarcodeFormat.QR_CODE, width, height, hints);
-        BufferedImage qrImage = MatrixToImageWriter.toBufferedImage(bitMatrix);
+        MatrixToImageConfig qrConfig = new MatrixToImageConfig(0xFF1A1A1A, 0x00FFFFFF);
+        BufferedImage qrImage = MatrixToImageWriter.toBufferedImage(bitMatrix, qrConfig);
 
-        // Create enhanced image with branding
+        // Create enhanced image with clean Dashly branding and logo
         BufferedImage enhancedImage = createBrandedQrImage(qrImage);
 
         // Add logo if available
@@ -96,55 +100,57 @@ public class SellerQrService {
         int bottomMargin = 100;
         int sideMargin = 40;
 
-        // Total image dimensions
         int totalWidth = qrSize + (2 * sideMargin);
         int totalHeight = topMargin + qrSize + bottomMargin;
 
-        // Create white background image
-        BufferedImage brandedImage = new BufferedImage(
-                totalWidth, totalHeight, BufferedImage.TYPE_INT_RGB);
+        BufferedImage brandedImage = new BufferedImage(totalWidth, totalHeight, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2d = brandedImage.createGraphics();
 
-        // Enable anti-aliasing for smooth text
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-        // Fill background with white
         g2d.setColor(Color.WHITE);
         g2d.fillRect(0, 0, totalWidth, totalHeight);
 
-        // Add top marketing text
-        g2d.setColor(new Color(0, 0, 0)); // Black color
+        int cardX = 20;
+        int cardY = 70;
+        int cardWidth = totalWidth - 40;
+        int cardHeight = qrSize + 40;
+        RoundRectangle2D card = new RoundRectangle2D.Float(cardX, cardY, cardWidth, cardHeight, 40, 40);
+        g2d.setColor(Color.WHITE);
+        g2d.fill(card);
+        g2d.setStroke(new BasicStroke(2f));
+        g2d.setColor(new Color(230, 230, 230));
+        g2d.draw(card);
 
-        // Brand title - "Scan to Shop with Dashly"
-        Font titleFont = new Font("Arial", Font.BOLD, 24);
-        g2d.setFont(titleFont);
+        g2d.setFont(new Font("Arial", Font.BOLD, 26));
+        g2d.setColor(new Color(26, 26, 26));
         String titleText = "Scan to Shop";
         FontMetrics titleMetrics = g2d.getFontMetrics();
         int titleX = (totalWidth - titleMetrics.stringWidth(titleText)) / 2;
-        g2d.drawString(titleText, titleX, 35);
+        g2d.drawString(titleText, titleX, 40);
 
-        // Subtitle - "Dashly"
-        Font subtitleFont = new Font("Arial", Font.BOLD, 18);
-        g2d.setFont(subtitleFont);
-        String subtitleText = "Powered by Dashly";
+        g2d.setFont(new Font("Arial", Font.BOLD, 18));
+        g2d.setColor(new Color(70, 70, 70));
+        String subtitleText = "Dashly";
         FontMetrics subtitleMetrics = g2d.getFontMetrics();
         int subtitleX = (totalWidth - subtitleMetrics.stringWidth(subtitleText)) / 2;
-        g2d.drawString(subtitleText, subtitleX, 65);
+        g2d.drawString(subtitleText, subtitleX, 68);
 
-        // Draw QR code centered
         int qrX = sideMargin;
         int qrY = topMargin;
         g2d.drawImage(qrImage, qrX, qrY, qrSize, qrSize, null);
 
-        // Add bottom text - "dashly"
-        Font bottomFont = new Font("Arial", Font.BOLD, 32);
-        g2d.setFont(bottomFont);
-        g2d.setColor(new Color(0, 0, 0)); // Black text
-        String bottomText = "dashly";
+        g2d.setColor(new Color(0, 0, 0, 30));
+        g2d.setStroke(new BasicStroke(6f));
+        g2d.drawRoundRect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 8, 24, 24);
+
+        g2d.setFont(new Font("Arial", Font.BOLD, 28));
+        g2d.setColor(new Color(36, 36, 36));
+        String bottomText = "Dashly";
         FontMetrics bottomMetrics = g2d.getFontMetrics();
         int bottomTextX = (totalWidth - bottomMetrics.stringWidth(bottomText)) / 2;
-        int bottomTextY = topMargin + qrSize + 45;
+        int bottomTextY = topMargin + qrSize + 55;
         g2d.drawString(bottomText, bottomTextX, bottomTextY);
 
         g2d.dispose();
@@ -174,7 +180,10 @@ public class SellerQrService {
     }
 
     private BufferedImage loadLogo() throws IOException {
-        Resource logo = resourceLoader.getResource("classpath:static/logo.png");
+        Resource logo = resourceLoader.getResource("classpath:static/DahlyLogo.jpg");
+        if (!logo.exists()) logo = resourceLoader.getResource("classpath:static/DashlyLogo.jpg");
+        if (!logo.exists()) logo = resourceLoader.getResource("classpath:static/DashlyLogo.jpeg");
+        if (!logo.exists()) logo = resourceLoader.getResource("classpath:static/logo.png");
         if (!logo.exists()) {
             return null;
         }

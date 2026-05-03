@@ -57,5 +57,9 @@ public class SearchResultsResponse {
         private boolean isInCart;     // requires userId from JWT
 
         private UUID variantId; // cheapest in-stock variant
+
+        // Category — populated by ElasticsearchSearchService; used for storefront section grouping
+        private UUID categoryId;
+        private String categoryName;
     }
 }
