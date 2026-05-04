@@ -85,21 +85,36 @@ public class ShopSearchService {
                 filters.add(geoDistanceFilter(req.getUserLat(), req.getUserLng(), req.getRadiusKm()));
             }
 
-            // Keyword — must clause
+            // Keyword — must clause (fuzzy OR phrase-prefix so partial input like "ind" matches "IndiaBazaar")
             String kw = req.getKeyword() == null ? "" : req.getKeyword().trim();
             List<Query> mustClauses = new ArrayList<>();
             if (!kw.isBlank()) {
-                mustClauses.add(Query.of(q -> q.multiMatch(m -> m
+                // Fuzzy leg: handles complete-word typos ("beuaty" → "beauty")
+                Query fuzzyLeg = Query.of(q -> q.multiMatch(m -> m
                         .query(kw)
                         .fields(List.of(
                                 "display_name^3",
-                                "display_name_suggest^2",
                                 "tags^2",
-                                "category_name",
-                                "city",
+                                "category_name^2",
                                 "legal_name"))
                         .type(TextQueryType.BestFields)
-                        .fuzziness("AUTO"))));
+                        .fuzziness("AUTO")));
+
+                // Prefix leg: handles partial typing ("ind" → "IndiaBazaar", "trad" → "Traders")
+                Query prefixLeg = Query.of(q -> q.multiMatch(m -> m
+                        .query(kw)
+                        .fields(List.of(
+                                "display_name^4",
+                                "tags^2",
+                                "category_name^2",
+                                "legal_name"))
+                        .type(TextQueryType.PhrasePrefix)));
+
+                // At least one leg must match
+                mustClauses.add(Query.of(q -> q.bool(b -> b
+                        .minimumShouldMatch("1")
+                        .should(fuzzyLeg)
+                        .should(prefixLeg))));
             }
 
             BoolQuery boolQuery = BoolQuery.of(b -> {
@@ -216,7 +231,7 @@ public class ShopSearchService {
     /** Builds the final SearchRequest with sort + pagination. */
     private SearchRequest buildSortedRequest(Query query, ShopFilterRequest req) {
         int from = req.getPage() * req.getPageSize();
-        String sortBy = req.getSortBy() == null ? "distance" : req.getSortBy();
+        String sortBy = req.getSortBy() == null ? "distance" : req.getSortBy().toLowerCase();
 
         return switch (sortBy) {
             case "rating" -> SearchRequest.of(s -> s
