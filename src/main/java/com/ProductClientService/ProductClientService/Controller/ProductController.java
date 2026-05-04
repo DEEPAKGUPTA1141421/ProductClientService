@@ -68,6 +68,16 @@ public class ProductController {
         return productService.getCategoriesByParentIds(parentIds);
     }
 
+    @GetMapping("/category/browse")
+    public ResponseEntity<?> getBrowseCategories(@RequestParam UUID superCategoryId) {
+        try {
+            ApiResponse<Object> response = productService.getBrowseCategories(superCategoryId);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
     @GetMapping("/{productId}")
     public ResponseEntity<?> getProduct(@PathVariable UUID productId) {
         try {

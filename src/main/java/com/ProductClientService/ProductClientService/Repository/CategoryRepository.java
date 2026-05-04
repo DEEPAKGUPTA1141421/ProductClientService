@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.DTO.Cart.CategoryTreeProjection;
 import com.ProductClientService.ProductClientService.Model.Category;
+import com.ProductClientService.ProductClientService.Repository.Projection.CategoryBrowseProjection;
 import com.ProductClientService.ProductClientService.Repository.Projection.CategoryProjection;
 
 @Repository
@@ -29,6 +30,12 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     // Use parent.id directly (because parent is a Category object)
     List<Category> findByParentIdIn(List<UUID> parentIds);
+
+    @Query("SELECT c.id as id, c.name as name, c.imageUrl as imageUrl, c.parent.id as parentId FROM Category c WHERE c.parent.id = :parentId")
+    List<CategoryBrowseProjection> findProjectedByParentId(@Param("parentId") UUID parentId);
+
+    @Query("SELECT c.id as id, c.name as name, c.imageUrl as imageUrl, c.parent.id as parentId FROM Category c WHERE c.parent.id IN :parentIds")
+    List<CategoryBrowseProjection> findProjectedByParentIdIn(@Param("parentIds") List<UUID> parentIds);
 
     @Query("""
                 SELECT c.id as id,
