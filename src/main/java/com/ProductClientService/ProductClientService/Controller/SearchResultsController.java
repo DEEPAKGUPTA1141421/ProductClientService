@@ -66,6 +66,12 @@ public class SearchResultsController {
 
         UUID userId = principal != null ? principal.getId() : null;
 
+        if ((long)(req.getPage() + 1) * req.getPageSize() > 10_000) {
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(false,
+                            "Page depth exceeds 10,000 items. Use cursor-based pagination.", null, 400));
+        }
+
         SearchResultsResponse response = searchService.search(req, userId);
 
         return ResponseEntity.ok(

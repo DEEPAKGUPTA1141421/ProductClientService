@@ -67,4 +67,16 @@ public class SearchRequest {
     // When set, restricts results to products belonging to this seller.
     // Used by GET /api/v1/shops/{id}/products and in-shop search on the app.
     private UUID sellerId;
+
+    // ── Cursor pagination ─────────────────────────────────────────────
+    // Opaque base64 token returned as `nextCursor` in the previous page.
+    // When present, `page` is ignored and ES uses search_after for deep pages.
+    private String cursor;
+
+    // ── ETA enrichment ────────────────────────────────────────────────
+    // Optional. When set alongside sellerId, SearchResultsService computes
+    // a per-shop delivery ETA from DeliveryInventoryService and injects it
+    // as deliveryText on every product in the response.
+    private Double userLat;
+    private Double userLng;
 }

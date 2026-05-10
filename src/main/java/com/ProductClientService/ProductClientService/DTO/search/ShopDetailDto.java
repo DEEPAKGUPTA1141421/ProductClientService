@@ -45,4 +45,17 @@ public class ShopDetailDto {
     private double distanceKm;
     private int etaMinutes;
     private boolean sameCityDelivery;
+
+    // ── Profile extras ─────────────────────────────────────────────────────────
+    private String coverImageUrl;
+    private String bio;
+    private String websiteUrl;
+
+    // ── Social / stats ─────────────────────────────────────────────────────────
+    private long followerCount;
+
+    @JsonProperty("isFollowed")
+    private boolean isFollowed;
+
+    private long totalProducts;
 }

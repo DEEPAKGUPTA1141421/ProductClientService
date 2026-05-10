@@ -1,11 +1,14 @@
 package com.ProductClientService.ProductClientService.Service;
 
+import com.ProductClientService.ProductClientService.DTO.network.DeliveryEstimateDto;
 import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse.SearchProductDto;
+import com.ProductClientService.ProductClientService.DTO.search.ShopSearchDocument;
 import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Repository.CartRepository;
 import com.ProductClientService.ProductClientService.Repository.WishlistRepository;
+import com.ProductClientService.ProductClientService.network.DeliveryInventoryClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,10 +51,14 @@ public class SearchResultsService {
     private final CartRepository cartRepo;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final DeliveryInventoryClient deliveryClient;
+    private final ShopSearchService shopSearchService;
 
     private static final String CACHE_PREFIX = "search:results:";
     private static final Duration CACHE_TTL_SHORT = Duration.ofMinutes(2);
     private static final Duration CACHE_TTL_LONG = Duration.ofMinutes(5);
+    private static final Duration ETA_CACHE_TTL = Duration.ofMinutes(15);
+    private static final String ETA_CACHE_PREFIX = "eta:shop:";
 
     // ─── Public entry point ───────────────────────────────────────────────────
 
@@ -81,9 +88,14 @@ public class SearchResultsService {
 
         // ── 3. Cache user-agnostic response ───────────────────────────────────
         try {
-            Duration ttl = (req.getKeyword() != null && !req.getKeyword().isBlank())
-                    ? CACHE_TTL_SHORT
-                    : CACHE_TTL_LONG;
+            Duration ttl;
+            if (response.getTotalCount() == 0) {
+                ttl = Duration.ofSeconds(30); // negative cache — fast expiry for empty results
+            } else if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
+                ttl = CACHE_TTL_SHORT;
+            } else {
+                ttl = CACHE_TTL_LONG;
+            }
             redis.opsForValue().set(cacheKey, objectMapper.writeValueAsString(response), ttl);
         } catch (Exception e) {
             log.warn("Failed to cache response for key={}: {}", cacheKey, e.getMessage());
@@ -92,6 +104,14 @@ public class SearchResultsService {
         // ── 4. Inject per-user wishlist + cart flags ──────────────────────────
         injectWishlistFlags(response.getProducts(), userId);
         injectCartFlags(response.getProducts(), userId);
+
+        // ── 5. Inject shop delivery ETA (when shop-scoped + user coords given) ─
+        if (req.getSellerId() != null
+                && req.getUserLat() != null && req.getUserLng() != null
+                && req.getUserLat() != 0.0 && req.getUserLng() != 0.0) {
+            String etaLabel = resolveEtaForShop(req.getSellerId(), req.getUserLat(), req.getUserLng());
+            injectDeliveryText(response.getProducts(), etaLabel);
+        }
 
         return response;
     }
@@ -141,9 +161,65 @@ public class SearchResultsService {
         }
     }
 
+    // ─── ETA injection ────────────────────────────────────────────────────────
+
+    /**
+     * Resolves the delivery ETA label for a (seller, user) coordinate pair.
+     *
+     * Cache key: eta:shop:{sellerLatR}:{sellerLngR}:{userLatR}:{userLngR}
+     * where each coordinate is rounded to 2 decimal places (~1 km precision).
+     * TTL: 15 minutes.
+     *
+     * On any failure (ES lookup miss, Feign timeout, etc.) returns null
+     * so the caller can leave deliveryText unchanged.
+     */
+    private String resolveEtaForShop(UUID sellerId, double userLat, double userLng) {
+        try {
+            ShopSearchDocument shop = shopSearchService.getById(sellerId.toString());
+            if (shop == null || shop.getLocation() == null) return null;
+
+            double shopLat = shop.getLocation().getLat();
+            double shopLng = shop.getLocation().getLon();
+
+            // ~1 km precision cache key (2 dp ≈ 1.1 km latitude, 0.9 km longitude at 25°N)
+            String cacheKey = ETA_CACHE_PREFIX
+                    + Math.round(shopLat * 100) + ":" + Math.round(shopLng * 100) + ":"
+                    + Math.round(userLat  * 100) + ":" + Math.round(userLng  * 100);
+
+            String cached = redis.opsForValue().get(cacheKey);
+            if (cached != null) {
+                log.debug("ETA cache HIT for key={}", cacheKey);
+                return cached;
+            }
+
+            DeliveryEstimateDto estimate = deliveryClient.getDeliveryEstimate(
+                    shopLat, shopLng, userLat, userLng);
+
+            if (estimate != null && estimate.getEtaLabel() != null) {
+                redis.opsForValue().set(cacheKey, estimate.getEtaLabel(), ETA_CACHE_TTL);
+                log.debug("ETA cache MISS → stored etaLabel={} for key={}", estimate.getEtaLabel(), cacheKey);
+                return estimate.getEtaLabel();
+            }
+        } catch (Exception e) {
+            log.warn("ETA resolution failed for sellerId={}: {}", sellerId, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Stamps every product's deliveryText with "Delivery in {etaLabel}".
+     * No-op when etaLabel is null (ETA unavailable — keeps existing text).
+     */
+    private void injectDeliveryText(List<SearchProductDto> products, String etaLabel) {
+        if (etaLabel == null || products == null || products.isEmpty()) return;
+        String deliveryText = "Delivery in " + etaLabel;
+        products.forEach(p -> p.setDeliveryText(deliveryText));
+    }
+
     /**
      * Builds a deterministic cache key from all request params.
-     * userId is intentionally excluded — wishlist flags are injected post-cache.
+     * userId and user coordinates are intentionally excluded — wishlist/ETA
+     * are injected post-cache.
      */
     private String buildCacheKey(SearchRequest req) {
         StringBuilder sb = new StringBuilder(CACHE_PREFIX);
