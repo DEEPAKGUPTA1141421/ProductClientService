@@ -48,6 +48,7 @@ public class CartService extends BaseService {
     private final ProductAttributeRepository  productAttributeRepository;
     private final EventPublisherService       eventPublisher;
     private final com.ProductClientService.ProductClientService.Repository.UserRepojectory userRepo;
+    private final com.ProductClientService.ProductClientService.Repository.SellerAddressRepository sellerAddressRepository;
 
     // ── Internal data holders ─────────────────────────────────────────────────
 
@@ -58,7 +59,8 @@ public class CartService extends BaseService {
     private record BatchContext(
             Map<UUID, ProductVariant>        variantMap,
             Map<UUID, UUID>                  productToShop,
-            Map<UUID, List<ProductAttribute>> imageAttrByProduct
+            Map<UUID, List<ProductAttribute>> imageAttrByProduct,
+            Map<UUID, com.ProductClientService.ProductClientService.Model.Address> sellerAddressMap
     ) {}
 
     /** Resolved cart-level coupon data (code, amount, raw string). */
@@ -138,7 +140,7 @@ public class CartService extends BaseService {
             List<CartItemDto>         itemDtos     = buildValidatedItems(cartItems, ctx, issues);
             BigDecimal                totalNet     = netAfterItemDiscounts(itemDtos);
             Map<UUID, List<CartItemDto>> byShop    = groupByShop(itemDtos);
-            List<SubOrderDto>         subOrders    = buildSubOrders(byShop, couponInfo, totalNet);
+            List<SubOrderDto>         subOrders    = buildSubOrders(byShop, couponInfo, totalNet, ctx);
 
             return new ApiResponse<>(true, "Cart fetched",
                     assembleCartResponse(cart, userId, itemDtos, subOrders, couponInfo, issues), 200);
@@ -257,7 +259,7 @@ public class CartService extends BaseService {
                 .build();
     }
 
-    /** Loads variants, seller IDs, and image attributes in 3 DB queries. */
+    /** Loads variants, seller IDs, image attributes, and seller addresses in 4 DB queries. */
     private BatchContext loadBatchContext(List<CartItem> cartItems) {
         Set<UUID> variantIds = cartItems.stream().map(CartItem::getVariantId).collect(Collectors.toSet());
         Set<UUID> productIds = cartItems.stream().map(CartItem::getProductId).collect(Collectors.toSet());
@@ -274,7 +276,17 @@ public class CartService extends BaseService {
                 .findImageAttributesByProductIds(productIds).stream()
                 .collect(Collectors.groupingBy(pa -> pa.getProduct().getId()));
 
-        return new BatchContext(variantMap, productToShop, imageAttrByProduct);
+        // Batch-load one address per seller (shopId = sellerId)
+        Set<UUID> sellerIds = new java.util.HashSet<>(productToShop.values());
+        Map<UUID, com.ProductClientService.ProductClientService.Model.Address> sellerAddressMap =
+                sellerAddressRepository.findBySellerIdIn(sellerIds).stream()
+                        .filter(a -> a.getSeller() != null)
+                        .collect(Collectors.toMap(
+                                a -> a.getSeller().getId(),
+                                a -> a,
+                                (a1, a2) -> a1)); // keep first if multiple addresses exist
+
+        return new BatchContext(variantMap, productToShop, imageAttrByProduct, sellerAddressMap);
     }
 
     /** Validates the cart-level coupon; adds a CART_COUPON_EXPIRED issue if stale. */
@@ -391,15 +403,17 @@ public class CartService extends BaseService {
 
     private List<SubOrderDto> buildSubOrders(Map<UUID, List<CartItemDto>> byShop,
                                              CartCouponInfo couponInfo,
-                                             BigDecimal totalNet) {
+                                             BigDecimal totalNet,
+                                             BatchContext ctx) {
         return byShop.entrySet().stream()
-                .map(e -> buildSubOrder(e.getKey(), e.getValue(), couponInfo, totalNet))
+                .map(e -> buildSubOrder(e.getKey(), e.getValue(), couponInfo, totalNet, ctx))
                 .collect(Collectors.toList());
     }
 
-    /** Builds one shop's sub-order with proportional cart-coupon allocation. */
+    /** Builds one shop's sub-order with proportional cart-coupon allocation and shop coordinates. */
     private SubOrderDto buildSubOrder(UUID shopId, List<CartItemDto> shopItems,
-                                      CartCouponInfo couponInfo, BigDecimal totalNet) {
+                                      CartCouponInfo couponInfo, BigDecimal totalNet,
+                                      BatchContext ctx) {
         BigDecimal shopSub      = shopItems.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal shopItemDisc = shopItems.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal shopNet      = shopSub.subtract(shopItemDisc);
@@ -408,8 +422,18 @@ public class CartService extends BaseService {
         BigDecimal gst          = taxable.multiply(GST_RATE).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         BigDecimal delivery     = taxable.compareTo(FREE_DELIVERY_THRESHOLD) > 0 ? BigDecimal.ZERO : DELIVERY_CHARGE_AMOUNT;
 
+        // Resolve seller address for origin coordinates
+        com.ProductClientService.ProductClientService.Model.Address addr =
+                ctx.sellerAddressMap().get(shopId);
+        Double shopLat  = (addr != null && addr.getLatitude()  != null) ? addr.getLatitude().doubleValue()  : null;
+        Double shopLng  = (addr != null && addr.getLongitude() != null) ? addr.getLongitude().doubleValue() : null;
+        String shopCity = addr != null ? addr.getCity() : null;
+        String shopAddr = addr != null ? addr.getLine1() : null;
+
         return SubOrderDto.builder()
                 .shopId(shopId).items(shopItems)
+                .shopAddress(shopAddr).shopCity(shopCity)
+                .shopLat(shopLat).shopLng(shopLng)
                 .subTotal(r2(shopSub)).itemLevelDiscount(r2(shopItemDisc))
                 .proportionalCartDiscount(r2(shopCartDisc))
                 .taxableAmount(r2(taxable)).gstCharge(r2(gst)).deliveryCharge(r2(delivery))
