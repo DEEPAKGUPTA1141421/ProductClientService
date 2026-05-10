@@ -53,6 +53,7 @@ import com.ProductClientService.ProductClientService.Repository.ProductAttribute
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductMediaRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductVariantRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductRatingRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.Repository.StandardProductRepository;
@@ -98,6 +99,7 @@ public class SellerService {
     private final EventPublisherService eventPublisher;
     private final ElasticsearchProductIndexer elasticsearchProductIndexer;
     private final ProductMediaRepository productMediaRepository;
+    private final ProductRatingRepository productRatingRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -1192,6 +1194,66 @@ public class SellerService {
         }
         productVariantRepository.save(variant);
         return new ApiResponse<>(true, "Variant updated", java.util.Map.of("id", variantId.toString()), 200);
+    }
+
+    // ── GET /reviews ────────────────────────────────────────────────────────────
+    public ApiResponse<Object> getSellerReviews(int page, int size) {
+        UUID sellerId = getUserId();
+        int safeSize   = Math.min(Math.max(size, 1), 50);
+        int offset     = page * safeSize;
+        List<Object[]> rows = productRatingRepository.findReviewsBySeller(sellerId, safeSize, offset);
+        long total          = productRatingRepository.countReviewsBySeller(sellerId);
+
+        List<Map<String, Object>> reviews = rows.stream().map(r -> {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("id",               r[0] != null ? r[0].toString() : "");
+            m.put("rating",           r[1] != null ? ((Number) r[1]).intValue() : 0);
+            m.put("title",            r[2] != null ? r[2].toString() : "");
+            m.put("review",           r[3] != null ? r[3].toString() : "");
+            m.put("helpfulCount",     r[4] != null ? ((Number) r[4]).intValue() : 0);
+            m.put("verifiedPurchase", r[5] != null && (Boolean) r[5]);
+            m.put("createdAt",        r[6] != null ? r[6].toString() : "");
+            m.put("productId",        r[7] != null ? r[7].toString() : "");
+            m.put("productName",      r[8] != null ? r[8].toString() : "");
+            m.put("reviewerName",     r[9] != null ? r[9].toString() : "Anonymous");
+            return m;
+        }).toList();
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("reviews",      reviews);
+        payload.put("page",         page);
+        payload.put("size",         safeSize);
+        payload.put("totalElements", total);
+        payload.put("totalPages",   (int) Math.ceil((double) total / safeSize));
+        payload.put("hasMore",      (long) (page + 1) * safeSize < total);
+        return new ApiResponse<>(true, "Reviews fetched", payload, 200);
+    }
+
+    // ── GET /reviews/summary ─────────────────────────────────────────────────
+    public ApiResponse<Object> getSellerReviewSummary() {
+        UUID sellerId = getUserId();
+
+        List<Object[]> avgRow = productRatingRepository.findSellerRatingSummary(sellerId);
+        double avgRating   = 0.0;
+        long   totalCount  = 0L;
+        if (!avgRow.isEmpty() && avgRow.get(0)[0] != null) {
+            avgRating  = ((Number) avgRow.get(0)[0]).doubleValue();
+            totalCount = ((Number) avgRow.get(0)[1]).longValue();
+        }
+
+        List<Object[]> distRows = productRatingRepository.findSellerStarDistribution(sellerId);
+        Map<String, Long> distribution = new java.util.LinkedHashMap<>();
+        for (int i = 5; i >= 1; i--) distribution.put(String.valueOf(i), 0L);
+        for (Object[] row : distRows) {
+            String star = String.valueOf(((Number) row[0]).intValue());
+            distribution.put(star, ((Number) row[1]).longValue());
+        }
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("avgRating",    Math.round(avgRating * 10.0) / 10.0);
+        payload.put("totalCount",   totalCount);
+        payload.put("distribution", distribution);
+        return new ApiResponse<>(true, "Review summary", payload, 200);
     }
 
     private UUID getUserId() {

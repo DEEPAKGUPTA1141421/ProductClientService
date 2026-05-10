@@ -60,6 +60,15 @@ public class Seller {
     @Column(name = "profile_photo_url")
     private String profilePhotoUrl;
 
+    @Column(name = "cover_image_url")
+    private String coverImageUrl;
+
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
+
+    @Column(name = "website_url")
+    private String websiteUrl;
+
     @Column(name = "profile_imgae_and_videos", columnDefinition = "TEXT")
     private String profileImageAndVideos; // This can be a JSON string or a comma-separated list of URLs
 

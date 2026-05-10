@@ -2,12 +2,15 @@ package com.ProductClientService.ProductClientService.Service;
 
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryEstimateDto;
 import com.ProductClientService.ProductClientService.DTO.search.*;
+import com.ProductClientService.ProductClientService.Model.Seller;
+import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.network.DeliveryInventoryClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +43,9 @@ public class ShopService {
 
     private final ShopSearchService shopSearchService;
     private final DeliveryInventoryClient deliveryClient;
+    private final ShopFollowService shopFollowService;
+    private final SellerRepository sellerRepository;
+    private final ElasticsearchSearchService elasticsearchSearchService;
 
     private static final ExecutorService DELIVERY_EXECUTOR =
             Executors.newCachedThreadPool(r -> {
@@ -74,15 +80,34 @@ public class ShopService {
     }
 
     /**
-     * Full shop detail, enriched with delivery ETA.
+     * Full shop detail, enriched with delivery ETA, follower count and profile extras.
      */
-    public ShopDetailDto getShopDetail(String shopId, double userLat, double userLng) {
+    public ShopDetailDto getShopDetail(String shopId, double userLat, double userLng, UUID userId) {
         ShopSearchDocument doc = shopSearchService.getById(shopId);
         if (doc == null)
             return null;
 
         DeliveryEstimateDto eta = fetchEta(doc, userLat, userLng);
-        return toDetailDto(doc, eta);
+
+        // Enrich with DB-backed profile fields (bio, cover image, website)
+        Seller seller = null;
+        UUID sellerUuid = parseUuid(shopId);
+        if (sellerUuid != null) {
+            seller = sellerRepository.findById(sellerUuid).orElse(null);
+        }
+
+        long followerCount = sellerUuid != null ? shopFollowService.getFollowerCount(sellerUuid) : 0L;
+        boolean isFollowed = sellerUuid != null && shopFollowService.isFollowing(userId, sellerUuid);
+
+        // Product count from ES (page 0, size 0 to get total without transferring docs)
+        long totalProducts = countProductsByShop(shopId);
+
+        return toDetailDto(doc, eta, seller, followerCount, isFollowed, totalProducts);
+    }
+
+    /** Backwards-compatible overload (no auth). */
+    public ShopDetailDto getShopDetail(String shopId, double userLat, double userLng) {
+        return getShopDetail(shopId, userLat, userLng, null);
     }
 
     // ── Page assembly ─────────────────────────────────────────────────────────
@@ -177,7 +202,8 @@ public class ShopService {
                 .build();
     }
 
-    private ShopDetailDto toDetailDto(ShopSearchDocument doc, DeliveryEstimateDto eta) {
+    private ShopDetailDto toDetailDto(ShopSearchDocument doc, DeliveryEstimateDto eta,
+            Seller seller, long followerCount, boolean isFollowed, long totalProducts) {
         String etaLabel = eta != null ? eta.getEtaLabel() : "—";
         double distanceKm = eta != null ? eta.getTotalKm() : 0.0;
         int etaMinutes = eta != null ? eta.getEtaMinutes() : 0;
@@ -204,7 +230,29 @@ public class ShopService {
                 .distanceKm(distanceKm)
                 .etaMinutes(etaMinutes)
                 .sameCityDelivery(sameCity)
+                .coverImageUrl(seller != null ? seller.getCoverImageUrl() : null)
+                .bio(seller != null ? seller.getBio() : null)
+                .websiteUrl(seller != null ? seller.getWebsiteUrl() : null)
+                .followerCount(followerCount)
+                .isFollowed(isFollowed)
+                .totalProducts(totalProducts)
                 .build();
+    }
+
+    private long countProductsByShop(String shopId) {
+        try {
+            com.ProductClientService.ProductClientService.DTO.search.SearchRequest req =
+                    new com.ProductClientService.ProductClientService.DTO.search.SearchRequest();
+            req.setSellerId(parseUuid(shopId));
+            req.setPage(0);
+            req.setPageSize(1);
+            req.setSortBy("rel");
+            SearchResultsResponse result = elasticsearchSearchService.search(req, null);
+            return result.getTotalCount();
+        } catch (Exception e) {
+            log.warn("Could not count products for shop={}: {}", shopId, e.getMessage());
+            return 0L;
+        }
     }
 
     private UUID parseUuid(String s) {

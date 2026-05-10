@@ -431,6 +431,22 @@ public class SellerController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    @GetMapping("/reviews")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getReviews(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "20") int size) {
+        ApiResponse<Object> response = sellerService.getSellerReviews(page, size);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @GetMapping("/reviews/summary")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getReviewSummary() {
+        ApiResponse<Object> response = sellerService.getSellerReviewSummary();
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     // Aadhaar Verification Endpoints
 
     @PostMapping("/kyc/aadhar/send-otp")

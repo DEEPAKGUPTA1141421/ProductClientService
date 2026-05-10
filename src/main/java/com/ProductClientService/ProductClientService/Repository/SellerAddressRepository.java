@@ -95,5 +95,8 @@ public interface SellerAddressRepository extends JpaRepository<Address, UUID> {
     }
 
     Optional<Address> findBySellerId(UUID sellerId);
+
+    @Query("SELECT a FROM Address a WHERE a.seller.id IN :sellerIds")
+    List<Address> findBySellerIdIn(@Param("sellerIds") java.util.Collection<UUID> sellerIds);
 }
 // lkjiuhbkj jhguy jhguyjbhjh jhmbiymnbjhb jhb

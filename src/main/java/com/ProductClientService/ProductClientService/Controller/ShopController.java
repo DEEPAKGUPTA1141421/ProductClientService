@@ -4,11 +4,16 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.search.ShopDetailDto;
 import com.ProductClientService.ProductClientService.DTO.search.ShopFilterRequest;
 import com.ProductClientService.ProductClientService.DTO.search.ShopPageResponse;
+import com.ProductClientService.ProductClientService.Service.ShopFollowService;
 import com.ProductClientService.ProductClientService.Service.ShopService;
+import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
 
 import java.util.List;
 
@@ -51,6 +56,7 @@ import java.util.List;
 public class ShopController {
 
     private final ShopService shopService;
+    private final ShopFollowService shopFollowService;
 
     // ── Nearby listing ────────────────────────────────────────────────────────
 
@@ -95,7 +101,7 @@ public class ShopController {
 
     /**
      * Returns full shop detail enriched with delivery ETA.
-     * Called when the user taps a shop card in the listing.
+     * Auth is optional — isFollowed is populated when user is logged in.
      */
     @GetMapping("/{shopId}")
     public ResponseEntity<ApiResponse<ShopDetailDto>> shopDetail(
@@ -103,11 +109,46 @@ public class ShopController {
             @RequestParam(defaultValue = "0.0") double userLat,
             @RequestParam(defaultValue = "0.0") double userLng) {
 
-        ShopDetailDto detail = shopService.getShopDetail(shopId, userLat, userLng);
+        UUID userId = getOptionalUserId();
+        ShopDetailDto detail = shopService.getShopDetail(shopId, userLat, userLng, userId);
         if (detail == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiResponse<>(false, "Shop not found", null, 404));
         }
         return ResponseEntity.ok(new ApiResponse<>(true, "Shop detail fetched", detail, 200));
+    }
+
+    // ── Follow / Unfollow ─────────────────────────────────────────────────────
+
+    @PostMapping("/{shopId}/follow")
+    public ResponseEntity<ApiResponse<Void>> follow(@PathVariable String shopId) {
+        UUID userId = getAuthenticatedUserId();
+        shopFollowService.follow(userId, UUID.fromString(shopId));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Followed", null, 200));
+    }
+
+    @DeleteMapping("/{shopId}/follow")
+    public ResponseEntity<ApiResponse<Void>> unfollow(@PathVariable String shopId) {
+        UUID userId = getAuthenticatedUserId();
+        shopFollowService.unfollow(userId, UUID.fromString(shopId));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Unfollowed", null, 200));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private UUID getAuthenticatedUserId() {
+        return ((UserPrincipal) SecurityContextHolder.getContext()
+                .getAuthentication().getPrincipal()).getId();
+    }
+
+    private UUID getOptionalUserId() {
+        try {
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof UserPrincipal p) {
+                return p.getId();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 }
