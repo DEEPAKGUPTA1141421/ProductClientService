@@ -21,6 +21,7 @@ import com.ProductClientService.ProductClientService.DTO.RefreshRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.TokenPairResponse;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.CreateRiderDto;
+import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.RiderDetailsResponse;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.RiderIdResponse;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Seller.ONBOARDSTAGE;
@@ -184,27 +185,33 @@ public class AuthService {
                     200);
         } else if (authrequest.typeOfUser() == AuthRequest.UserType.RIDER) {
 
-            ApiResponse<RiderIdResponse> response = deliveryInventoryClient.createRiderWithPhone(
-                    new CreateRiderDto("PHONE", authrequest.phone()));
+            UUID riderId;
 
-            if (response.statusCode() == 200 && response.success()) {
-                UUID riderId = response.data().id();
-                String accessToken = jwtService.generateToken(authrequest.phone(), "RIDER", riderId);
-                RefreshToken refreshToken = refreshTokenService.createRefreshToken(
-                        riderId, authrequest.phone(), "RIDER", null);
+            if (authrequest.isSignup()) {
+                ApiResponse<RiderIdResponse> response = deliveryInventoryClient.createRiderWithPhone(
+                        new CreateRiderDto("PHONE", authrequest.phone()));
 
-                return new ApiResponse<>(true, "OTP Verification Success",
-                        new TokenPairResponse(
-                                accessToken,
-                                refreshToken.getToken(),
-                                jwtService.getExpirationInSeconds(),
-                                refreshToken.getExpiresAt().toEpochSecond() -
-                                        java.time.ZonedDateTime.now().toEpochSecond(),
-                                response.data()),
-                        200);
+                if (response.statusCode() != 200 || !response.success()) {
+                    throw new RuntimeException("Failed to create rider: " + response.message());
+                }
+                riderId = response.data().id();
             } else {
-                throw new RuntimeException("Failed to create rider: " + response.message());
+                riderId = deliveryInventoryClient.getRiderByPhone(authrequest.phone()).id();
             }
+
+            String accessToken = jwtService.generateToken(authrequest.phone(), "RIDER", riderId);
+            RefreshToken refreshToken = refreshTokenService.createRefreshToken(
+                    riderId, authrequest.phone(), "RIDER", null);
+
+            return new ApiResponse<>(true, "OTP Verification Success",
+                    new TokenPairResponse(
+                            accessToken,
+                            refreshToken.getToken(),
+                            jwtService.getExpirationInSeconds(),
+                            refreshToken.getExpiresAt().toEpochSecond() -
+                                    java.time.ZonedDateTime.now().toEpochSecond(),
+                            null),
+                    200);
         }
 
         return new ApiResponse<>(false, "Invalid User Type", null, 403);

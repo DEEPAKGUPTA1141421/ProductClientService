@@ -11,7 +11,9 @@ public record AuthRequest(
 
                 @NotBlank(message = "otp_code is required") @Size(min = 6, max = 6, message = "OTP must be exactly 6 digits") String otp_code,
 
-                @NotNull(message = "User type is required") UserType typeOfUser) {
+                @NotNull(message = "User type is required") UserType typeOfUser,
+
+                boolean isSignup) {
         public enum UserType {
                 SELLER,
                 USER,
