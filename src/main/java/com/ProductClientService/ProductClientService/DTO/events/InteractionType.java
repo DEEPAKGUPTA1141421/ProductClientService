@@ -10,9 +10,14 @@ public enum InteractionType {
     VIEW((short) 1, 1.0),
     CLICK((short) 2, 2.0),
     WISHLIST((short) 3, 4.0),
-    CART((short) 4, 6.0),
+    ADD_TO_CART((short) 4, 6.0),
     PURCHASE_PREPAID((short) 5, 10.0),
-    PURCHASE_COD((short) 6, 14.0);
+    PURCHASE_COD((short) 6, 14.0),
+    REMOVE_FROM_CART((short) 7, 3.0),
+    SHARE((short) 8, 3.0),
+    BEGIN_CHECKOUT((short) 9, 8.0),
+    CANCEL((short) 10, 1.0),
+    RETURN((short) 11, 1.0);
 
     private final short code;
     private final double weight;

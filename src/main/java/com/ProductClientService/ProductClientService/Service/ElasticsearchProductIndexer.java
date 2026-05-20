@@ -65,8 +65,9 @@ public class ElasticsearchProductIndexer {
                 log.warn("Could not build ES document for productId={}", productId);
                 return;
             }
-            esClient.index(i -> i.index(INDEX).id(productId.toString()).document(doc));
-            log.info("Indexed productId={} to ES", productId);
+            String routing = doc.getSellerId() != null ? doc.getSellerId() : productId.toString();
+            esClient.index(i -> i.index(INDEX).id(productId.toString()).routing(routing).document(doc));
+            log.info("Indexed productId={} sellerId={} to ES", productId, routing);
         } catch (Exception e) {
             log.error("Failed to index productId={}: {}", productId, e.getMessage());
         }
@@ -81,8 +82,9 @@ public class ElasticsearchProductIndexer {
         for (UUID id : productIds) {
             ProductSearchDocument doc = buildDocument(id);
             if (doc == null) continue;
+            String routing = doc.getSellerId() != null ? doc.getSellerId() : id.toString();
             ops.add(BulkOperation.of(b -> b.index(
-                    IndexOperation.of(i -> i.index(INDEX).id(id.toString()).document(doc)))));
+                    IndexOperation.of(i -> i.index(INDEX).id(id.toString()).routing(routing).document(doc)))));
         }
 
         if (ops.isEmpty()) return;

@@ -37,6 +37,12 @@ public class SubOrderDto {
     /** Items in this sub-order (subset of cart items). */
     private List<CartItemDto> items;
 
+    // ── Origin (seller/shop location) — becomes originLat/Lng in the delivery Order ──
+    private String shopAddress;  // seller's full address line
+    private String shopCity;
+    private Double shopLat;
+    private Double shopLng;
+
     /** Raw total before any discounts. */
     private double subTotal;
 

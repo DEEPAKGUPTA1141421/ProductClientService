@@ -20,4 +20,7 @@ public class DeliveryInvetoryApiDto {
     public record RiderIdResponse(UUID id) {
     }
 
+    public record RiderDetailsResponse(UUID id) {
+    }
+
 }

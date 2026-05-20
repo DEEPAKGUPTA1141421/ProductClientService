@@ -305,6 +305,20 @@ public class UserService {
         return repo.findTop10ByUserIdOrderByUpdatedAtDesc(getUserId());
     }
 
+    // ── FCM token registration ────────────────────────────────────────────────
+
+    @Transactional
+    public ApiResponse<Object> registerFcmToken(String token) {
+        if (token == null || token.isBlank()) {
+            return new ApiResponse<>(false, "Token must not be blank", null, 400);
+        }
+        userRepojectory.findById(getUserId()).ifPresent(user -> {
+            user.setFcmToken(token);
+            userRepojectory.save(user);
+        });
+        return new ApiResponse<>(true, "FCM token registered", null, 200);
+    }
+
     private UUID getUserId() {
         return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
     }

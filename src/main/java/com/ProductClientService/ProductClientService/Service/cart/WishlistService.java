@@ -192,17 +192,23 @@ public class WishlistService {
             if (variant == null || variant.getPrice() == null)
                 continue;
 
-            BigDecimal added = parseSafe(wi.getAddedPrice());
-            BigDecimal current = parseSafe(variant.getPrice());
+            BigDecimal addedPaise   = parseSafe(wi.getAddedPrice());
+            BigDecimal currentPaise = parseSafe(variant.getPrice());
 
             // Only report actual drops (not increases)
-            if (current.compareTo(added) >= 0)
+            if (currentPaise.compareTo(addedPaise) >= 0)
                 continue;
 
-            BigDecimal drop = added.subtract(current);
-            double dropPercent = drop.divide(added, 4, RoundingMode.HALF_UP)
+            BigDecimal dropPaise = addedPaise.subtract(currentPaise);
+            double dropPercent = dropPaise.divide(addedPaise, 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100))
                     .doubleValue();
+
+            // Convert paise → rupees for client display
+            BigDecimal hundred      = BigDecimal.valueOf(100);
+            String addedRupees      = addedPaise.divide(hundred, 2, RoundingMode.HALF_UP).toPlainString();
+            String currentRupees    = currentPaise.divide(hundred, 2, RoundingMode.HALF_UP).toPlainString();
+            String dropAmountRupees = dropPaise.divide(hundred, 2, RoundingMode.HALF_UP).toPlainString();
 
             // Resolve display name and image cheaply from in-memory product
             Product product = productMap.get(wi.getProductId());
@@ -217,9 +223,9 @@ public class WishlistService {
                     .variantId(wi.getVariantId())
                     .productName(name)
                     .imageUrl(image)
-                    .addedPrice(wi.getAddedPrice())
-                    .currentPrice(variant.getPrice())
-                    .dropAmount(drop.toPlainString())
+                    .addedPrice(addedRupees)
+                    .currentPrice(currentRupees)
+                    .dropAmount(dropAmountRupees)
                     .dropPercent(Math.round(dropPercent * 10.0) / 10.0)
                     .build());
         }

@@ -21,7 +21,24 @@ public class SearchResultsResponse {
 
     private List<SearchProductDto> products;
 
+    /** Non-null when the query was scoped to a single shop. */
+    private ShopScope shopScope;
+
+    /**
+     * Opaque cursor for the next page via search_after.
+     * Non-null only when hasMore=true. Pass as `cursor` param on the next request.
+     */
+    private String nextCursor;
+
     // ── Nested DTOs ──────────────────────────────────────────────────
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ShopScope {
+        private UUID sellerId;
+    }
 
     @Data
     @Builder
@@ -57,5 +74,9 @@ public class SearchResultsResponse {
         private boolean isInCart;     // requires userId from JWT
 
         private UUID variantId; // cheapest in-stock variant
+
+        // Category — populated by ElasticsearchSearchService; used for storefront section grouping
+        private UUID categoryId;
+        private String categoryName;
     }
 }

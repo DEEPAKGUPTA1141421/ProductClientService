@@ -32,6 +32,7 @@ public class EventPublisherService {
     public static final String TOPIC_REVIEW_SUBMITTED         = "review.submitted";
     public static final String TOPIC_REVIEW_HELPFUL           = "review.helpful";
     public static final String TOPIC_USER_INTERACTION         = "user.interaction";
+    public static final String TOPIC_SELLER_LIVE              = "seller.live";
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -58,6 +59,15 @@ public class EventPublisherService {
     public void publishWishlistRemove(UUID productId, UUID userId) {
         publish(TOPIC_WISHLISTED, ProductWishlistedEvent.builder()
                 .productId(productId).userId(userId).action("REMOVE").build());
+    }
+
+    /**
+     * Published when a seller's status transitions to ACTIVE (admin approval).
+     * Consumed by ShopIndexerConsumer to index the seller as a shop in shops-v1.
+     */
+    @Async
+    public void publishSellerLive(UUID sellerId) {
+        publish(TOPIC_SELLER_LIVE, SellerLiveEvent.builder().sellerId(sellerId).build());
     }
 
     /**

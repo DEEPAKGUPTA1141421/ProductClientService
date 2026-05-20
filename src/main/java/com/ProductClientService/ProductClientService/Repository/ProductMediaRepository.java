@@ -15,6 +15,9 @@ public interface ProductMediaRepository extends JpaRepository<ProductMedia, UUID
 
     List<ProductMedia> findByProductIdOrderByPositionAsc(UUID productId);
 
+    @Query("SELECT m.url FROM ProductMedia m WHERE m.product.id = :productId AND m.isCover = true")
+    java.util.Optional<String> findCoverImageUrlByProductId(@Param("productId") UUID productId);
+
     int countByProductId(UUID productId);
 
     @Modifying

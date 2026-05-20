@@ -17,6 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.MediaType;
@@ -134,6 +135,14 @@ public class UserController {
     @DeleteMapping("/account")
     public ResponseEntity<?> deleteAccount() {
         return ResponseEntity.ok(userService.requestAccountDeletion());
+    }
+
+    // ── FCM device token ──────────────────────────────────────────────────────
+
+    @PostMapping("/fcm-token")
+    public ResponseEntity<?> registerFcmToken(@RequestBody Map<String, String> body) {
+        String token = body.get("token");
+        return ResponseEntity.ok(userService.registerFcmToken(token));
     }
 }
 // uhiuhu uihiuh hjkj h8yiuhy uyg97 gfyugyugujnnnkjnn nkjnnkjn jihknk

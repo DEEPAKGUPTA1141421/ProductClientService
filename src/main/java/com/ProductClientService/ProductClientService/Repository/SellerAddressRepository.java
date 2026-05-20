@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.Model.Seller;
@@ -95,5 +97,8 @@ public interface SellerAddressRepository extends JpaRepository<Address, UUID> {
     }
 
     Optional<Address> findBySellerId(UUID sellerId);
+
+    @Query("SELECT a FROM Address a WHERE a.seller.id IN :sellerIds")
+    List<Address> findBySellerIdIn(@Param("sellerIds") java.util.Collection<UUID> sellerIds);
 }
 // lkjiuhbkj jhguy jhguyjbhjh jhmbiymnbjhb jhb

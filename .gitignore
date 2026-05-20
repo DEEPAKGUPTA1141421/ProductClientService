@@ -94,5 +94,7 @@ replay_pid*
 
 *.env
 
+graphify-out/
+
 
 

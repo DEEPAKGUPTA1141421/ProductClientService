@@ -1,6 +1,7 @@
 package com.ProductClientService.ProductClientService.DTO.tracking;
 
 import com.ProductClientService.ProductClientService.DTO.events.InteractionType;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -25,7 +26,7 @@ public class InteractionBatchRequest {
     @Data
     public static class Event {
         @NotNull private UUID productId;
-        @NotNull private InteractionType eventType;
+        @JsonAlias("type") @NotNull private InteractionType eventType;
         private Integer dwellMs;
         private String source;
         private Instant ts;

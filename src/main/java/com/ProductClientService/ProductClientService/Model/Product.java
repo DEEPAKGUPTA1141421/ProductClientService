@@ -75,6 +75,9 @@ public class Product {
     @Column(name = "is_standard", nullable = false)
     private Boolean isStandard = true;
 
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
     @Column(name = "search_intent_created", nullable = false)
     private Boolean searchIntentCreated = false;
 

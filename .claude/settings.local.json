@@ -10,7 +10,8 @@
       "Bash(xargs cat *)",
       "Bash(./mvnw -q -DskipTests compile)",
       "Bash(git reset *)",
-      "Bash(mvn clean *)"
+      "Bash(mvn clean *)",
+      "Bash(grep \"\\\\.java$\")"
     ]
   }
 }

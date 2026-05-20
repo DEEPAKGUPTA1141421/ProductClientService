@@ -21,6 +21,7 @@ import co.elastic.clients.elasticsearch.core.GetResponse;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.CategoryTreeDTO;
+import com.ProductClientService.ProductClientService.DTO.GroupedCategoryDto;
 import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.ProductRatingDTO;
 import com.ProductClientService.ProductClientService.DTO.RatingSummaryDTO;
@@ -45,6 +46,7 @@ import com.ProductClientService.ProductClientService.Repository.ProductRatingRep
 import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Repository.SectionRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
+import com.ProductClientService.ProductClientService.Repository.Projection.CategoryBrowseProjection;
 import com.ProductClientService.ProductClientService.Repository.Projection.CategoryProjection;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ProductClientService.ProductClientService.Model.User;
@@ -181,6 +183,50 @@ public class ProductService {
 
     public List<Category> getCategoriesByParentIds(List<UUID> parentIds) {
         return categoryRepository.findByParentIdIn(parentIds);
+    }
+
+    /**
+     * Returns the two-level hierarchy needed by the browse screen:
+     *   SUBCATEGORY (heading) → SUBSUBCATEGORY (clickable items)
+     *
+     * Two queries total — one for subcategories, one for subsubcategories.
+     * Grouped in-memory; no N+1.
+     */
+    public ApiResponse<Object> getBrowseCategories(UUID superCategoryId) {
+        try {
+            List<CategoryBrowseProjection> subCategories =
+                    categoryRepository.findProjectedByParentId(superCategoryId);
+
+            if (subCategories.isEmpty()) {
+                return new ApiResponse<>(true, "Browse categories fetched", List.of(), 200);
+            }
+
+            List<UUID> subCategoryIds = subCategories.stream()
+                    .map(CategoryBrowseProjection::getId)
+                    .toList();
+
+            List<CategoryBrowseProjection> subSubCategories =
+                    categoryRepository.findProjectedByParentIdIn(subCategoryIds);
+
+            Map<UUID, List<GroupedCategoryDto.SubItem>> grouped = subSubCategories.stream()
+                    .collect(Collectors.groupingBy(
+                            CategoryBrowseProjection::getParentId,
+                            Collectors.mapping(
+                                    c -> new GroupedCategoryDto.SubItem(c.getId(), c.getName(), c.getImageUrl()),
+                                    Collectors.toList())));
+
+            List<GroupedCategoryDto> result = subCategories.stream()
+                    .map(sc -> new GroupedCategoryDto(
+                            sc.getId(),
+                            sc.getName(),
+                            sc.getImageUrl(),
+                            grouped.getOrDefault(sc.getId(), List.of())))
+                    .toList();
+
+            return new ApiResponse<>(true, "Browse categories fetched", result, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, e.getMessage(), null, 500);
+        }
     }
 
     public ApiResponse<Object> getSectionsByCategory(String category) {

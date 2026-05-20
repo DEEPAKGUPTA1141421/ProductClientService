@@ -92,6 +92,7 @@ public class WebConfig {
                                                                 "/api/v1/product/category",
                                                                 "api/v1/wishlist/token/**",
                                                                 "/api/v1/product/search",
+                                                                "/api/v1/admin/sellers/**",
                                                                 "/api/v1/brands/category/**")
                                                 .permitAll()
 
@@ -107,7 +108,12 @@ public class WebConfig {
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/sections/**")
                                                 .permitAll()
 
-                                                // ✅ Interaction tracking — accept guests (userId attached if JWT present)
+                                                // ✅ Shops — all GET endpoints are public (listing, search, detail, storefront)
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/shops/**")
+                                                .permitAll()
+
+                                                // ✅ Interaction tracking — accept guests (userId attached if JWT
+                                                // present)
                                                 .requestMatchers(HttpMethod.POST, "/api/v1/track/**")
                                                 .permitAll()
 
@@ -134,4 +140,4 @@ public class WebConfig {
         }
 }
 // juoiiojnji jioji mmjio uiouoinjjjknjknjnjnjkjjnkjnk
-// jliio uiu8u88uuiiiu8iui
+// jliio uiu8u88uuiiiu8iuinbhui hukjijijijijjn
