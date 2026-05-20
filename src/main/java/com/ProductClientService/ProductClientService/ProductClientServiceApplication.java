@@ -19,6 +19,7 @@ public class ProductClientServiceApplication {
 	public static void main(String[] args) {
 		try {
 			Dotenv dotenv = Dotenv.configure()
+					.directory(".")
 					.ignoreIfMissing()
 					.load();
 			dotenv.entries().forEach(entry -> {
