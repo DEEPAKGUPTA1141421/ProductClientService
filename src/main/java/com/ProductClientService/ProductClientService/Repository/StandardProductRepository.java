@@ -45,5 +45,12 @@ public interface StandardProductRepository extends JpaRepository<StandardProduct
     boolean existsByEan(String ean);
 
     boolean existsByProductCode(String productCode);
+
+    // Eagerly fetches brand and category in one query — use this for bulk ES
+    // indexing so lazy-proxy init never fires outside the session.
+    @Query("SELECT sp FROM StandardProduct sp LEFT JOIN FETCH sp.brandEntity LEFT JOIN FETCH sp.category")
+    List<StandardProduct> findAllWithAssociations();
+
+    List<StandardProduct> findByStatusOrderByCreatedAtDesc(StandardProduct.Status status);
 }
 /// hjuyhyikhiuyiyugyuyut7yut7hugub 
