@@ -98,6 +98,25 @@ public class SellerController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    // ── GET /api/v1/seller/product/my-products-es ────────────────────────────
+    @GetMapping("/my-products-es")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getMyLiveProductsEs(
+            @RequestParam(defaultValue = "0")  int     page,
+            @RequestParam(defaultValue = "50") int     size,
+            @RequestParam(required = false)    String  query,
+            @RequestParam(required = false)    UUID    categoryId,
+            @RequestParam(required = false)    UUID    brandId,
+            @RequestParam(required = false)    Double  minPrice,
+            @RequestParam(required = false)    Double  maxPrice,
+            @RequestParam(defaultValue = "newest") String sortBy,
+            @RequestParam(required = false)    Boolean isActive,
+            @RequestParam(required = false)    Integer maxStock) {
+        ApiResponse<Object> response = sellerService.getMyLiveProductsEs(
+                page, size, query, categoryId, brandId, minPrice, maxPrice, sortBy, isActive, maxStock);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/draft-product/full")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getDraftProductFull() {
@@ -127,6 +146,13 @@ public class SellerController {
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> toggleActive(@PathVariable UUID productId) {
         ApiResponse<Object> response = sellerService.toggleActive(productId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @GetMapping("/{productId}/edit-data")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getProductEditData(@PathVariable UUID productId) {
+        ApiResponse<Object> response = sellerService.getProductEditData(productId);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
@@ -424,9 +450,16 @@ public class SellerController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    @GetMapping("/catalog/detail/{standardProductId}")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getCatalogDetail(@PathVariable UUID standardProductId) {
+        ApiResponse<Object> response = sellerService.getCatalogDetail(standardProductId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @PostMapping("/listing/from-catalog")
     @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<?> createListingFromCatalog(@RequestBody CreateListingFromCatalogDto dto) {
+    public ResponseEntity<?> createListingFromCatalog(@Valid @RequestBody CreateListingFromCatalogDto dto) {
         ApiResponse<Object> response = sellerService.createListingFromCatalog(dto);
         return ResponseEntity.status(response.statusCode()).body(response);
     }

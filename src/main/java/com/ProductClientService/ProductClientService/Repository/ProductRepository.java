@@ -263,6 +263,16 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("size")     int  size,
             @Param("offset")   int  offset);
 
+    /** Stock count + is_active for a batch of product IDs (used by ES-backed seller listing). */
+    @Query(value = """
+            SELECT p.id::text, COALESCE(SUM(v.stock), 0), p.is_active
+            FROM   products p
+            LEFT JOIN product_variants v ON v.product_id = p.id
+            WHERE  p.id IN :ids
+            GROUP BY p.id, p.is_active
+            """, nativeQuery = true)
+    List<Object[]> findStockAndActiveByIds(@Param("ids") List<UUID> ids);
+
     /** Active products whose total variant stock is at or below the threshold. */
     @Query(value = """
             SELECT
