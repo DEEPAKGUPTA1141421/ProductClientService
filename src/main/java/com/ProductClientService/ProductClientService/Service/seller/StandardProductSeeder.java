@@ -287,4 +287,3 @@ public class StandardProductSeeder {
                 standardProductRepository.save(sp);
         }
 }
-// kikik jklkljkbnjkjnjkknjnjjn bhhhkhvgghjhmjhjhjbbh

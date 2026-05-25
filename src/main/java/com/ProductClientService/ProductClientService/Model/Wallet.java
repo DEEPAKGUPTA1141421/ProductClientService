@@ -29,13 +29,13 @@ public class Wallet {
     @Builder.Default
     private Long balancePaise = 0L;
 
-    @Column(length = 3, nullable = false)
+    @Column(length = 3, nullable = false, columnDefinition = "varchar(3) default 'INR'")
     @Builder.Default
     private String currency = "INR";
 
     /** Optimistic lock to prevent concurrent deductions from corrupting balance. */
     @Version
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "bigint default 0")
     private Long version;
 
     @CreationTimestamp

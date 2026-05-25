@@ -137,39 +137,40 @@ public class SellerSettingsService {
             boolean isSaved = saveAddress(addressDetails, dto.phone(), dto.latitude(), dto.longitude());
         }
 
-        // Profile photo upload handling (integrate with your file upload service)
+        // Profile photo upload
         if (dto.profileImage() != null && !dto.profileImage().isEmpty()) {
             try {
                 String photoUrl = fileUploadService.uploadImage(dto.profileImage());
-                logger.info("Uploaded profile photo URL: " + photoUrl);
+                logger.info("Uploaded profile photo: {}", photoUrl);
                 seller.setProfilePhotoUrl(photoUrl);
             } catch (Exception e) {
-                throw new RuntimeException("Error uploading profile photo", e);
+                logger.warn("Profile photo upload skipped (check Cloudinary credentials): {}", e.getMessage());
             }
         }
+
+        // Media files upload
         if (dto.mediaFiles() != null && !dto.mediaFiles().isEmpty()) {
-
-            List<String> urls = new ArrayList<>();
-
+            List<String> newUrls = new ArrayList<>();
             for (MultipartFile file : dto.mediaFiles()) {
                 try {
                     String url = fileUploadService.uploadImage(file);
-                    urls.add(url);
-                    logger.info("Uploaded media file URL: " + url);
+                    newUrls.add(url);
+                    logger.info("Uploaded media file: {}", url);
                 } catch (Exception e) {
-                    logger.error("Error uploading media file", e);
-                    throw new RuntimeException("Error uploading media file", e);
+                    logger.warn("Media file upload skipped ({}): {}", file.getOriginalFilename(), e.getMessage());
                 }
             }
-            try {
-                String existingMedia = seller.getProfileImageAndVideos();
-                List<String> existingUrls = existingMedia != null
-                        ? objectMapper.readValue(existingMedia, List.class)
-                        : new ArrayList<>();
-                existingUrls.addAll(urls);
-                seller.setProfileImageAndVideos(objectMapper.writeValueAsString(existingUrls));
-            } catch (Exception e) {
-                throw new RuntimeException("Error saving media URLs", e);
+            if (!newUrls.isEmpty()) {
+                try {
+                    String existingMedia = seller.getProfileImageAndVideos();
+                    List<String> existingUrls = existingMedia != null
+                            ? objectMapper.readValue(existingMedia, List.class)
+                            : new ArrayList<>();
+                    existingUrls.addAll(newUrls);
+                    seller.setProfileImageAndVideos(objectMapper.writeValueAsString(existingUrls));
+                } catch (Exception e) {
+                    logger.error("Error persisting media URLs: {}", e.getMessage());
+                }
             }
         }
         sellerRepository.save(seller);

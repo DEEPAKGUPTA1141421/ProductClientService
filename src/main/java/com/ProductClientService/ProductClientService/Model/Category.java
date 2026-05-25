@@ -49,8 +49,8 @@ public class Category {
     @JoinColumn(name = "parent_id")
     private Category parent;
 
-    @OneToOne(mappedBy = "category", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    private CategoryAttribute categoryAttribute;
+    @OneToMany(mappedBy = "category", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private java.util.List<CategoryAttribute> categoryAttributes = new java.util.ArrayList<>();
 
     // getters and setters
     @CreationTimestamp

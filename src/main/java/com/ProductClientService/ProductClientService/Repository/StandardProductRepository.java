@@ -53,4 +53,3 @@ public interface StandardProductRepository extends JpaRepository<StandardProduct
 
     List<StandardProduct> findByStatusOrderByCreatedAtDesc(StandardProduct.Status status);
 }
-/// hjuyhyikhiuyiyugyuyut7yut7hugub 
