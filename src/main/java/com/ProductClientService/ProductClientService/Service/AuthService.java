@@ -10,6 +10,7 @@ import java.awt.image.BufferedImage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -77,6 +78,9 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
 
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
+
+    @Value("${testOtpMode:false}")
+    private boolean testOtpMode;
 
     public ApiResponse<?> login(LoginRequest loginRequest) {
 
@@ -285,6 +289,9 @@ public class AuthService {
     }
 
     private String generateOtp() {
+        if (testOtpMode) {
+            return "123456"; // fixed OTP for testing
+        }
         int otp = (int) (Math.random() * 9000) + 100000; // 6-digit OTP
         return String.valueOf(otp);
     }
