@@ -21,7 +21,8 @@ import org.springframework.stereotype.Component;
 public class ElasticsearchIndexInitializer {
 
     static final String SEARCH_INTENTS_INDEX = "search-intents-v1";
-    static final String PRODUCTS_INDEX = "products-v1";
+    static final String PRODUCTS_INDEX       = "products-v1";
+    public static final String CATALOG_INDEX = "catalog-v1";
 
     private final ElasticsearchClient esClient;
 
@@ -30,6 +31,7 @@ public class ElasticsearchIndexInitializer {
         createSearchIntentsIndex();
         createProductsIndex();
         patchProductsIndexForSimilarity();
+        createCatalogIndex();
     }
 
     // ── Additive patch: dense_vector + popularity_7d for similarity search ────
@@ -163,6 +165,77 @@ public class ElasticsearchIndexInitializer {
             log.info("Created Elasticsearch index: {}", PRODUCTS_INDEX);
         } catch (Exception e) {
             log.warn("Could not initialize {} index: {}", PRODUCTS_INDEX, e.getMessage());
+        }
+    }
+
+    // ── catalog-v1 ────────────────────────────────────────────────────────────
+
+    /**
+     * Creates the catalog-v1 index for StandardProduct catalog search.
+     * Called at startup and by StandardProductIndexer before any write.
+     * Idempotent — no-op if the index already exists.
+     *
+     * Mapping:
+     *   name, description, search_keywords → text  (full-text + fuzziness)
+     *   name, brand_name, category_name    → .keyword sub-field
+     *   ean, product_code                  → keyword  (barcode exact lookup)
+     *   category_id, brand_id              → keyword  (filter)
+     *   is_verified                        → boolean  (pre-filter: must=true)
+     *   status                             → keyword  (pre-filter: must=ACTIVE)
+     *   primary_image_url, specifications  → keyword, index=false (display only)
+     */
+    public void createCatalogIndex() {
+        try {
+            if (indexExists(CATALOG_INDEX)) {
+                log.info("Index {} already exists — skipping creation", CATALOG_INDEX);
+                return;
+            }
+            esClient.indices().create(c -> c
+                    .index(CATALOG_INDEX)
+                    .settings(s -> s
+                            .numberOfShards("1")
+                            .numberOfReplicas("1"))
+                    .mappings(m -> m
+                            // ── identity ─────────────────────────────────────────────
+                            .properties("catalog_id", p -> p.keyword(k -> k))
+                            // ── full-text searchable ──────────────────────────────────
+                            .properties("name", p -> p.text(t -> t
+                                    .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(256)))))
+                            .properties("description", p -> p.text(t -> t))
+                            .properties("search_keywords", p -> p.text(t -> t))
+                            // ── exact / barcode lookup ────────────────────────────────
+                            .properties("ean", p -> p.keyword(k -> k))
+                            .properties("product_code", p -> p.keyword(k -> k))
+                            // ── brand / category (text + keyword) ─────────────────────
+                            .properties("brand_id", p -> p.keyword(k -> k))
+                            .properties("brand_name", p -> p.text(t -> t
+                                    .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(128)))))
+                            .properties("category_id", p -> p.keyword(k -> k))
+                            .properties("category_name", p -> p.text(t -> t
+                                    .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(128)))))
+                            // ── lifecycle flags (mandatory pre-filters) ───────────────
+                            .properties("is_verified", p -> p.boolean_(b -> b))
+                            .properties("status", p -> p.keyword(k -> k))
+                            // ── display-only (stored but not indexed) ─────────────────
+                            .properties("primary_image_url", p -> p.keyword(k -> k.index(false)))
+                            .properties("specifications", p -> p.keyword(k -> k.index(false)))
+                            // ── timestamps ────────────────────────────────────────────
+                            .properties("created_at", p -> p.date(d -> d))));
+            log.info("Created Elasticsearch index: {}", CATALOG_INDEX);
+        } catch (Exception e) {
+            log.warn("Could not initialize {} index: {}", CATALOG_INDEX, e.getMessage());
+        }
+    }
+
+    /** Returns true when the catalog-v1 index exists and holds at least one doc. */
+    public boolean catalogIndexHasDocuments() {
+        try {
+            if (!indexExists(CATALOG_INDEX)) return false;
+            var resp = esClient.count(r -> r.index(CATALOG_INDEX));
+            return resp.count() > 0;
+        } catch (Exception e) {
+            log.warn("Could not count catalog-v1 documents: {}", e.getMessage());
+            return false;
         }
     }
 

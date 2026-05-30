@@ -105,13 +105,13 @@ public class Product {
     }
 
     public enum Step {
-        PRODUCT_NAME, // ordinal 0
-        PRODUCT_ATTRIBUTE, // ordinal 1
-        PRODUCT_VARIANT, // ordinal 3
-        PRODUCT_IMAGE, // ordinal 2
-        PRODUCT_BRAND_AND_TAGS, // ordinal 3
-        LIVE, // ordinal 4
-        CATALOG_SELECTED // ordinal 5 — seller picked from standard catalog (skip attributes + images)
+        PRODUCT_NAME,        // ordinal 0
+        PRODUCT_ATTRIBUTE,   // ordinal 1
+        PRODUCT_VARIANT,     // ordinal 2
+        PRODUCT_IMAGE,       // ordinal 3
+        PRODUCT_BRAND_AND_TAGS, // ordinal 4
+        LIVE,                // ordinal 5
+        CATALOG_SELECTED     // ordinal 6 — seller picked from standard catalog (skip attributes + images)
     }
 }
 

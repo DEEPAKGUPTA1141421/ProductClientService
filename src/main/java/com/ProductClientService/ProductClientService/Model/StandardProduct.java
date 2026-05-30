@@ -77,7 +77,19 @@ public class StandardProduct {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "draft_step")
+    private DraftStep draftStep = DraftStep.BASIC_INFO;
+
     public enum Status {
         DRAFT, ACTIVE, DISCONTINUED
+    }
+
+    public enum DraftStep {
+        BASIC_INFO,
+        SPECIFICATIONS,
+        IMAGE,
+        BRAND_KEYWORDS,
+        LIVE
     }
 }

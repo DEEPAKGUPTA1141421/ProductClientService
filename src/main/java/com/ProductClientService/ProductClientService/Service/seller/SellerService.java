@@ -23,6 +23,7 @@ import com.ProductClientService.ProductClientService.DTO.ProductElasticDto;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CategoryAttributeDto;
+import com.ProductClientService.ProductClientService.DTO.search.StandardCatalogDocument;
 import com.ProductClientService.ProductClientService.DTO.seller.CatalogSearchResultDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFromCatalogDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
@@ -61,7 +62,11 @@ import com.ProductClientService.ProductClientService.Service.OpenStreetMapServic
 import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService.AddressResponse;
 import com.ProductClientService.ProductClientService.Service.ElasticsearchProductIndexer;
+import com.ProductClientService.ProductClientService.Service.SearchResultsService;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
+import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
+import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
+import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse.SearchProductDto;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
@@ -99,6 +104,7 @@ public class SellerService {
     private final EventPublisherService eventPublisher;
     private final ElasticsearchProductIndexer elasticsearchProductIndexer;
     private final ProductMediaRepository productMediaRepository;
+    private final SearchResultsService searchResultsService;
     private final ProductRatingRepository productRatingRepository;
     @PersistenceContext
     private EntityManager entityManager;
@@ -146,7 +152,18 @@ public class SellerService {
             product.setCategory(category);
         }
 
+        // Apply isActive toggle on updates
+        if (dto.productId() != null && dto.isActive() != null) {
+            product.setIsActive(dto.isActive());
+        }
+
         UUID savedProductId = productRepository.save(product).getId();
+
+        // Re-index to ES whenever a LIVE product is updated
+        if (product.getStep() == Product.Step.LIVE) {
+            try { elasticsearchProductIndexer.indexProduct(savedProductId); }
+            catch (Exception e) { log.warn("ES re-index failed for {}: {}", savedProductId, e.getMessage()); }
+        }
 
         Map<String, Object> responseData = Map.of("productId", savedProductId);
 
@@ -180,6 +197,76 @@ public class SellerService {
         }).toList();
 
         return new ApiResponse<>(true, "Products fetched", products, 200);
+    }
+
+    // ── GET /api/v1/seller/product/my-products-es ─────────────────────────────
+    public ApiResponse<Object> getMyLiveProductsEs(
+            int page, int size,
+            String query, UUID categoryId, UUID brandId,
+            Double minPrice, Double maxPrice,
+            String sortBy, Boolean isActive, Integer maxStock) {
+
+        UUID sellerId = getUserId();
+        int safeSize = Math.min(Math.max(1, size), 100);
+        int safePage = Math.max(0, page);
+
+        SearchRequest req = new SearchRequest();
+        req.setSellerId(sellerId);
+        req.setPage(safePage);
+        req.setPageSize(safeSize);
+        if (query     != null && !query.isBlank()) req.setKeyword(query);
+        if (categoryId != null)                    req.setCategoryId(categoryId);
+        if (brandId    != null)                    req.setBrandIds(List.of(brandId));
+        if (minPrice   != null)                    req.setMinPrice(minPrice);
+        if (maxPrice   != null)                    req.setMaxPrice(maxPrice);
+        if (sortBy     != null && !sortBy.isBlank()) req.setSortBy(sortBy);
+
+        SearchResultsResponse esResp = searchResultsService.search(req, sellerId);
+        List<SearchProductDto> esDtos = esResp.getProducts() != null ? esResp.getProducts() : List.of();
+
+        // Batch-load stock + isActive from DB for the returned product IDs
+        List<UUID> ids = esDtos.stream()
+                .map(SearchProductDto::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+
+        Map<String, Object[]> stockMap = new java.util.HashMap<>();
+        if (!ids.isEmpty()) {
+            productRepository.findStockAndActiveByIds(ids).forEach(row ->
+                    stockMap.put(row[0].toString(), row));
+        }
+
+        List<Map<String, Object>> products = esDtos.stream().map(dto -> {
+            Map<String, Object> p = new java.util.LinkedHashMap<>();
+            p.put("id",              dto.getId() != null ? dto.getId().toString() : null);
+            p.put("name",            dto.getName());
+            p.put("brand",           dto.getBrand());
+            p.put("categoryName",    dto.getCategoryName());
+            p.put("price",           dto.getPrice());
+            p.put("originalPrice",   dto.getOriginalPrice());
+            p.put("discountPercent", dto.getDiscountPercent());
+            p.put("rating",          dto.getRating());
+            p.put("reviewCount",     dto.getReviewCount());
+            p.put("imageUrl",        dto.getImages() != null && !dto.getImages().isEmpty()
+                    ? dto.getImages().get(0) : null);
+            p.put("variantId",       dto.getVariantId() != null ? dto.getVariantId().toString() : null);
+            Object[] stockRow = dto.getId() != null ? stockMap.get(dto.getId().toString()) : null;
+            int  stockVal  = stockRow != null && stockRow[1] != null ? ((Number) stockRow[1]).intValue() : 0;
+            boolean activeVal = stockRow != null && stockRow[2] != null ? (Boolean) stockRow[2] : true;
+            p.put("stock",    stockVal);
+            p.put("isActive", activeVal);
+            return p;
+        })
+        // Post-ES filters applied on DB values (isActive, maxStock)
+        .filter(p -> isActive  == null || isActive.equals(p.get("isActive")))
+        .filter(p -> maxStock  == null || ((Number) p.get("stock")).intValue() <= maxStock)
+        .collect(Collectors.toList());
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("products",   products);
+        payload.put("totalCount", esResp.getTotalCount());
+        payload.put("hasMore",    esResp.isHasMore());
+        return new ApiResponse<>(true, "Products fetched", payload, 200);
     }
 
     // ── DELETE /api/v1/seller/product/{productId} ─────────────────────────────
@@ -489,6 +576,12 @@ public class SellerService {
 
         Product savedProduct = productRepository.save(product);
 
+        // Re-index to ES if product is already LIVE
+        if (savedProduct.getStep() == Product.Step.LIVE) {
+            try { elasticsearchProductIndexer.indexProduct(savedProduct.getId()); }
+            catch (Exception e) { log.warn("ES re-index failed: {}", e.getMessage()); }
+        }
+
         return savedProduct.getProductAttributes()
                 .stream()
                 .map(pa -> {
@@ -564,6 +657,10 @@ public class SellerService {
                     .orElseThrow(() -> new RuntimeException("Brand not found"));
             product.setBrand(brand);
             productRepository.save(product);
+            if (product.getStep() == Product.Step.LIVE) {
+                try { elasticsearchProductIndexer.indexProduct(productId); }
+                catch (Exception e) { log.warn("ES re-index failed: {}", e.getMessage()); }
+            }
             return new ApiResponse<>(true, "Brand attached to product successfully", null, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(),
@@ -716,20 +813,123 @@ public class SellerService {
     // ── Catalog listing flow
     // ──────────────────────────────────────────────────────
 
+    @org.springframework.cache.annotation.Cacheable(
+            value = "catalog-search",
+            key = "#query + ':' + #page + ':' + #size")
     public ApiResponse<Object> searchCatalog(String query, int page, int size) {
+        if (query == null || query.isBlank()) {
+            return new ApiResponse<>(false, "Query cannot be empty", null, 400);
+        }
+        // Strip SQL wildcard characters — safety for the DB fallback path
+        String sanitized = query.trim().replaceAll("[%_\\\\]", "");
+        sanitized = sanitized.substring(0, Math.min(sanitized.length(), 100));
+        if (sanitized.length() < 2) {
+            return new ApiResponse<>(false, "Search query must be at least 2 characters", null, 400);
+        }
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 50));
+
+        try {
+            List<CatalogSearchResultDto> dtos = searchCatalogInEs(sanitized, safePage, safeSize);
+            return new ApiResponse<>(true, "Catalog search results", dtos, 200);
+        } catch (Exception e) {
+            log.warn("Catalog ES search failed, falling back to DB query: {}", e.getMessage());
+            return searchCatalogFromDb(sanitized, safePage, safeSize);
+        }
+    }
+
+    /**
+     * Queries the catalog-v1 Elasticsearch index.
+     *
+     * Query strategy:
+     *   filter: is_verified=true AND status=ACTIVE  (cached, no scoring)
+     *   must:   inner bool with minimumShouldMatch=1
+     *             should[0] multi_match on name^3 / search_keywords^2 / brand_name^2
+     *                       / description / category_name  — fuzziness AUTO
+     *             should[1] exact term match on ean  (barcode scan)
+     *             should[2] exact term match on product_code (uppercase)
+     */
+    private List<CatalogSearchResultDto> searchCatalogInEs(String query, int page, int size)
+            throws java.io.IOException {
+        final String q = query;
+        int from = page * size;
+
+        co.elastic.clients.elasticsearch.core.SearchResponse<StandardCatalogDocument> response =
+                elasticsearchClient.search(s -> s
+                        .index("catalog-v1")
+                        .from(from)
+                        .size(size)
+                        .query(outer -> outer.bool(b -> b
+                                // ── fast cached pre-filters ─────────────────────────────
+                                .filter(f -> f.term(t -> t
+                                        .field("is_verified")
+                                        .value(v -> v.booleanValue(true))))
+                                .filter(f -> f.term(t -> t
+                                        .field("status")
+                                        .value("ACTIVE")))
+                                // ── relevance: at least one clause must match ────────────
+                                .must(m -> m.bool(inner -> inner
+                                        .minimumShouldMatch("1")
+                                        .should(sh -> sh.multiMatch(mm -> mm
+                                                .query(q)
+                                                .fields("name^3", "search_keywords^2",
+                                                        "brand_name^2", "description",
+                                                        "category_name")
+                                                .fuzziness("AUTO")
+                                                .prefixLength(1)))
+                                        .should(sh -> sh.term(t -> t
+                                                .field("ean")
+                                                .value(q)))
+                                        .should(sh -> sh.term(t -> t
+                                                .field("product_code")
+                                                .value(q.toUpperCase()))))))),
+                        StandardCatalogDocument.class);
+
+        return response.hits().hits().stream()
+                .map(hit -> hit.source())
+                .filter(doc -> doc != null && doc.getCatalogId() != null)
+                .map(doc -> new CatalogSearchResultDto(
+                        UUID.fromString(doc.getCatalogId()),
+                        doc.getName(),
+                        doc.getDescription(),
+                        doc.getPrimaryImageUrl(),
+                        doc.getBrandName(),
+                        doc.getCategoryName(),
+                        doc.getSpecifications(),
+                        doc.getEan(),
+                        doc.getProductCode()))
+                .collect(Collectors.toList());
+    }
+
+    /** DB fallback used when Elasticsearch is unavailable. */
+    private ApiResponse<Object> searchCatalogFromDb(String query, int page, int size) {
         List<StandardProduct> results = standardProductRepository
                 .searchCatalog(query, PageRequest.of(page, size));
-        List<CatalogSearchResultDto> dtos = results.stream().map(sp -> new CatalogSearchResultDto(
-                sp.getId(),
-                sp.getName(),
-                sp.getDescription(),
-                sp.getPrimaryImageUrl(),
-                sp.getBrandEntity() != null ? sp.getBrandEntity().getName() : null,
-                sp.getCategory() != null ? sp.getCategory().getName() : null,
-                sp.getSpecifications(),
-                sp.getEan(),
-                sp.getProductCode())).toList();
+        List<CatalogSearchResultDto> dtos = results.stream()
+                .map(sp -> new CatalogSearchResultDto(
+                        sp.getId(), sp.getName(), sp.getDescription(),
+                        sp.getPrimaryImageUrl(),
+                        sp.getBrandEntity() != null ? sp.getBrandEntity().getName() : null,
+                        sp.getCategory() != null ? sp.getCategory().getName() : null,
+                        sp.getSpecifications(), sp.getEan(), sp.getProductCode()))
+                .toList();
         return new ApiResponse<>(true, "Catalog search results", dtos, 200);
+    }
+
+    // Returns a single verified+active catalog entry for the detail view
+    public ApiResponse<Object> getCatalogDetail(UUID standardProductId) {
+        return standardProductRepository.findById(standardProductId)
+                .filter(sp -> Boolean.TRUE.equals(sp.getIsVerified())
+                        && sp.getStatus() == StandardProduct.Status.ACTIVE)
+                .map(sp -> new ApiResponse<Object>(true, "Catalog item found",
+                        new CatalogSearchResultDto(
+                                sp.getId(), sp.getName(), sp.getDescription(),
+                                sp.getPrimaryImageUrl(),
+                                sp.getBrandEntity() != null ? sp.getBrandEntity().getName() : null,
+                                sp.getCategory() != null ? sp.getCategory().getName() : null,
+                                sp.getSpecifications(), sp.getEan(), sp.getProductCode()),
+                        200))
+                .orElse(new ApiResponse<>(false, "Catalog item not found or unavailable", null, 404));
     }
 
     @jakarta.transaction.Transactional
@@ -751,16 +951,52 @@ public class SellerService {
         product.setBrand(std.getBrandEntity());
         product.setStandardProduct(std);
         product.setSeller(seller);
-        // This is a seller listing linked to a catalog entry, not a new catalog item
         product.setIsStandard(false);
-        // Skip attribute + image steps — inherited from standard product
         product.setStep(Product.Step.CATALOG_SELECTED);
-        // Inherit the catalog's specifications snapshot so reads are zero-join
         product.setAttributesSnapshot(std.getSpecifications());
 
-        UUID savedId = productRepository.save(product).getId();
-        return new ApiResponse<>(true, "Listing created from catalog. Add variants to go live.",
-                Map.of("productId", savedId), 201);
+        product = productRepository.save(product);
+        final UUID savedId = product.getId();
+
+        // Persist all variants in one transaction
+        int idx = 0;
+        for (CreateListingFromCatalogDto.VariantItem item : dto.variants()) {
+            String sku = (item.sku() != null && !item.sku().isBlank())
+                    ? item.sku().trim()
+                    : (std.getProductCode() != null ? std.getProductCode() : "SKU") + "-" + (++idx);
+
+            ProductVariant variant = new ProductVariant();
+            variant.setSku(sku);
+            variant.setLabel(item.label() != null ? item.label().trim() : "");
+            variant.setStock(item.stock());
+            variant.setPrice(String.valueOf((long) (item.price() * 100)));
+            double effectiveMrp = item.mrp() >= item.price() ? item.mrp() : item.price();
+            variant.setMrp(String.valueOf((long) (effectiveMrp * 100)));
+            variant.setCombination(item.combination() != null ? item.combination() : Map.of());
+            variant = productVariantRepository.save(variant);
+            product.getVariants().add(variant);
+        }
+        productRepository.save(product);
+
+        // Go live immediately when requested and variants are present
+        if (dto.goLive() && !dto.variants().isEmpty()) {
+            product.setStep(Product.Step.LIVE);
+            product.setIsActive(true);
+            productRepository.save(product);
+            refreshSnapshot(savedId);
+            eventPublisher.publishProductLive(savedId);
+            elasticsearchProductIndexer.indexProduct(savedId);
+        }
+
+        String step = product.getStep().name();
+        String imageUrl = std.getPrimaryImageUrl() != null ? std.getPrimaryImageUrl() : "";
+        int variantCount = dto.variants().size();
+
+        return new ApiResponse<>(true,
+                dto.goLive() ? "Product listed successfully!" : "Listing created. Add variants to go live.",
+                Map.of("productId", savedId, "name", std.getName(),
+                        "imageUrl", imageUrl, "step", step, "variantCount", variantCount),
+                201);
     }
 
     public ApiResponse<Object> uploadAndUpdateImages(List<Object[]> attributeImageData, String step) {
@@ -1120,6 +1356,49 @@ public class SellerService {
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 501);
         }
+    }
+
+    // ── GET /api/v1/seller/product/{productId}/edit-data ─────────────────────
+    @Transactional
+    public ApiResponse<Object> getProductEditData(UUID productId) {
+        UUID sellerId = getUserId();
+        Product product = productRepository.findProductWithAttributesAndVariants(productId)
+                .orElse(null);
+        if (product == null) return new ApiResponse<>(false, "Product not found", null, 404);
+        if (!product.getSeller().getId().equals(sellerId))
+            return new ApiResponse<>(false, "Access denied", null, 403);
+
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("id",           product.getId().toString());
+        data.put("name",         product.getName());
+        data.put("description",  product.getDescription());
+        data.put("step",         product.getStep().name());
+        data.put("isActive",     Boolean.TRUE.equals(product.getIsActive()));
+        data.put("categoryId",   product.getCategory() != null ? product.getCategory().getId().toString() : null);
+        data.put("categoryName", product.getCategory() != null ? product.getCategory().getName() : null);
+        data.put("brandId",      product.getBrand() != null ? product.getBrand().getId().toString() : null);
+        data.put("brandName",    product.getBrand() != null ? product.getBrand().getName() : null);
+        data.put("tags",         product.getTags().stream()
+                .map(t -> Map.of("id", t.getId().toString(), "name", t.getName()))
+                .toList());
+        data.put("attributes",   product.getProductAttributes().stream()
+                .filter(pa -> pa.getCategoryAttribute() != null)
+                .map(pa -> {
+                    String attrName = pa.getCategoryAttribute().getAttributes() != null
+                            ? pa.getCategoryAttribute().getAttributes().stream()
+                                    .findFirst().map(a -> a.getName()).orElse("")
+                            : "";
+                    return Map.of(
+                        "productAttributeId",   pa.getId().toString(),
+                        "categoryAttributeId",  pa.getCategoryAttribute().getId().toString(),
+                        "name",                 attrName,
+                        "value",                pa.getValue() != null ? pa.getValue() : "",
+                        "isVariant",            Boolean.TRUE.equals(pa.getCategoryAttribute().getIsVariantAttribute()),
+                        "isImage",              Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute())
+                    );
+                }).toList());
+
+        return new ApiResponse<>(true, "Product edit data", data, 200);
     }
 
     // ── GET /api/v1/seller/product/low-stock?threshold=5 ─────────────────────

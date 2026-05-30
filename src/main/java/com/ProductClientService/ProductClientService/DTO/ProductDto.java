@@ -18,5 +18,8 @@ public record ProductDto(
 
         @NotNull(message = "Category is required") UUID category,
         UUID productId,
-        @NotBlank(message = "Step is mandatory") String step) {
+        @NotBlank(message = "Step is mandatory") String step,
+
+        /** Optional on updates only — toggles isActive without changing other fields. */
+        Boolean isActive) {
 }

@@ -3,12 +3,17 @@ package com.ProductClientService.ProductClientService.Controller.admin;
 import org.springframework.web.bind.annotation.RestController;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.admin.AttributeDto;
+import com.ProductClientService.ProductClientService.DTO.admin.CatalogDraftBasicInfoDto;
+import com.ProductClientService.ProductClientService.DTO.admin.CatalogDraftBrandKeywordsDto;
+import com.ProductClientService.ProductClientService.DTO.admin.CatalogDraftSpecsDto;
 import com.ProductClientService.ProductClientService.DTO.admin.CategoryAttributeRequest;
 import com.ProductClientService.ProductClientService.DTO.admin.CategoryDto;
 import com.ProductClientService.ProductClientService.DTO.admin.StandardProductCreateDto;
 import com.ProductClientService.ProductClientService.Model.CategoryAttribute;
+import com.ProductClientService.ProductClientService.Service.admin.AdminCatalogDraftService;
 import com.ProductClientService.ProductClientService.Service.admin.AdminProductService;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,11 +21,13 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
 
@@ -29,6 +36,9 @@ import jakarta.validation.Valid;
 public class AdminProductController {
     @Autowired
     private AdminProductService adminProductService;
+
+    @Autowired
+    private AdminCatalogDraftService adminCatalogDraftService;
 
     @PostMapping("/add-category")
 
@@ -103,6 +113,75 @@ public class AdminProductController {
     @PutMapping("/{id}/go-live")
     public ResponseEntity<?> makeProductLive(@PathVariable UUID id) {
         ApiResponse<Object> response = adminProductService.makeProductLive(id);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── Admin Step-by-Step Catalog Draft ─────────────────────────────────────
+
+    /** Step 1 — create a new draft with name, description, category, EAN, productCode */
+    @PostMapping("/catalog/draft")
+    public ResponseEntity<?> startCatalogDraft(@Valid @RequestBody CatalogDraftBasicInfoDto dto) {
+        ApiResponse<Object> response = adminCatalogDraftService.startDraft(dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Step 1 (update) — edit basic info of an existing draft */
+    @PutMapping("/catalog/draft/{id}/basic-info")
+    public ResponseEntity<?> updateBasicInfo(@PathVariable UUID id,
+            @Valid @RequestBody CatalogDraftBasicInfoDto dto) {
+        ApiResponse<Object> response = adminCatalogDraftService.updateBasicInfo(id, dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Step 2 — save key-value specifications (e.g. {"Color":"Black","RAM":"8GB"}) */
+    @PutMapping("/catalog/draft/{id}/specifications")
+    public ResponseEntity<?> saveDraftSpecifications(@PathVariable UUID id,
+            @Valid @RequestBody CatalogDraftSpecsDto dto) {
+        ApiResponse<Object> response = adminCatalogDraftService.saveSpecifications(id, dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Step 3 — upload primary product image */
+    @PostMapping(value = "/catalog/draft/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadDraftImage(@PathVariable UUID id,
+            @RequestParam("image") MultipartFile image) {
+        ApiResponse<Object> response = adminCatalogDraftService.uploadImage(id, image);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Step 4 — attach brand and set search keywords */
+    @PutMapping("/catalog/draft/{id}/brand-keywords")
+    public ResponseEntity<?> saveBrandAndKeywords(@PathVariable UUID id,
+            @RequestBody CatalogDraftBrandKeywordsDto dto) {
+        ApiResponse<Object> response = adminCatalogDraftService.saveBrandAndKeywords(id, dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Step 5 — verify, activate, and index to catalog-v1 */
+    @PutMapping("/catalog/draft/{id}/go-live")
+    public ResponseEntity<?> goLiveDraft(@PathVariable UUID id) {
+        ApiResponse<Object> response = adminCatalogDraftService.goLive(id);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Resume — get current state of a draft */
+    @GetMapping("/catalog/draft/{id}")
+    public ResponseEntity<?> getDraft(@PathVariable UUID id) {
+        ApiResponse<Object> response = adminCatalogDraftService.getDraft(id);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** List all DRAFT catalog entries (admin overview) */
+    @GetMapping("/catalog/drafts")
+    public ResponseEntity<?> listDrafts() {
+        ApiResponse<Object> response = adminCatalogDraftService.listDrafts();
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    /** Discard a draft */
+    @DeleteMapping("/catalog/draft/{id}")
+    public ResponseEntity<?> discardDraft(@PathVariable UUID id) {
+        ApiResponse<Object> response = adminCatalogDraftService.discardDraft(id);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
