@@ -161,8 +161,11 @@ public class SellerService {
 
         // Re-index to ES whenever a LIVE product is updated
         if (product.getStep() == Product.Step.LIVE) {
-            try { elasticsearchProductIndexer.indexProduct(savedProductId); }
-            catch (Exception e) { log.warn("ES re-index failed for {}: {}", savedProductId, e.getMessage()); }
+            try {
+                elasticsearchProductIndexer.indexProduct(savedProductId);
+            } catch (Exception e) {
+                log.warn("ES re-index failed for {}: {}", savedProductId, e.getMessage());
+            }
         }
 
         Map<String, Object> responseData = Map.of("productId", savedProductId);
@@ -177,22 +180,22 @@ public class SellerService {
     // ── GET /api/v1/seller/product/my-products ────────────────────────────────
     public ApiResponse<Object> getMyLiveProducts(int page, int size) {
         UUID sellerId = getUserId();
-        int clampedSize   = Math.min(Math.max(1, size), 100);
-        int offset        = Math.max(0, page) * clampedSize;
+        int clampedSize = Math.min(Math.max(1, size), 100);
+        int offset = Math.max(0, page) * clampedSize;
 
         List<Object[]> rows = productRepository.findLiveProductsBySeller(sellerId, clampedSize, offset);
 
         List<Map<String, Object>> products = rows.stream().map(row -> {
             Map<String, Object> p = new java.util.LinkedHashMap<>();
-            p.put("id",          row[0] != null ? row[0].toString() : null);
-            p.put("name",        row[1]);
+            p.put("id", row[0] != null ? row[0].toString() : null);
+            p.put("name", row[1]);
             p.put("description", row[2]);
-            p.put("step",        row[3]);
-            p.put("createdAt",   row[4]);
-            p.put("price",       row[5]);           // min variant price
-            p.put("stock",       row[6]);           // total stock across variants
-            p.put("imageUrl",    row[7]);           // cover image URL (may be null)
-            p.put("isActive",    row[8] == null || (Boolean) row[8]);
+            p.put("step", row[3]);
+            p.put("createdAt", row[4]);
+            p.put("price", row[5]); // min variant price
+            p.put("stock", row[6]); // total stock across variants
+            p.put("imageUrl", row[7]); // cover image URL (may be null)
+            p.put("isActive", row[8] == null || (Boolean) row[8]);
             return p;
         }).toList();
 
@@ -214,12 +217,18 @@ public class SellerService {
         req.setSellerId(sellerId);
         req.setPage(safePage);
         req.setPageSize(safeSize);
-        if (query     != null && !query.isBlank()) req.setKeyword(query);
-        if (categoryId != null)                    req.setCategoryId(categoryId);
-        if (brandId    != null)                    req.setBrandIds(List.of(brandId));
-        if (minPrice   != null)                    req.setMinPrice(minPrice);
-        if (maxPrice   != null)                    req.setMaxPrice(maxPrice);
-        if (sortBy     != null && !sortBy.isBlank()) req.setSortBy(sortBy);
+        if (query != null && !query.isBlank())
+            req.setKeyword(query);
+        if (categoryId != null)
+            req.setCategoryId(categoryId);
+        if (brandId != null)
+            req.setBrandIds(List.of(brandId));
+        if (minPrice != null)
+            req.setMinPrice(minPrice);
+        if (maxPrice != null)
+            req.setMaxPrice(maxPrice);
+        if (sortBy != null && !sortBy.isBlank())
+            req.setSortBy(sortBy);
 
         SearchResultsResponse esResp = searchResultsService.search(req, sellerId);
         List<SearchProductDto> esDtos = esResp.getProducts() != null ? esResp.getProducts() : List.of();
@@ -232,40 +241,40 @@ public class SellerService {
 
         Map<String, Object[]> stockMap = new java.util.HashMap<>();
         if (!ids.isEmpty()) {
-            productRepository.findStockAndActiveByIds(ids).forEach(row ->
-                    stockMap.put(row[0].toString(), row));
+            productRepository.findStockAndActiveByIds(ids).forEach(row -> stockMap.put(row[0].toString(), row));
         }
 
         List<Map<String, Object>> products = esDtos.stream().map(dto -> {
             Map<String, Object> p = new java.util.LinkedHashMap<>();
-            p.put("id",              dto.getId() != null ? dto.getId().toString() : null);
-            p.put("name",            dto.getName());
-            p.put("brand",           dto.getBrand());
-            p.put("categoryName",    dto.getCategoryName());
-            p.put("price",           dto.getPrice());
-            p.put("originalPrice",   dto.getOriginalPrice());
+            p.put("id", dto.getId() != null ? dto.getId().toString() : null);
+            p.put("name", dto.getName());
+            p.put("brand", dto.getBrand());
+            p.put("categoryName", dto.getCategoryName());
+            p.put("price", dto.getPrice());
+            p.put("originalPrice", dto.getOriginalPrice());
             p.put("discountPercent", dto.getDiscountPercent());
-            p.put("rating",          dto.getRating());
-            p.put("reviewCount",     dto.getReviewCount());
-            p.put("imageUrl",        dto.getImages() != null && !dto.getImages().isEmpty()
-                    ? dto.getImages().get(0) : null);
-            p.put("variantId",       dto.getVariantId() != null ? dto.getVariantId().toString() : null);
+            p.put("rating", dto.getRating());
+            p.put("reviewCount", dto.getReviewCount());
+            p.put("imageUrl", dto.getImages() != null && !dto.getImages().isEmpty()
+                    ? dto.getImages().get(0)
+                    : null);
+            p.put("variantId", dto.getVariantId() != null ? dto.getVariantId().toString() : null);
             Object[] stockRow = dto.getId() != null ? stockMap.get(dto.getId().toString()) : null;
-            int  stockVal  = stockRow != null && stockRow[1] != null ? ((Number) stockRow[1]).intValue() : 0;
+            int stockVal = stockRow != null && stockRow[1] != null ? ((Number) stockRow[1]).intValue() : 0;
             boolean activeVal = stockRow != null && stockRow[2] != null ? (Boolean) stockRow[2] : true;
-            p.put("stock",    stockVal);
+            p.put("stock", stockVal);
             p.put("isActive", activeVal);
             return p;
         })
-        // Post-ES filters applied on DB values (isActive, maxStock)
-        .filter(p -> isActive  == null || isActive.equals(p.get("isActive")))
-        .filter(p -> maxStock  == null || ((Number) p.get("stock")).intValue() <= maxStock)
-        .collect(Collectors.toList());
+                // Post-ES filters applied on DB values (isActive, maxStock)
+                .filter(p -> isActive == null || isActive.equals(p.get("isActive")))
+                .filter(p -> maxStock == null || ((Number) p.get("stock")).intValue() <= maxStock)
+                .collect(Collectors.toList());
 
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("products",   products);
+        payload.put("products", products);
         payload.put("totalCount", esResp.getTotalCount());
-        payload.put("hasMore",    esResp.isHasMore());
+        payload.put("hasMore", esResp.isHasMore());
         return new ApiResponse<>(true, "Products fetched", payload, 200);
     }
 
@@ -310,7 +319,8 @@ public class SellerService {
                     v.setPrice(String.valueOf(priceInPaise));
                     // recompute MRP to match if lower, keep existing otherwise
                     long existingMrp = v.getMrp() == null ? 0 : Long.parseLong(v.getMrp());
-                    if (priceInPaise > existingMrp) v.setMrp(String.valueOf(priceInPaise));
+                    if (priceInPaise > existingMrp)
+                        v.setMrp(String.valueOf(priceInPaise));
                 }
                 if (stock != null) {
                     v.setStock(stock);
@@ -319,9 +329,8 @@ public class SellerService {
         }
         productRepository.save(product);
         return new ApiResponse<>(true, "Product updated", java.util.Map.of(
-                "id",   productId.toString(),
-                "name", product.getName()
-        ), 200);
+                "id", productId.toString(),
+                "name", product.getName()), 200);
     }
 
     // ── PATCH /api/v1/seller/product/{productId}/toggle-active ───────────────
@@ -578,8 +587,11 @@ public class SellerService {
 
         // Re-index to ES if product is already LIVE
         if (savedProduct.getStep() == Product.Step.LIVE) {
-            try { elasticsearchProductIndexer.indexProduct(savedProduct.getId()); }
-            catch (Exception e) { log.warn("ES re-index failed: {}", e.getMessage()); }
+            try {
+                elasticsearchProductIndexer.indexProduct(savedProduct.getId());
+            } catch (Exception e) {
+                log.warn("ES re-index failed: {}", e.getMessage());
+            }
         }
 
         return savedProduct.getProductAttributes()
@@ -658,8 +670,11 @@ public class SellerService {
             product.setBrand(brand);
             productRepository.save(product);
             if (product.getStep() == Product.Step.LIVE) {
-                try { elasticsearchProductIndexer.indexProduct(productId); }
-                catch (Exception e) { log.warn("ES re-index failed: {}", e.getMessage()); }
+                try {
+                    elasticsearchProductIndexer.indexProduct(productId);
+                } catch (Exception e) {
+                    log.warn("ES re-index failed: {}", e.getMessage());
+                }
             }
             return new ApiResponse<>(true, "Brand attached to product successfully", null, 200);
         } catch (Exception e) {
@@ -672,15 +687,9 @@ public class SellerService {
 
         String phone = getUserPhone();
 
-        System.out.println("calling OSM service "
-                + inforequest.latitude().getClass()
-                + inforequest.longitude().getClass());
-
         OpenStreetMapService.AddressResponse addressDetails = openStreetMapService.getAddressFromLatLng(
                 inforequest.latitude(),
                 inforequest.longitude());
-
-        System.out.println("saving address");
 
         Address savedAddress = saveAddress(
                 addressDetails,
@@ -691,7 +700,6 @@ public class SellerService {
         if (savedAddress == null) {
             return new ApiResponse<>(false, "Location Info Not Saved", null, 500);
         }
-
         return new ApiResponse<>(true, "Location Info Saved", savedAddress, 200);
     }
 
@@ -813,9 +821,7 @@ public class SellerService {
     // ── Catalog listing flow
     // ──────────────────────────────────────────────────────
 
-    @org.springframework.cache.annotation.Cacheable(
-            value = "catalog-search",
-            key = "#query + ':' + #page + ':' + #size")
+    @org.springframework.cache.annotation.Cacheable(value = "catalog-search", key = "#query + ':' + #page + ':' + #size")
     public ApiResponse<Object> searchCatalog(String query, int page, int size) {
         if (query == null || query.isBlank()) {
             return new ApiResponse<>(false, "Query cannot be empty", null, 400);
@@ -842,20 +848,20 @@ public class SellerService {
      * Queries the catalog-v1 Elasticsearch index.
      *
      * Query strategy:
-     *   filter: is_verified=true AND status=ACTIVE  (cached, no scoring)
-     *   must:   inner bool with minimumShouldMatch=1
-     *             should[0] multi_match on name^3 / search_keywords^2 / brand_name^2
-     *                       / description / category_name  — fuzziness AUTO
-     *             should[1] exact term match on ean  (barcode scan)
-     *             should[2] exact term match on product_code (uppercase)
+     * filter: is_verified=true AND status=ACTIVE (cached, no scoring)
+     * must: inner bool with minimumShouldMatch=1
+     * should[0] multi_match on name^3 / search_keywords^2 / brand_name^2
+     * / description / category_name — fuzziness AUTO
+     * should[1] exact term match on ean (barcode scan)
+     * should[2] exact term match on product_code (uppercase)
      */
     private List<CatalogSearchResultDto> searchCatalogInEs(String query, int page, int size)
             throws java.io.IOException {
         final String q = query;
         int from = page * size;
 
-        co.elastic.clients.elasticsearch.core.SearchResponse<StandardCatalogDocument> response =
-                elasticsearchClient.search(s -> s
+        co.elastic.clients.elasticsearch.core.SearchResponse<StandardCatalogDocument> response = elasticsearchClient
+                .search(s -> s
                         .index("catalog-v1")
                         .from(from)
                         .size(size)
@@ -1364,24 +1370,25 @@ public class SellerService {
         UUID sellerId = getUserId();
         Product product = productRepository.findProductWithAttributesAndVariants(productId)
                 .orElse(null);
-        if (product == null) return new ApiResponse<>(false, "Product not found", null, 404);
+        if (product == null)
+            return new ApiResponse<>(false, "Product not found", null, 404);
         if (!product.getSeller().getId().equals(sellerId))
             return new ApiResponse<>(false, "Access denied", null, 403);
 
         Map<String, Object> data = new java.util.LinkedHashMap<>();
-        data.put("id",           product.getId().toString());
-        data.put("name",         product.getName());
-        data.put("description",  product.getDescription());
-        data.put("step",         product.getStep().name());
-        data.put("isActive",     Boolean.TRUE.equals(product.getIsActive()));
-        data.put("categoryId",   product.getCategory() != null ? product.getCategory().getId().toString() : null);
+        data.put("id", product.getId().toString());
+        data.put("name", product.getName());
+        data.put("description", product.getDescription());
+        data.put("step", product.getStep().name());
+        data.put("isActive", Boolean.TRUE.equals(product.getIsActive()));
+        data.put("categoryId", product.getCategory() != null ? product.getCategory().getId().toString() : null);
         data.put("categoryName", product.getCategory() != null ? product.getCategory().getName() : null);
-        data.put("brandId",      product.getBrand() != null ? product.getBrand().getId().toString() : null);
-        data.put("brandName",    product.getBrand() != null ? product.getBrand().getName() : null);
-        data.put("tags",         product.getTags().stream()
+        data.put("brandId", product.getBrand() != null ? product.getBrand().getId().toString() : null);
+        data.put("brandName", product.getBrand() != null ? product.getBrand().getName() : null);
+        data.put("tags", product.getTags().stream()
                 .map(t -> Map.of("id", t.getId().toString(), "name", t.getName()))
                 .toList());
-        data.put("attributes",   product.getProductAttributes().stream()
+        data.put("attributes", product.getProductAttributes().stream()
                 .filter(pa -> pa.getCategoryAttribute() != null)
                 .map(pa -> {
                     String attrName = pa.getCategoryAttribute().getAttributes() != null
@@ -1389,13 +1396,12 @@ public class SellerService {
                                     .findFirst().map(a -> a.getName()).orElse("")
                             : "";
                     return Map.of(
-                        "productAttributeId",   pa.getId().toString(),
-                        "categoryAttributeId",  pa.getCategoryAttribute().getId().toString(),
-                        "name",                 attrName,
-                        "value",                pa.getValue() != null ? pa.getValue() : "",
-                        "isVariant",            Boolean.TRUE.equals(pa.getCategoryAttribute().getIsVariantAttribute()),
-                        "isImage",              Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute())
-                    );
+                            "productAttributeId", pa.getId().toString(),
+                            "categoryAttributeId", pa.getCategoryAttribute().getId().toString(),
+                            "name", attrName,
+                            "value", pa.getValue() != null ? pa.getValue() : "",
+                            "isVariant", Boolean.TRUE.equals(pa.getCategoryAttribute().getIsVariantAttribute()),
+                            "isImage", Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute()));
                 }).toList());
 
         return new ApiResponse<>(true, "Product edit data", data, 200);
@@ -1408,13 +1414,16 @@ public class SellerService {
         List<Object[]> rows = productRepository.findLowStockProductsBySeller(sellerId, t, 30);
         List<Map<String, Object>> result = rows.stream().map(row -> {
             Map<String, Object> p = new java.util.LinkedHashMap<>();
-            p.put("id",    row[0] != null ? row[0].toString() : null);
-            p.put("name",  row[1]);
+            p.put("id", row[0] != null ? row[0].toString() : null);
+            p.put("name", row[1]);
             p.put("stock", row[2] != null ? ((Number) row[2]).intValue() : 0);
             long price = 0;
-            try { price = Long.parseLong(row[3].toString()); } catch (Exception ignored) {}
+            try {
+                price = Long.parseLong(row[3].toString());
+            } catch (Exception ignored) {
+            }
             p.put("priceRupees", String.format("%.2f", price / 100.0));
-            p.put("imageUrl",    row[4]);
+            p.put("imageUrl", row[4]);
             return p;
         }).toList();
         return new ApiResponse<>(true, "Low stock products", result, 200);
@@ -1433,18 +1442,24 @@ public class SellerService {
         List<ProductVariant> variants = productVariantRepository.findByProductId(productId);
         List<Map<String, Object>> result = variants.stream().map(v -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
-            m.put("id",    v.getId().toString());
-            m.put("sku",   v.getSku()   != null ? v.getSku()   : "");
+            m.put("id", v.getId().toString());
+            m.put("sku", v.getSku() != null ? v.getSku() : "");
             m.put("label", v.getLabel() != null ? v.getLabel() : "");
             long price = 0, mrp = 0;
-            try { price = Long.parseLong(v.getPrice()); } catch (Exception ignored) {}
-            try { mrp   = Long.parseLong(v.getMrp());   } catch (Exception ignored) {}
+            try {
+                price = Long.parseLong(v.getPrice());
+            } catch (Exception ignored) {
+            }
+            try {
+                mrp = Long.parseLong(v.getMrp());
+            } catch (Exception ignored) {
+            }
             m.put("priceInPaise", price);
-            m.put("priceRupees",  String.format("%.2f", price / 100.0));
-            m.put("mrpInPaise",   mrp);
-            m.put("mrpRupees",    String.format("%.2f", mrp / 100.0));
-            m.put("stock",        v.getStock());
-            m.put("combination",  v.getCombination() != null ? v.getCombination() : Map.of());
+            m.put("priceRupees", String.format("%.2f", price / 100.0));
+            m.put("mrpInPaise", mrp);
+            m.put("mrpRupees", String.format("%.2f", mrp / 100.0));
+            m.put("stock", v.getStock());
+            m.put("combination", v.getCombination() != null ? v.getCombination() : Map.of());
             return m;
         }).toList();
         return new ApiResponse<>(true, "Variants fetched", result, 200);
@@ -1466,7 +1481,8 @@ public class SellerService {
         if (priceInPaise != null) {
             variant.setPrice(String.valueOf(priceInPaise));
             long existingMrp = variant.getMrp() == null ? 0 : Long.parseLong(variant.getMrp());
-            if (priceInPaise > existingMrp) variant.setMrp(String.valueOf(priceInPaise));
+            if (priceInPaise > existingMrp)
+                variant.setMrp(String.valueOf(priceInPaise));
         }
         if (stock != null) {
             variant.setStock(stock);
@@ -1478,33 +1494,33 @@ public class SellerService {
     // ── GET /reviews ────────────────────────────────────────────────────────────
     public ApiResponse<Object> getSellerReviews(int page, int size) {
         UUID sellerId = getUserId();
-        int safeSize   = Math.min(Math.max(size, 1), 50);
-        int offset     = page * safeSize;
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        int offset = page * safeSize;
         List<Object[]> rows = productRatingRepository.findReviewsBySeller(sellerId, safeSize, offset);
-        long total          = productRatingRepository.countReviewsBySeller(sellerId);
+        long total = productRatingRepository.countReviewsBySeller(sellerId);
 
         List<Map<String, Object>> reviews = rows.stream().map(r -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
-            m.put("id",               r[0] != null ? r[0].toString() : "");
-            m.put("rating",           r[1] != null ? ((Number) r[1]).intValue() : 0);
-            m.put("title",            r[2] != null ? r[2].toString() : "");
-            m.put("review",           r[3] != null ? r[3].toString() : "");
-            m.put("helpfulCount",     r[4] != null ? ((Number) r[4]).intValue() : 0);
+            m.put("id", r[0] != null ? r[0].toString() : "");
+            m.put("rating", r[1] != null ? ((Number) r[1]).intValue() : 0);
+            m.put("title", r[2] != null ? r[2].toString() : "");
+            m.put("review", r[3] != null ? r[3].toString() : "");
+            m.put("helpfulCount", r[4] != null ? ((Number) r[4]).intValue() : 0);
             m.put("verifiedPurchase", r[5] != null && (Boolean) r[5]);
-            m.put("createdAt",        r[6] != null ? r[6].toString() : "");
-            m.put("productId",        r[7] != null ? r[7].toString() : "");
-            m.put("productName",      r[8] != null ? r[8].toString() : "");
-            m.put("reviewerName",     r[9] != null ? r[9].toString() : "Anonymous");
+            m.put("createdAt", r[6] != null ? r[6].toString() : "");
+            m.put("productId", r[7] != null ? r[7].toString() : "");
+            m.put("productName", r[8] != null ? r[8].toString() : "");
+            m.put("reviewerName", r[9] != null ? r[9].toString() : "Anonymous");
             return m;
         }).toList();
 
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("reviews",      reviews);
-        payload.put("page",         page);
-        payload.put("size",         safeSize);
+        payload.put("reviews", reviews);
+        payload.put("page", page);
+        payload.put("size", safeSize);
         payload.put("totalElements", total);
-        payload.put("totalPages",   (int) Math.ceil((double) total / safeSize));
-        payload.put("hasMore",      (long) (page + 1) * safeSize < total);
+        payload.put("totalPages", (int) Math.ceil((double) total / safeSize));
+        payload.put("hasMore", (long) (page + 1) * safeSize < total);
         return new ApiResponse<>(true, "Reviews fetched", payload, 200);
     }
 
@@ -1513,24 +1529,25 @@ public class SellerService {
         UUID sellerId = getUserId();
 
         List<Object[]> avgRow = productRatingRepository.findSellerRatingSummary(sellerId);
-        double avgRating   = 0.0;
-        long   totalCount  = 0L;
+        double avgRating = 0.0;
+        long totalCount = 0L;
         if (!avgRow.isEmpty() && avgRow.get(0)[0] != null) {
-            avgRating  = ((Number) avgRow.get(0)[0]).doubleValue();
+            avgRating = ((Number) avgRow.get(0)[0]).doubleValue();
             totalCount = ((Number) avgRow.get(0)[1]).longValue();
         }
 
         List<Object[]> distRows = productRatingRepository.findSellerStarDistribution(sellerId);
         Map<String, Long> distribution = new java.util.LinkedHashMap<>();
-        for (int i = 5; i >= 1; i--) distribution.put(String.valueOf(i), 0L);
+        for (int i = 5; i >= 1; i--)
+            distribution.put(String.valueOf(i), 0L);
         for (Object[] row : distRows) {
             String star = String.valueOf(((Number) row[0]).intValue());
             distribution.put(star, ((Number) row[1]).longValue());
         }
 
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("avgRating",    Math.round(avgRating * 10.0) / 10.0);
-        payload.put("totalCount",   totalCount);
+        payload.put("avgRating", Math.round(avgRating * 10.0) / 10.0);
+        payload.put("totalCount", totalCount);
         payload.put("distribution", distribution);
         return new ApiResponse<>(true, "Review summary", payload, 200);
     }

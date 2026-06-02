@@ -4,15 +4,12 @@ import jakarta.validation.constraints.NotBlank;
 import java.util.UUID;
 
 public record BusinessDetailsDto(
-                @NotBlank(message = "Business name is required") String businessName,
+        String businessType,
 
-                String businessType,
+        String gstNumber,
 
-                String gstNumber,
+        String panNumber,
 
-                String panNumber,
-
-                String registeredAddress,
-
-                UUID businessCategory) {
+        UUID businessCategory) {
 }
+// jilijiliopoioii9obuhijjiiiiolioiioio
