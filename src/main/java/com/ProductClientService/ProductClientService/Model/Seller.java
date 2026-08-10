@@ -54,6 +54,12 @@ public class Seller {
     @JoinColumn(name = "category_id")
     private Category category;
 
+    @Column(name = "business_type")
+    private String businessType;
+
+    @Column(name = "gst_number")
+    private String gstNumber;
+
     @Column(name = "qr_code_url")
     private String qrCodeUrl;
 
@@ -89,6 +95,10 @@ public class Seller {
         ADHADHAR_CARD,
         DOCUMENT_VERIFICATION_PENDING,
         DOCUMENT_VERIFIED
+    }
+    public Seller(){};
+    public Seller(String phone){
+        this.phone=phone;
     }
 }
 

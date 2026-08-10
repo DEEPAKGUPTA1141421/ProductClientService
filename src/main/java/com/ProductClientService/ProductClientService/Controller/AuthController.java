@@ -3,10 +3,10 @@ package com.ProductClientService.ProductClientService.Controller;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
-import com.ProductClientService.ProductClientService.DTO.AuthRequest;
 import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.RefreshRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
+import com.ProductClientService.ProductClientService.DTO.Auth.AuthRequest;
 import com.ProductClientService.ProductClientService.Service.AuthService;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import com.google.zxing.WriterException;

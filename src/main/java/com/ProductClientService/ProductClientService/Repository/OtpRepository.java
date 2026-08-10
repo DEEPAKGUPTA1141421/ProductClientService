@@ -1,5 +1,6 @@
 package com.ProductClientService.ProductClientService.Repository;
 
+import java.time.ZonedDateTime;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -31,7 +32,7 @@ public interface OtpRepository extends JpaRepository<Otp, UUID> {
         Otp latestOtp = findTopByPhoneAndTypeOrderByCreatedAtDesc(phone, Otp.typeOfOtp.valueOf(type));
         if (latestOtp == null)
             return false;
-        if (new Date().after(latestOtp.getExpiryTime()))
+        if (ZonedDateTime.now().isAfter(latestOtp.getExpiryTime()))
             return false;
         return latestOtp.getOtpCode().equals(otpCode);
     }

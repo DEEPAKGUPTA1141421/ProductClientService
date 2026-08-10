@@ -317,6 +317,8 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             """, nativeQuery = true)
     List<ProductAttributeForIntentProjection> findAttributesForIntentByProductId(
             @Param("productId") UUID productId);
+
+    Optional<Product> findBySellerIdAndStandardProductId(UUID sellerId, UUID standardProductId);
 }
 
 // hyuhk khui huih iui huiuhukuijkji

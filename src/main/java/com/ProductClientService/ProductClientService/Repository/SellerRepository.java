@@ -6,8 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import com.ProductClientService.ProductClientService.DTO.AuthRequest;
 import com.ProductClientService.ProductClientService.Model.Seller;
+import com.ProductClientService.ProductClientService.DTO.Auth.AuthRequest;
 import com.ProductClientService.ProductClientService.Model.Address;
 
 import java.util.UUID;

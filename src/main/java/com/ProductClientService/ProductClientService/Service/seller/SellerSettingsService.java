@@ -209,14 +209,14 @@ public class SellerSettingsService {
         if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.BASIC_INFO_NAME) {
             seller.setOnboardingStage(Seller.ONBOARDSTAGE.BUSINESS_INFO);
         }
-        seller.setLegalName(dto.businessName());
         Category category = CategoryRepository
                 .findByIdAndCategoryLevel(dto.businessCategory(), Category.Level.SUPER_CATEGORY)
                 .orElseThrow(() -> new RuntimeException("Invalid category"));
         seller.setCategory(category);
-        // Store GST/PAN if your model has these fields
-        // seller.setGstNumber(dto.gstNumber());
-        // seller.setPanNumber(dto.panNumber());
+        if (dto.businessType() != null)
+            seller.setBusinessType(dto.businessType());
+        if (dto.gstNumber() != null)
+            seller.setGstNumber(dto.gstNumber());
 
         sellerRepository.save(seller);
         return new ApiResponse<>(true, "Business details updated", buildBusinessDetails(seller), 200);
@@ -385,9 +385,9 @@ public class SellerSettingsService {
     private Map<String, Object> buildBusinessDetails(Seller seller) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("businessName", seller.getLegalName());
-        map.put("shopCategory", seller.getCategory() != null ? seller.getCategory().getId() : null);
-        // map.put("gstNumber", seller.getGstNumber());
-        // map.put("panNumber", seller.getPanNumber());
+        map.put("businessType", seller.getBusinessType());
+        map.put("gstNumber", seller.getGstNumber());
+        map.put("businessCategory", seller.getCategory() != null ? seller.getCategory().getId() : null);
         return map;
     }
 
@@ -469,4 +469,5 @@ public class SellerSettingsService {
 }
 // hjhuj gyhu hhujuhhhhhhhjgyy hgjyjgygyhjkj kuh uhkhuk ihuuhnjjkj kjj jbh
 // bhbnnjhkhjbnmbhhjnh kjjn jknj kjjn njkj bjnjhhhuhuhuh hu uhu kh jji njkbhj
-// nbjknjk njkjjkkjn hkhu hji hkhkb bh hiooij hj jkhkuuggyuhgyuhuhukhu
+// nbjknjk njkjjkkjn hkhu hji hkhkb bh hiooij hj jkhkuuggyuhgyuhuhukhukhuuhhuk
+// huiyuuh

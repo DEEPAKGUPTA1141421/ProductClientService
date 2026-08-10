@@ -20,4 +20,6 @@ public interface CategoryAttributeRepository extends JpaRepository<CategoryAttri
             WHERE ca.category.id = :categoryId
             """)
     List<CategoryAttribute> findAllByCategoryId(UUID categoryId);
+
+    Optional<CategoryAttribute> findByCategoryIdAndName(UUID categoryId, String name);
 }
