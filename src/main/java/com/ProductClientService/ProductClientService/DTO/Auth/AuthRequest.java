@@ -1,4 +1,4 @@
-package com.ProductClientService.ProductClientService.DTO;
+package com.ProductClientService.ProductClientService.DTO.Auth;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

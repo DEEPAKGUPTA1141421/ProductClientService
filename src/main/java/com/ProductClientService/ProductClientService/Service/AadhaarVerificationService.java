@@ -1,8 +1,10 @@
 package com.ProductClientService.ProductClientService.Service;
 
+import java.time.ZonedDateTime;
 import java.util.Random;
 import java.util.UUID;
 
+import jakarta.security.auth.message.AuthException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -83,24 +85,29 @@ public class AadhaarVerificationService {
     /**
      * Verify Aadhaar OTP
      */
-    public ApiResponse<Object> verifyAadhaarOtp(String otp) {
+    public ApiResponse<Object> verifyAadhaarOtp(String otp) throws IllegalArgumentException{
         try {
             // Get phone number from UserPrincipal (JWT token)
             String phoneNumber = getPhoneNumberFromPrincipal();
 
             logger.info("Verifying OTP for phone: {}", phoneNumber);
 
-            // Check OTP validity
-            boolean isOtpValid = otpRepository.checkOtpValidity(phoneNumber, otp, "aadhaarVerification");
+            Otp otpEntity = otpRepository
+                    .findTopByPhoneAndTypeOrderByCreatedAtDesc(phoneNumber, Otp.typeOfOtp.aadhaarVerification);
 
-            if (!isOtpValid) {
-                logger.warn("Invalid or expired OTP for phone: {}", phoneNumber);
-                return new ApiResponse<>(false, "Invalid or expired OTP", null, 400);
-            }
+            if (otpEntity == null)
+                throw new IllegalArgumentException("No OTP exists for this user");
 
-            // Mark OTP as verified
-            Otp.typeOfOtp type = Otp.typeOfOtp.valueOf("aadhaarVerification");
-            int updatedCount = otpRepository.markAsVerified(phoneNumber, otp, type);
+            if (otpEntity.isVerified())
+                throw new AuthException("OTP has already been used");
+
+            if (ZonedDateTime.now().isAfter(otpEntity.getExpiryTime()))
+                throw new AuthException("OTP has expired");
+
+            if (!otpEntity.getOtpCode().equals(otp))
+                throw new AuthException("Invalid OTP code");
+
+            int updatedCount = otpRepository.markAsVerified(phoneNumber, otp, Otp.typeOfOtp.aadhaarVerification);
 
             if (updatedCount == 0) {
                 logger.warn("Failed to mark OTP as verified for phone: {}", phoneNumber);
@@ -192,14 +199,14 @@ public class AadhaarVerificationService {
     @Async
     public void sendOtpAsync(String phoneNumber) {
         try {
-            String otpCode = generateOtp();
-            otpRepository.CreateOtp(phoneNumber, "aadhaarVerification", otpCode);
-            logger.info("OTP created asynchronously for phone: {} and OTP: {}", phoneNumber, otpCode);
+            Otp otp = Otp.create(phoneNumber, Otp.typeOfOtp.aadhaarVerification, false);
+            otpRepository.save(otp);
+            logger.info("OTP created asynchronously for phone: {} and OTP: {}", phoneNumber, otp.getOtpCode());
 
             NotificationRequest request = new NotificationRequest();
             request.setTo(phoneNumber);
             request.setSubject("Aadhaar Verification OTP");
-            request.setBody("Your Aadhaar verification OTP is: " + otpCode
+            request.setBody("Your Aadhaar verification OTP is: " + otp.getOtpCode()
                     + ". Valid for 5 minutes. Please do not share with anyone.");
             request.setType("sms");
 
@@ -211,7 +218,6 @@ public class AadhaarVerificationService {
         }
     }
 
-    // Inner classes for API requests/responses
     public static class AadhaarVerificationRequest {
         public String aadhaarNumber;
         public String phoneNumber;

@@ -5,6 +5,7 @@ import java.time.ZonedDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.List;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -51,6 +52,22 @@ public class StandardProduct {
     // "noodles,instant,2-min")
     @Column(name = "search_keywords", columnDefinition = "TEXT")
     private String searchKeywords;
+
+    // Shopify (or any external platform) product ID — null for manually created entries
+    @Column(name = "external_id")
+    private String externalId;
+
+    // Mirrors the external platform's published_at / created_at / updated_at fields.
+    // updated_at is used as a cheap idempotency check: skip re-ingestion when the
+    // value hasn't changed since the last import.
+    @Column(name = "external_published_at")
+    private ZonedDateTime externalPublishedAt;
+
+    @Column(name = "external_created_at")
+    private ZonedDateTime externalCreatedAt;
+
+    @Column(name = "external_updated_at")
+    private ZonedDateTime externalUpdatedAt;
 
     // Admin must explicitly verify before sellers can list against this entry
     @Column(name = "is_verified", nullable = false)

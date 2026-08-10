@@ -15,12 +15,12 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
-import com.ProductClientService.ProductClientService.DTO.AuthRequest;
 import com.ProductClientService.ProductClientService.DTO.LoginRequest;
 import com.ProductClientService.ProductClientService.DTO.NotificationRequest;
 import com.ProductClientService.ProductClientService.DTO.RefreshRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.TokenPairResponse;
+import com.ProductClientService.ProductClientService.DTO.Auth.AuthRequest;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.CreateRiderDto;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.RiderDetailsResponse;
 import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetoryApiDto.RiderIdResponse;

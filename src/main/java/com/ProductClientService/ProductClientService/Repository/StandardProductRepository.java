@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import com.ProductClientService.ProductClientService.Model.StandardProduct;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,4 +53,9 @@ public interface StandardProductRepository extends JpaRepository<StandardProduct
     List<StandardProduct> findAllWithAssociations();
 
     List<StandardProduct> findByStatusOrderByCreatedAtDesc(StandardProduct.Status status);
+
+    Optional<StandardProduct> findByExternalId(String externalId);
+
+    // True when we already have an up-to-date copy — skip re-ingestion.
+    boolean existsByExternalIdAndExternalUpdatedAt(String externalId, ZonedDateTime externalUpdatedAt);
 }

@@ -1,8 +1,8 @@
 package com.ProductClientService.ProductClientService.Model;
 
+import java.security.SecureRandom;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Date;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
@@ -13,6 +13,10 @@ import jakarta.persistence.*;
 @Entity
 @Table(name = "otp")
 public class Otp {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String ZONE_KOLKATA = "Asia/Kolkata";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -24,7 +28,7 @@ public class Otp {
     @Column(name = "is_verified", nullable = false)
     private boolean isVerified = false;
     @Column(name = "expiry_time", nullable = false)
-    private Date expiryTime = new Date(System.currentTimeMillis() + 5 * 60 * 1000); // 5 minutes from now
+    private ZonedDateTime expiryTime;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -62,11 +66,11 @@ public class Otp {
         this.isVerified = isVerified;
     }
 
-    public Date getExpiryTime() {
+    public ZonedDateTime getExpiryTime() {
         return expiryTime;
     }
 
-    public void setExpiryTime(Date expiryTime) {
+    public void setExpiryTime(ZonedDateTime expiryTime) {
         this.expiryTime = expiryTime;
     }
 
@@ -89,19 +93,18 @@ public class Otp {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime
-            .now(ZoneId.of("Asia/Kolkata"));
+            .now(ZoneId.of(ZONE_KOLKATA));
 
     @UpdateTimestamp
     @Column(name = "updated_at")
-    private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
+    private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA));
 
-    // Getters and setters (recommended for private fields)
     public ZonedDateTime getCreatedAt() {
-        return createdAt.withZoneSameInstant(ZoneId.of("Asia/Kolkata"));
+        return createdAt.withZoneSameInstant(ZoneId.of(ZONE_KOLKATA));
     }
 
     public ZonedDateTime getUpdatedAt() {
-        return updatedAt.withZoneSameInstant(ZoneId.of("Asia/Kolkata"));
+        return updatedAt.withZoneSameInstant(ZoneId.of(ZONE_KOLKATA));
     }
 
     public enum typeOfOtp {
@@ -113,7 +116,28 @@ public class Otp {
         parcelCancelled,
         parcelReturned,
         aadhaarVerification,
-        emailVerification
+        emailVerification,
+        emailUpdate
+    }
+
+    public Otp() {
+    }
+
+    public static Otp create(String phone, typeOfOtp type, boolean testOtpMode) {
+        Otp otp = new Otp();
+        otp.setPhone(phone);
+        otp.setType(type);
+        otp.setVerified(false);
+        otp.setOtpCode(generateCode(testOtpMode));
+        otp.setExpiryTime(ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA)).plusMinutes(5));
+        return otp;
+    }
+
+    private static String generateCode(boolean testOtpMode) {
+        if (testOtpMode) {
+            return "123456";
+        }
+        int code = 100000 + RANDOM.nextInt(900000);
+        return String.valueOf(code);
     }
 }
-// huuihujhujklkkokopoko
