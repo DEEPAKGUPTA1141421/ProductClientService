@@ -58,15 +58,11 @@ public class UserController {
     public ResponseEntity<?> updateAddress(@RequestBody SellerBasicInfo infoRequest) {
         try {
             ApiResponse<Object> response = userService.handleLocaton(infoRequest);
-            return ResponseEntity
-                    .status(200)
-                    .body(response);
+            return ResponseEntity.status(200).body(response);
         } catch (Exception e) {
             ApiResponse<Object> response = new ApiResponse(false, e.getMessage(), null, 501);
             System.out.println("messge" + e);
-            return ResponseEntity
-                    .status(response.statusCode())
-                    .body(response);
+            return ResponseEntity.status(response.statusCode()).body(response);
         }
     }
 
@@ -92,9 +88,7 @@ public class UserController {
     public ResponseEntity<ApiResponse<Object>> setDefaultAddress(@PathVariable UUID addressId) {
         try {
             ApiResponse<Object> response = userService.setDefaultAddress(addressId);
-            return ResponseEntity
-                    .status(response.statusCode())
-                    .body(response);
+            return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(500)
                     .body(new ApiResponse<>(false, e.getMessage(), null, 500));
@@ -145,7 +139,3 @@ public class UserController {
         return ResponseEntity.ok(userService.registerFcmToken(token));
     }
 }
-// uhiuhu uihiuh hjkj h8yiuhy uyg97 gfyugyugujnnnkjnn nkjnnkjn jihknk
-// hhiuiuo9ujkhjbhjbhjb hbjbhjb bhuihiuhyiuyiuyiuyuiuyi
-// jijuijiu joijioo jiuu9o8u9 iuui8u87yyu
-// hiuhuo8uo90ih09iju98unkjhuhuihhuyubjbuguygu guytutuythhuhjij

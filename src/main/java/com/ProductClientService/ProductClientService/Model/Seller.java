@@ -96,6 +96,10 @@ public class Seller {
         DOCUMENT_VERIFICATION_PENDING,
         DOCUMENT_VERIFIED
     }
+    public Seller(){};
+    public Seller(String phone){
+        this.phone=phone;
+    }
 }
 
 // skihyiyhhiujhhuhuyjhjhjbgj mlnjjhjhh jji hkuuojui kihuihui kjhj bhhu

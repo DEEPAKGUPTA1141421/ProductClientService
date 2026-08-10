@@ -2,11 +2,14 @@ package com.ProductClientService.ProductClientService.Service.user;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.ProductClientService.ProductClientService.Service.BaseService;
+import jakarta.security.auth.message.AuthException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,7 +33,6 @@ import com.ProductClientService.ProductClientService.Repository.UserRecentSearch
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
 import com.ProductClientService.ProductClientService.Service.KafkaProducerService;
-import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
 import com.cloudinary.Cloudinary;
@@ -43,15 +45,15 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
-public class UserService {
+public class UserService extends BaseService {
     private final ObjectProvider<GoogleMapsService> googleMapsProvider;
-    private final HttpServletRequest request;
     private final UserRepojectory userRepojectory;
     private final SellerAddressRepository sellerAddressRepository;
     private final UserRecentSearchRepository repo;
     private final OtpRepository otpRepository;
     private final KafkaProducerService producerService;
     private final ObjectMapper objectMapper;
+    private final OpenStreetMapService openStreetMapService;
 
     private final Cloudinary cloudinary;
 
@@ -131,13 +133,13 @@ public class UserService {
     @Async
     public void sendEmailOtpAsync(String toEmail, String phone) {
         try {
-            String otpCode = String.valueOf((int) (Math.random() * 900000) + 100000);
-            otpRepository.CreateOtp(phone, "emailVerification", otpCode);
+            Otp otp = Otp.create(phone, Otp.typeOfOtp.aadhaarVerification, false);
+            otpRepository.save(otp);
 
             NotificationRequest notification = new NotificationRequest();
             notification.setTo(toEmail);
             notification.setSubject("Verify your email - OTP");
-            notification.setBody("Your email verification OTP is: " + otpCode
+            notification.setBody("Your email verification OTP is: " + otp.getOtpCode()
                     + ". Valid for 5 minutes. Do not share with anyone.");
             notification.setType("email");
 
@@ -148,7 +150,7 @@ public class UserService {
     }
 
     @Transactional
-    public ApiResponse<Object> verifyEmailOtp(VerifyEmailOtpRequest dto) {
+    public ApiResponse<Object> verifyEmailOtp(VerifyEmailOtpRequest dto) throws IllegalArgumentException {
         User user = userRepojectory.findById(getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -156,15 +158,17 @@ public class UserService {
             return new ApiResponse<>(false, "No pending email update found. Please request again.", null, 400);
         }
 
-        // Check OTP validity (keyed to phone, type = emailVerification)
-        boolean valid = otpRepository.checkOtpValidity(
-                user.getPhone(), dto.otp(), "emailVerification");
+        Otp otp = otpRepository.findTopByPhoneAndTypeOrderByCreatedAtDesc(user.getPhone(), Otp.typeOfOtp.emailVerification);
 
-        if (!valid) {
-            return new ApiResponse<>(false, "Invalid or expired OTP", null, 400);
-        }
+        if (otp.isVerified())
+            throw new IllegalArgumentException("OTP has already been used");
 
-        // Commit the email change
+        if (ZonedDateTime.now().isAfter(otp.getExpiryTime()))
+            throw new IllegalArgumentException("OTP has expired");
+
+        if (!otp.getOtpCode().equals(dto.otp()))
+            throw new IllegalArgumentException("Invalid OTP code");
+
         user.setEmail(user.getPendingEmail());
         user.setPendingEmail(null);
         user.setEmailVerified(true);
@@ -191,24 +195,17 @@ public class UserService {
     }
 
     public ApiResponse<Object> handleLocaton(SellerBasicInfo inforequest) {
-        String phone = (String) request.getAttribute("phone");
-        System.out.println("calling google service and test" +
-                inforequest.latitude().getClass()
-                + inforequest.longitude().getClass() + "hello and say");
-        GoogleMapsService googleMapsService = googleMapsProvider.getObject();
-        AddressResponse addressDetails = googleMapsService.getAddressFromLatLng(
+        OpenStreetMapService.AddressResponse addressDetails = openStreetMapService.getAddressFromLatLng(
                 inforequest.latitude(),
                 inforequest.longitude());
-        System.out.println("we are calling repo");
-        boolean isSaved = saveAddress(addressDetails, phone, inforequest.latitude(),
-                inforequest.longitude());
+        boolean isSaved = saveAddress(addressDetails, inforequest.latitude(), inforequest.longitude());
         if (!isSaved)
             return new ApiResponse<>(false, "Location Info Not Saved", null, 500);
         return new ApiResponse<>(true, "Location Info Saved", null, 200);
     }
 
-    private boolean saveAddress(AddressResponse addressDetails, String phone, BigDecimal lat, BigDecimal longi) {
-        User user = userRepojectory.findByPhone(phone)
+    private boolean saveAddress(OpenStreetMapService.AddressResponse addressDetails, BigDecimal lat, BigDecimal longi) {
+        User user = userRepojectory.findById(getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
         Address address = new Address();
         System.out.println("City is " + addressDetails.city() + addressDetails);
@@ -227,7 +224,7 @@ public class UserService {
     public ApiResponse<Object> searchPlace(String keyword) {
         try {
             GoogleMapsService googleMapsService = googleMapsProvider.getObject();
-            List<AddressResponse> addressDetails = googleMapsService.searchPlaces(keyword);
+            List<OpenStreetMapService.AddressResponse> addressDetails = null;
             return new ApiResponse<>(true, "Search Result", addressDetails, 201);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Search Failed", null, 501);
@@ -237,9 +234,7 @@ public class UserService {
     @Transactional
     public ApiResponse<Object> setDefaultAddress(UUID addressId) {
         try {
-            // Get current user from request attribute
-            User user = userRepojectory.findById(getUserId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = userRepojectory.findById(getUserId()).orElseThrow(() -> new RuntimeException("User not found"));
 
             if (!addressBelongToUser(user, addressId)) {
                 throw new RuntimeException("Address does not belong to the user");
@@ -260,14 +255,12 @@ public class UserService {
 
     private boolean addressBelongToUser(User user, UUID addressId) {
         List<Address> addresses = user.getAddresses();
-
-        // Flag to track if the address belongs to user
         boolean found = false;
 
         for (Address addr : addresses) {
             if (addr.getId().equals(addressId)) {
                 found = true;
-                break; // stop the loop once found
+                break;
             }
         }
         return found;
@@ -317,10 +310,6 @@ public class UserService {
             userRepojectory.save(user);
         });
         return new ApiResponse<>(true, "FCM token registered", null, 200);
-    }
-
-    private UUID getUserId() {
-        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
     }
 }
 

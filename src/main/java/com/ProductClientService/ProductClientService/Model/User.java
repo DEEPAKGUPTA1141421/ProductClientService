@@ -19,9 +19,9 @@ import com.fasterxml.jackson.annotation.JsonManagedReference;
 @Table(name = "users")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 @Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class User {
 
     @Id
@@ -61,7 +61,8 @@ public class User {
     private UserStatus status = UserStatus.PENDING_VERIFICATION;
 
     /**
-     * Flat list of purchased product UUIDs stored as a jsonb array on the users row.
+     * Flat list of purchased product UUIDs stored as a jsonb array on the users
+     * row.
      * No separate table — just a column. Populated by the order service.
      * Used to gate review submission without any join.
      */
@@ -82,7 +83,10 @@ public class User {
     @Column(name = "wishlist_item_ids", columnDefinition = "jsonb")
     private Set<UUID> wishlistItemIds = new HashSet<>();
 
-    /** FCM device token — updated on each app launch, used to push order status notifications. */
+    /**
+     * FCM device token — updated on each app launch, used to push order status
+     * notifications.
+     */
     @Column(name = "fcm_token", length = 512)
     private String fcmToken;
 
@@ -104,6 +108,10 @@ public class User {
         INACTIVE,
         BLOCKED,
         PENDING_VERIFICATION
+    }
+
+    public User(String phone) {
+        this.phone = phone;
     }
 }
 // njkjnjkkjjkkljjijiliji
