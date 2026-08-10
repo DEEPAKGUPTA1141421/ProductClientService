@@ -5,7 +5,6 @@ import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse.SearchProductDto;
 import com.ProductClientService.ProductClientService.DTO.search.ShopSearchDocument;
-import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Repository.CartRepository;
 import com.ProductClientService.ProductClientService.Repository.WishlistRepository;
 import com.ProductClientService.ProductClientService.network.DeliveryInventoryClient;
@@ -127,12 +126,7 @@ public class SearchResultsService {
             return;
 
         try {
-            // Load wishlist once
-            Set<UUID> wishlisted = wishlistRepo.findByUserId(userId)
-                    .map(wl -> wl.getItems().stream()
-                            .map(i -> i.getProductId())
-                            .collect(Collectors.toSet()))
-                    .orElse(Set.of());
+            Set<UUID> wishlisted = wishlistRepo.findProductIdsByUserId(userId);
 
             products.forEach(p -> p.setWishlisted(wishlisted.contains(p.getId())));
         } catch (Exception e) {
@@ -149,11 +143,9 @@ public class SearchResultsService {
             return;
 
         try {
-            Set<UUID> inCart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
-                    .map(cart -> cart.getItems().stream()
-                            .map(item -> item.getProductId())
-                            .collect(Collectors.toSet()))
-                    .orElse(Set.of());
+            Set<UUID> inCart = cartRepo.findProductIdsByUserIdAndStatus(
+                    userId,
+                    com.ProductClientService.ProductClientService.Model.Cart.Status.ACTIVE);
 
             products.forEach(p -> p.setInCart(inCart.contains(p.getId())));
         } catch (Exception e) {

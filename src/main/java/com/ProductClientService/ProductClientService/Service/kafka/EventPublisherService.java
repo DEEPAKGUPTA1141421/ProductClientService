@@ -6,16 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 
 
 /**
- * Thin async wrapper over KafkaTemplate.
- * Every publish method is @Async — the HTTP response is never delayed by Kafka.
- * All exceptions are swallowed: a Kafka outage must not fail the API call.
+ * Thin wrapper over KafkaTemplate.
+ * Immediate serialization/send setup failures are caught so a Kafka outage does not fail the API call.
  */
 @Service
 @RequiredArgsConstructor
@@ -37,25 +35,21 @@ public class EventPublisherService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
-    @Async
     public void publishProductViewed(UUID productId, UUID userId, UUID categoryId) {
         publish(TOPIC_VIEWED, ProductViewedEvent.builder()
                 .productId(productId).userId(userId).categoryId(categoryId).build());
     }
 
-    @Async
     public void publishCartAdded(UUID productId, UUID variantId, UUID userId) {
         publish(TOPIC_CART_ADDED, ProductCartAddedEvent.builder()
                 .productId(productId).variantId(variantId).userId(userId).build());
     }
 
-    @Async
     public void publishWishlistAdd(UUID productId, UUID userId) {
         publish(TOPIC_WISHLISTED, ProductWishlistedEvent.builder()
                 .productId(productId).userId(userId).action("ADD").build());
     }
 
-    @Async
     public void publishWishlistRemove(UUID productId, UUID userId) {
         publish(TOPIC_WISHLISTED, ProductWishlistedEvent.builder()
                 .productId(productId).userId(userId).action("REMOVE").build());
@@ -65,7 +59,6 @@ public class EventPublisherService {
      * Published when a seller's status transitions to ACTIVE (admin approval).
      * Consumed by ShopIndexerConsumer to index the seller as a shop in shops-v1.
      */
-    @Async
     public void publishSellerLive(UUID sellerId) {
         publish(TOPIC_SELLER_LIVE, SellerLiveEvent.builder().sellerId(sellerId).build());
     }
@@ -75,30 +68,25 @@ public class EventPublisherService {
      * Consumed by SearchIntentIndexerConsumer to generate and index
      * search intents into Elasticsearch.
      */
-    @Async
     public void publishProductLive(UUID productId) {
         publish(TOPIC_PRODUCT_LIVE, ProductLiveEvent.builder()
                 .productId(productId).build());
     }
 
-    @Async
     public void publishReviewSubmitRequested(ReviewSubmitRequestedEvent event) {
         publish(TOPIC_REVIEW_SUBMIT_REQUESTED, event);
     }
 
-    @Async
     public void publishReviewSubmitted(UUID reviewId, UUID productId, UUID userId, int rating) {
         publish(TOPIC_REVIEW_SUBMITTED, ReviewSubmittedEvent.builder()
                 .reviewId(reviewId).productId(productId).userId(userId).rating(rating).build());
     }
 
-    @Async
     public void publishReviewHelpfulAdd(UUID reviewId, UUID userId) {
         publish(TOPIC_REVIEW_HELPFUL, ReviewHelpfulEvent.builder()
                 .reviewId(reviewId).userId(userId).action("ADD").build());
     }
 
-    @Async
     public void publishReviewHelpfulRemove(UUID reviewId, UUID userId) {
         publish(TOPIC_REVIEW_HELPFUL, ReviewHelpfulEvent.builder()
                 .reviewId(reviewId).userId(userId).action("REMOVE").build());
@@ -109,7 +97,6 @@ public class EventPublisherService {
      * so all events for the same product land on the same partition (preserves
      * per-product ordering for downstream CF feature windows).
      */
-    @Async
     public void publishInteractionBatch(java.util.List<UserInteractionEvent> events) {
         if (events == null || events.isEmpty()) return;
         for (UserInteractionEvent ev : events) {

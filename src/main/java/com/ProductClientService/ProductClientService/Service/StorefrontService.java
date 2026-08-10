@@ -5,7 +5,6 @@ import com.ProductClientService.ProductClientService.DTO.search.SearchResultsRes
 import com.ProductClientService.ProductClientService.DTO.search.StorefrontResponse;
 import com.ProductClientService.ProductClientService.DTO.search.StorefrontResponse.StorefrontSection;
 import com.ProductClientService.ProductClientService.DTO.search.StorefrontResponse.StorefrontSection.SectionType;
-import com.ProductClientService.ProductClientService.Model.Cart;
 import com.ProductClientService.ProductClientService.Repository.CartRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Repository.WishlistRepository;
@@ -153,22 +152,16 @@ public class StorefrontService {
         if (userId == null || products.isEmpty()) return;
 
         try {
-            Set<UUID> wishlisted = wishlistRepo.findByUserId(userId)
-                    .map(wl -> wl.getItems().stream()
-                            .map(i -> i.getProductId())
-                            .collect(Collectors.toSet()))
-                    .orElse(Set.of());
+            Set<UUID> wishlisted = wishlistRepo.findProductIdsByUserId(userId);
             products.forEach(p -> p.setWishlisted(wishlisted.contains(p.getId())));
         } catch (Exception e) {
             log.warn("[StorefrontService] Wishlist injection failed for userId={}: {}", userId, e.getMessage());
         }
 
         try {
-            Set<UUID> inCart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE)
-                    .map(cart -> cart.getItems().stream()
-                            .map(item -> item.getProductId())
-                            .collect(Collectors.toSet()))
-                    .orElse(Set.of());
+            Set<UUID> inCart = cartRepo.findProductIdsByUserIdAndStatus(
+                    userId,
+                    com.ProductClientService.ProductClientService.Model.Cart.Status.ACTIVE);
             products.forEach(p -> p.setInCart(inCart.contains(p.getId())));
         } catch (Exception e) {
             log.warn("[StorefrontService] Cart flag injection failed for userId={}: {}", userId, e.getMessage());

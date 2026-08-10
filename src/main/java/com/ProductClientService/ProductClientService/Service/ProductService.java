@@ -293,21 +293,27 @@ public class ProductService {
     }
 
     private RatingSummaryDTO buildRatingSummary(UUID productId) {
-        List<Object[]> distRows = productRatingRepository.findStarDistributionByProductId(productId);
-        Double avg = productRatingRepository.findAverageRatingByProductId(productId);
-        Long total = productRatingRepository.countRatingsByProductId(productId);
+        Object[] row = productRatingRepository.findRatingSummaryRowByProductId(productId);
 
         Map<Integer, Long> distribution = new java.util.LinkedHashMap<>();
-        for (int i = 5; i >= 1; i--) distribution.put(i, 0L);
-        for (Object[] row : distRows) {
-            distribution.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+        for (int i = 5; i >= 1; i--) {
+            distribution.put(i, numberAt(row, 7 - i).longValue());
         }
 
         return RatingSummaryDTO.builder()
-                .averageRating(avg != null ? Math.round(avg * 10.0) / 10.0 : 0.0)
-                .totalRatings(total != null ? total : 0L)
+                .averageRating(Math.round(numberAt(row, 0).doubleValue() * 10.0) / 10.0)
+                .totalRatings(numberAt(row, 1).longValue())
                 .distribution(distribution)
+                .verifiedCount(numberAt(row, 7).longValue())
+                .withImagesCount(numberAt(row, 8).longValue())
                 .build();
+    }
+
+    private Number numberAt(Object[] row, int index) {
+        if (row == null || index >= row.length || row[index] == null) {
+            return 0;
+        }
+        return (Number) row[index];
     }
 
     /** Returns userId from the JWT if authenticated, null for guest requests. */
