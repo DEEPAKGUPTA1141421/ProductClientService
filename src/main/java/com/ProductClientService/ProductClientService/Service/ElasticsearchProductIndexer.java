@@ -52,12 +52,8 @@ public class ElasticsearchProductIndexer {
     @PersistenceContext
     private final EntityManager em;
 
-    // ── Single product (async) ────────────────────────────────────────────────
-
-    @Async
     public void indexProduct(UUID productId) {
         try {
-            // Ensure the index exists — no-op if already created at startup
             indexInitializer.createProductsIndex();
 
             ProductSearchDocument doc = buildDocument(productId);
@@ -129,6 +125,11 @@ public class ElasticsearchProductIndexer {
                         AND ca.is_image_attribute = TRUE
                     CROSS JOIN LATERAL UNNEST(string_to_array(pa.images, ',')) AS img_val
                     GROUP BY pa.product_id
+                ),
+                cover AS (
+                    SELECT DISTINCT ON (product_id) product_id, url
+                    FROM product_media
+                    ORDER BY product_id, is_cover DESC, position ASC
                 )
                 SELECT
                     p.id, p.name, p.description, p.step,
@@ -144,13 +145,15 @@ public class ElasticsearchProductIndexer {
                     p.average_rating, p.rating_count,
                     p.created_at,
                     2  AS delivery_days,
-                    1  AS free_delivery
+                    1  AS free_delivery,
+                    cover.url AS cover_url
                 FROM products p
                 LEFT JOIN brands   b  ON b.id = p.brand_id
                 LEFT JOIN categories c ON c.id = p.category_id
                 LEFT JOIN sellers  s  ON s.id = p.seller_id
                 LEFT JOIN cheapest cv ON cv.product_id = p.id
                 LEFT JOIN imgs        ON imgs.product_id = p.id
+                LEFT JOIN cover       ON cover.product_id = p.id
                 WHERE p.id = :productId
                 """;
 
@@ -181,10 +184,18 @@ public class ElasticsearchProductIndexer {
         }
 
         // ── Images list ───────────────────────────────────────────────────────
+        // Cover photo (product_media) always leads, followed by any per-attribute
+        // images — matches what the seller actually set as the listing's photo.
         String imagesCsv = r[14] != null ? r[14].toString() : "";
-        List<String> images = imagesCsv.isBlank()
+        List<String> attrImages = imagesCsv.isBlank()
                 ? List.of()
                 : Arrays.asList(imagesCsv.split(","));
+        String coverUrl = r[20] != null ? r[20].toString() : null;
+        List<String> images = new ArrayList<>();
+        if (coverUrl != null && !coverUrl.isBlank()) images.add(coverUrl);
+        for (String img : attrImages) {
+            if (!images.contains(img)) images.add(img);
+        }
 
         return ProductSearchDocument.builder()
                 .productId(r[0].toString())

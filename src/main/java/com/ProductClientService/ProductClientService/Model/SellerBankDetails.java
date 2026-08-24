@@ -11,6 +11,8 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.ProductClientService.ProductClientService.Utils.AesStringConverter;
+
 @Entity
 @Table(name = "seller_bank_details")
 @Getter
@@ -28,6 +30,7 @@ public class SellerBankDetails {
     @Column(name = "account_holder_name")
     private String accountHolderName;
 
+    @Convert(converter = AesStringConverter.class)
     @Column(name = "account_number")
     private String accountNumber;
 

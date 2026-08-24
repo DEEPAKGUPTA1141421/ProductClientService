@@ -13,7 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -63,10 +65,13 @@ import org.slf4j.LoggerFactory;
 public class SellerSettingsService extends BaseService {
 
     private static final String ZONE_KOLKATA = "Asia/Kolkata";
-    private static final long EMAIL_OTP_RESEND_COOLDOWN_SECONDS = 60;
+    private static final String EMAIL_OTP_RATE_LIMIT_KEY_PREFIX = "otp:emailUpdate:";
+    private static final int EMAIL_OTP_MAX_REQUESTS = 5;
+    private static final java.time.Duration EMAIL_OTP_RATE_LIMIT_WINDOW = java.time.Duration.ofMinutes(5);
 
     private final SellerRepository sellerRepository;
     private final SellerBankDetailsRepository bankDetailsRepository;
+    private final com.ProductClientService.ProductClientService.Repository.SellerKycDocumentRepository kycDocumentRepository;
     private final SellerNotificationPreferencesRepository notificationRepository;
     private final SellerPreferencesRepository preferencesRepository;
     private final CategoryRepository CategoryRepository;
@@ -79,6 +84,7 @@ public class SellerSettingsService extends BaseService {
     private final ObjectMapper objectMapper;
     private final OtpRepository otpRepository;
     private final KafkaProducerService producerService;
+    private final StringRedisTemplate redisTemplate;
     private static final Logger logger = LoggerFactory.getLogger(SellerSettingsService.class);
 
     // ──────────────────────────────────────────
@@ -107,6 +113,7 @@ public class SellerSettingsService extends BaseService {
         data.put("bank", bank.map(this::buildBankInfo).orElse(null));
         data.put("notifications", notif.map(this::buildNotifInfo).orElse(defaultNotifications()));
         data.put("preferences", prefs.map(this::buildPrefsInfo).orElse(defaultPreferences()));
+        data.put("kyc", kycDocumentRepository.findBySellerId(sellerId).map(this::buildKycInfo).orElse(defaultKyc()));
 
         Seller.ONBOARDSTAGE stage = seller.getOnboardingStage();
         boolean onboardingComplete = stage == Seller.ONBOARDSTAGE.DOCUMENT_VERIFIED
@@ -205,30 +212,34 @@ public class SellerSettingsService extends BaseService {
             return new ApiResponse<>(false, "Email already in use by another account", null, 409);
         }
 
-        // Resend cooldown — avoid OTP spam to the same phone/type
-        Otp lastOtp = otpRepository.findTopByPhoneAndTypeOrderByCreatedAtDesc(seller.getPhone(),
-                Otp.typeOfOtp.emailUpdate);
-        if (lastOtp != null) {
-            ZonedDateTime now = ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA));
-            ZonedDateTime canResendAt = lastOtp.getCreatedAt().plusSeconds(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
-            if (now.isBefore(canResendAt)) {
-                long waitSeconds = java.time.Duration.between(now, canResendAt).getSeconds();
-                return new ApiResponse<>(false,
-                        "Please wait " + waitSeconds + "s before requesting another OTP", null, 429);
-            }
+        // Resend cooldown — avoid OTP spam to the same phone (Redis-backed, no DB read)
+        if (!allowEmailOtpRequest(seller.getPhone())) {
+            long waitSeconds = redisTemplate.getExpire(EMAIL_OTP_RATE_LIMIT_KEY_PREFIX + seller.getPhone());
+            return new ApiResponse<>(false,
+                    "Too many OTP requests. Please wait " + Math.max(waitSeconds, 0) + "s and try again", null, 429);
         }
 
         // Stage the new email — it is NOT committed to seller.email until verified
         seller.setPendingEmail(newEmail);
         sellerRepository.save(seller);
 
-        sendEmailOtpAsync(seller.getPhone(), newEmail);
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() ->
+                sendEmailOtpAsync(seller.getPhone(), newEmail)
+        );
 
         return new ApiResponse<>(true, "OTP sent to " + newEmail + ". Please verify to complete the update.",
                 null, 200);
     }
 
-    @Async
+    private boolean allowEmailOtpRequest(String phone) {
+        String key = EMAIL_OTP_RATE_LIMIT_KEY_PREFIX + phone;
+        Long count = redisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1) {
+            redisTemplate.expire(key, EMAIL_OTP_RATE_LIMIT_WINDOW);
+        }
+        return count != null && count <= EMAIL_OTP_MAX_REQUESTS;
+    }
+
     public void sendEmailOtpAsync(String phone, String toEmail) {
         try {
             Otp otp = new Otp(phone, Otp.typeOfOtp.emailUpdate, false);
@@ -349,7 +360,7 @@ public class SellerSettingsService extends BaseService {
     public ApiResponse<Object> updateBankDetails(BankDetailsDto dto) {
         UUID sellerId = getUserId();
         Seller seller = getSellerOrThrow();
-        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.BUSINESS_INFO) {
+        if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.DOCUMENT_VERIFICATION_PENDING) {
             seller.setOnboardingStage(Seller.ONBOARDSTAGE.BANK_ACCOUNT);
             sellerRepository.save(seller);
         }
@@ -587,6 +598,40 @@ public class SellerSettingsService extends BaseService {
                 "theme", "Light",
                 "currency", "₹ INR (Indian Rupee)",
                 "timeZone", "Asia/Kolkata (IST)");
+    }
+
+    private Map<String, Object> buildKycInfo(com.ProductClientService.ProductClientService.Model.SellerKycDocument kyc) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("status", kyc.getStatus().name());
+        map.put("aadhaarLast4", maskLast4(kyc.getAadhaarNumber()));
+        map.put("panLast4", maskLast4(kyc.getPanNumber()));
+        map.put("gstNumber", kyc.getGstNumber());
+        map.put("aadhaarFrontUrl", kyc.getAadhaarFrontUrl());
+        map.put("aadhaarBackUrl", kyc.getAadhaarBackUrl());
+        map.put("panDocumentUrl", kyc.getPanDocumentUrl());
+        map.put("gstDocumentUrl", kyc.getGstDocumentUrl());
+        map.put("rejectionReason", kyc.getRejectionReason());
+        return map;
+    }
+
+    private Map<String, Object> defaultKyc() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("status", null);
+        map.put("aadhaarLast4", null);
+        map.put("panLast4", null);
+        map.put("gstNumber", null);
+        map.put("aadhaarFrontUrl", null);
+        map.put("aadhaarBackUrl", null);
+        map.put("panDocumentUrl", null);
+        map.put("gstDocumentUrl", null);
+        map.put("rejectionReason", null);
+        return map;
+    }
+
+    private String maskLast4(String value) {
+        if (value == null || value.length() < 4)
+            return null;
+        return "*".repeat(value.length() - 4) + value.substring(value.length() - 4);
     }
 
     private String maskAccountNumber(String accountNumber) {

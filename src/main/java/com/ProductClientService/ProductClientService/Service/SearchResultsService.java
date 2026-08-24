@@ -115,6 +115,57 @@ public class SearchResultsService {
         return response;
     }
 
+    /**
+     * Same orchestration as {@link #search}, but lets Elasticsearch failures propagate
+     * instead of degrading to an empty result. Used by callers that need to detect ES
+     * being down so they can fall back to the database (e.g. the seller product listing).
+     * A Redis cache hit still short-circuits normally since it doesn't touch ES.
+     */
+    public SearchResultsResponse searchStrict(SearchRequest req, UUID userId) throws java.io.IOException {
+        String cacheKey = buildCacheKey(req);
+
+        String cached = redis.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                SearchResultsResponse response = objectMapper.readValue(cached,
+                        SearchResultsResponse.class);
+                injectWishlistFlags(response.getProducts(), userId);
+                injectCartFlags(response.getProducts(), userId);
+                return response;
+            } catch (Exception e) {
+                log.warn("Cache deserialisation failed for key={}: {}", cacheKey, e.getMessage());
+            }
+        }
+
+        SearchResultsResponse response = esSearchService.searchOrThrow(req, userId);
+
+        try {
+            Duration ttl;
+            if (response.getTotalCount() == 0) {
+                ttl = Duration.ofSeconds(30);
+            } else if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
+                ttl = CACHE_TTL_SHORT;
+            } else {
+                ttl = CACHE_TTL_LONG;
+            }
+            redis.opsForValue().set(cacheKey, objectMapper.writeValueAsString(response), ttl);
+        } catch (Exception e) {
+            log.warn("Failed to cache response for key={}: {}", cacheKey, e.getMessage());
+        }
+
+        injectWishlistFlags(response.getProducts(), userId);
+        injectCartFlags(response.getProducts(), userId);
+
+        if (req.getSellerId() != null
+                && req.getUserLat() != null && req.getUserLng() != null
+                && req.getUserLat() != 0.0 && req.getUserLng() != 0.0) {
+            String etaLabel = resolveEtaForShop(req.getSellerId(), req.getUserLat(), req.getUserLng());
+            injectDeliveryText(response.getProducts(), etaLabel);
+        }
+
+        return response;
+    }
+
     // ─── Wishlist injection ───────────────────────────────────────────────────
 
     /**

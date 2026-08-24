@@ -6,7 +6,10 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
+import com.ProductClientService.ProductClientService.DTO.Settings.AadhaarDocumentsDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.AadhaarVerificationDto;
+import com.ProductClientService.ProductClientService.DTO.Settings.GstDocumentDto;
+import com.ProductClientService.ProductClientService.DTO.Settings.PanDocumentDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFromCatalogDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductTagRequestDto;
@@ -14,6 +17,7 @@ import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsD
 import com.ProductClientService.ProductClientService.Service.AadhaarVerificationService;
 import com.ProductClientService.ProductClientService.Service.SearchIntentGeneratorService;
 import com.ProductClientService.ProductClientService.Service.TagService;
+import com.ProductClientService.ProductClientService.Service.seller.SellerKycService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerService;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -46,6 +50,7 @@ public class SellerController {
     private final TagService tagService;
     private final SearchIntentGeneratorService searchIntentGeneratorService;
     private final AadhaarVerificationService aadhaarVerificationService;
+    private final SellerKycService sellerKycService;
 
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SELLER')")
@@ -54,6 +59,16 @@ public class SellerController {
         return ResponseEntity
                 .status(200)
                 .body(response);
+    }
+
+    // ── GET /api/v1/seller/product/my-categories ──────────────────────────────
+    // Distinct categories the seller actually has LIVE products in — used to
+    // populate the product-list category filter (instead of the full global tree).
+    @GetMapping("/my-categories")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getMyProductCategories() {
+        ApiResponse<Object> response = sellerService.getMyProductCategories();
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @PostMapping("/attach-brand")
@@ -69,24 +84,11 @@ public class SellerController {
                 .body(response);
     }
 
-    /**
-     * Returns the seller's current draft product with ALL step data populated.
-     * Frontend uses this to resume product creation from where the seller left off.
-     */
-    // ── GET /api/v1/seller/product/my-products?page=0&size=20 ────────────────
+    // ── GET /api/v1/seller/product/my-products ────────────────────────────────
+    // Searches Elasticsearch first; falls back to the database if ES is down/unavailable.
     @GetMapping("/my-products")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getMyLiveProducts(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        ApiResponse<Object> response = sellerService.getMyLiveProducts(page, size);
-        return ResponseEntity.status(response.statusCode()).body(response);
-    }
-
-    // ── GET /api/v1/seller/product/my-products-es ────────────────────────────
-    @GetMapping("/my-products-es")
-    @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<?> getMyLiveProductsEs(
             @RequestParam(defaultValue = "0")  int     page,
             @RequestParam(defaultValue = "50") int     size,
             @RequestParam(required = false)    String  query,
@@ -97,7 +99,7 @@ public class SellerController {
             @RequestParam(defaultValue = "newest") String sortBy,
             @RequestParam(required = false)    Boolean isActive,
             @RequestParam(required = false)    Integer maxStock) {
-        ApiResponse<Object> response = sellerService.getMyLiveProductsEs(
+        ApiResponse<Object> response = sellerService.getMyLiveProducts(
                 page, size, query, categoryId, brandId, minPrice, maxPrice, sortBy, isActive, maxStock);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
@@ -314,12 +316,12 @@ public class SellerController {
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> uploadProductMedia(
             @RequestParam("productId") UUID productId,
-            @RequestParam(value = "images", required = false) List<MultipartFile> coverFiles,
+            @RequestParam(value = "images", required = true) MultipartFile coverFile,
             @RequestParam(value = "attributeImageKeys", required = false) List<String> attributeImageKeys,
             @RequestParam(value = "attributeImages", required = false) List<MultipartFile> attributeImages) {
         try {
             ApiResponse<Object> response = sellerService.uploadProductMedia(
-                    productId, coverFiles, attributeImageKeys, attributeImages);
+                    productId, List.of(coverFile), attributeImageKeys, attributeImages);
             return ResponseEntity.status(response.statusCode()).body(response);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Upload failed: " + e.getMessage());
@@ -489,6 +491,51 @@ public class SellerController {
         } catch (Exception e) {
             return ResponseEntity.status(500)
                     .body(new ApiResponse<>(false, "Error verifying OTP: " + e.getMessage(), null, 500));
+        }
+    }
+
+    // KYC Documents (Aadhaar mandatory, PAN mandatory, GST optional)
+
+    @GetMapping("/kyc/documents")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getKycDocuments() {
+        ApiResponse<Object> response = sellerKycService.getKycStatus();
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PostMapping(value = "/kyc/documents/aadhaar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> submitAadhaarDocuments(@Valid @ModelAttribute AadhaarDocumentsDto dto) {
+        try {
+            ApiResponse<Object> response = sellerKycService.submitAadhaar(dto);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error submitting Aadhaar details: " + e.getMessage(), null, 500));
+        }
+    }
+
+    @PostMapping(value = "/kyc/documents/pan", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> submitPanDocument(@Valid @ModelAttribute PanDocumentDto dto) {
+        try {
+            ApiResponse<Object> response = sellerKycService.submitPan(dto);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error submitting PAN details: " + e.getMessage(), null, 500));
+        }
+    }
+
+    @PostMapping(value = "/kyc/documents/gst", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> submitGstDocument(@Valid @ModelAttribute GstDocumentDto dto) {
+        try {
+            ApiResponse<Object> response = sellerKycService.submitGst(dto);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error submitting GST details: " + e.getMessage(), null, 500));
         }
     }
 

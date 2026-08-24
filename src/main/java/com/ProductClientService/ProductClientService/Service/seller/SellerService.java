@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -161,13 +162,7 @@ public class SellerService extends BaseService {
         UUID savedProductId = productRepository.save(product).getId();
 
         // Re-index to ES whenever a LIVE product is updated
-        if (product.getStep() == Product.Step.LIVE) {
-            try {
-                elasticsearchProductIndexer.indexProduct(savedProductId);
-            } catch (Exception e) {
-                log.warn("ES re-index failed for {}: {}", savedProductId, e.getMessage());
-            }
-        }
+        if (product.getStep() == Product.Step.LIVE) CompletableFuture.runAsync(() -> elasticsearchProductIndexer.indexProduct(savedProductId));
 
         Map<String, Object> responseData = Map.of("productId", savedProductId);
 
@@ -179,32 +174,8 @@ public class SellerService extends BaseService {
     }
 
     // ── GET /api/v1/seller/product/my-products ────────────────────────────────
-    public ApiResponse<Object> getMyLiveProducts(int page, int size) {
-        UUID sellerId = getUserId();
-        int clampedSize = Math.min(Math.max(1, size), 100);
-        int offset = Math.max(0, page) * clampedSize;
-
-        List<Object[]> rows = productRepository.findLiveProductsBySeller(sellerId, clampedSize, offset);
-
-        List<Map<String, Object>> products = rows.stream().map(row -> {
-            Map<String, Object> p = new java.util.LinkedHashMap<>();
-            p.put("id", row[0] != null ? row[0].toString() : null);
-            p.put("name", row[1]);
-            p.put("description", row[2]);
-            p.put("step", row[3]);
-            p.put("createdAt", row[4]);
-            p.put("price", row[5]); // min variant price
-            p.put("stock", row[6]); // total stock across variants
-            p.put("imageUrl", row[7]); // cover image URL (may be null)
-            p.put("isActive", row[8] == null || (Boolean) row[8]);
-            return p;
-        }).toList();
-
-        return new ApiResponse<>(true, "Products fetched", products, 200);
-    }
-
-    // ── GET /api/v1/seller/product/my-products-es ─────────────────────────────
-    public ApiResponse<Object> getMyLiveProductsEs(
+    // Tries Elasticsearch first; falls back to a plain DB query if ES is down/unavailable.
+    public ApiResponse<Object> getMyLiveProducts(
             int page, int size,
             String query, UUID categoryId, UUID brandId,
             Double minPrice, Double maxPrice,
@@ -213,6 +184,21 @@ public class SellerService extends BaseService {
         UUID sellerId = getUserId();
         int safeSize = Math.min(Math.max(1, size), 100);
         int safePage = Math.max(0, page);
+
+        try {
+            return getMyLiveProductsFromEs(
+                    sellerId, safePage, safeSize, query, categoryId, brandId,
+                    minPrice, maxPrice, sortBy, isActive, maxStock);
+        } catch (Exception e) {
+            return getMyLiveProductsFromDb(sellerId, safePage, safeSize, isActive, maxStock);
+        }
+    }
+
+    private ApiResponse<Object> getMyLiveProductsFromEs(
+            UUID sellerId, int safePage, int safeSize,
+            String query, UUID categoryId, UUID brandId,
+            Double minPrice, Double maxPrice,
+            String sortBy, Boolean isActive, Integer maxStock) throws java.io.IOException {
 
         SearchRequest req = new SearchRequest();
         req.setSellerId(sellerId);
@@ -231,7 +217,7 @@ public class SellerService extends BaseService {
         if (sortBy != null && !sortBy.isBlank())
             req.setSortBy(sortBy);
 
-        SearchResultsResponse esResp = searchResultsService.search(req, sellerId);
+        SearchResultsResponse esResp = searchResultsService.searchStrict(req, sellerId);
         List<SearchProductDto> esDtos = esResp.getProducts() != null ? esResp.getProducts() : List.of();
 
         // Batch-load stock + isActive from DB for the returned product IDs
@@ -276,6 +262,61 @@ public class SellerService extends BaseService {
         payload.put("products", products);
         payload.put("totalCount", esResp.getTotalCount());
         payload.put("hasMore", esResp.isHasMore());
+        payload.put("source", "elasticsearch");
+        return new ApiResponse<>(true, "Products fetched", payload, 200);
+    }
+
+    // ── GET /api/v1/seller/product/my-categories ──────────────────────────────
+    // Distinct categories the seller actually has LIVE products in (e.g. a seller
+    // who's listed Shirts, T-shirts and Jeans only sees those three) — used to
+    // populate the category filter on the seller's product list, instead of the
+    // full global category tree.
+    public ApiResponse<Object> getMyProductCategories() {
+        UUID sellerId = getUserId();
+        List<Object[]> rows = productRepository.findDistinctCategoriesBySeller(sellerId);
+        List<Map<String, Object>> categories = rows.stream().map(row -> {
+            Map<String, Object> c = new java.util.LinkedHashMap<>();
+            c.put("id", row[0] != null ? row[0].toString() : null);
+            c.put("name", row[1]);
+            return c;
+        }).collect(Collectors.toList());
+        return new ApiResponse<>(true, "Categories fetched", categories, 200);
+    }
+
+    /** DB fallback used when Elasticsearch is down/unavailable. Only supports pagination + isActive/maxStock filters. */
+    private ApiResponse<Object> getMyLiveProductsFromDb(
+            UUID sellerId, int safePage, int safeSize, Boolean isActive, Integer maxStock) {
+        int offset = safePage * safeSize;
+
+        List<Object[]> rows = productRepository.findLiveProductsBySeller(sellerId, safeSize, offset);
+        long totalCount = productRepository.countLiveProductsBySeller(sellerId);
+
+        List<Map<String, Object>> products = rows.stream().map(row -> {
+            Map<String, Object> p = new java.util.LinkedHashMap<>();
+            p.put("id", row[0] != null ? row[0].toString() : null);
+            p.put("name", row[1]);
+            p.put("brand", null);
+            p.put("categoryName", null);
+            p.put("price", row[5]); // min variant price
+            p.put("originalPrice", null);
+            p.put("discountPercent", null);
+            p.put("rating", null);
+            p.put("reviewCount", null);
+            p.put("imageUrl", row[7]); // cover image URL (may be null)
+            p.put("variantId", null);
+            p.put("stock", row[6]); // total stock across variants
+            p.put("isActive", row[8] == null || (Boolean) row[8]);
+            return p;
+        })
+                .filter(p -> isActive == null || isActive.equals(p.get("isActive")))
+                .filter(p -> maxStock == null || ((Number) p.get("stock")).intValue() <= maxStock)
+                .collect(Collectors.toList());
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("products", products);
+        payload.put("totalCount", totalCount);
+        payload.put("hasMore", (long) (offset + rows.size()) < totalCount);
+        payload.put("source", "database");
         return new ApiResponse<>(true, "Products fetched", payload, 200);
     }
 
@@ -345,19 +386,16 @@ public class SellerService extends BaseService {
     }
 
     public ApiResponse<Object> discardDraftProduct() {
-
-        UUID sellerId = (UUID) request.getAttribute("id");
-
         Optional<Product> draftProduct = productRepository
                 .findTopBySellerIdAndStepNotOrderByCreatedAtDesc(
-                        sellerId,
+                        getUserId(),
                         Product.Step.LIVE);
 
         if (draftProduct.isEmpty()) {
             return new ApiResponse<>(false, "No Draft Product Found", null, 200);
         }
 
-        productRepository.delete(draftProduct.get());
+        productRepository.deleteById(draftProduct.get().getId());
 
         return new ApiResponse<>(true, "Draft discarded successfully", null, 200);
     }
@@ -659,14 +697,11 @@ public class SellerService extends BaseService {
             Brand brand = brandRepository.findById(brandId)
                     .orElseThrow(() -> new RuntimeException("Brand not found"));
             product.setBrand(brand);
-            productRepository.save(product);
-            if (product.getStep() == Product.Step.LIVE) {
-                try {
-                    elasticsearchProductIndexer.indexProduct(productId);
-                } catch (Exception e) {
-                    log.warn("ES re-index failed: {}", e.getMessage());
-                }
+            if (product.getStep() != Product.Step.LIVE) {
+                product.setStep(Product.Step.PRODUCT_BRAND_AND_TAGS);
             }
+            productRepository.save(product);
+            if (product.getStep() == Product.Step.LIVE) CompletableFuture.runAsync(() -> elasticsearchProductIndexer.indexProduct(productId));
             return new ApiResponse<>(true, "Brand attached to product successfully", null, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(),
@@ -754,26 +789,32 @@ public class SellerService extends BaseService {
 
     public ApiResponse<Object> MakeProductLive(UUID productId) {
         try {
-            Product.Step currentStep = productRepository.findStepById(productId)
+            Product product = productRepository.findById(productId)
                     .orElseThrow(() -> new RuntimeException("Product not found"));
-            if (currentStep == Product.Step.PRODUCT_BRAND_AND_TAGS
-                    || currentStep == Product.Step.CATALOG_SELECTED) {
-                int updatescore = updateStatusById(productId, Product.Step.LIVE);
-                if (updatescore > 0) {
-                    refreshSnapshot(productId);
-                    handleProductUpdate(productId);
-                    eventPublisher.publishProductLive(productId); // triggers search-intent indexing
-                    elasticsearchProductIndexer.indexProduct(productId);
-                    return new ApiResponse<>(true, "Product Live", null, 200);
-                } else {
-                    return new ApiResponse<>(false, "Internal Server Error", null, 500);
-                }
 
-            } else
+            Product.Step currentStep = product.getStep();
+            if (currentStep != Product.Step.PRODUCT_BRAND_AND_TAGS
+                    && currentStep != Product.Step.CATALOG_SELECTED) {
                 return new ApiResponse<>(false,
                         "Product is Not In  PRODUCT_BRAND_AND_TAGS or CATALOG_SELECTED , Current Step is "
                                 + currentStep,
-                        null, 403);
+                        null, 409);
+            }
+
+            product.setStep(Product.Step.LIVE);
+            productRepository.save(product); // 🔥 will trigger @PostUpdate
+
+            CompletableFuture.runAsync(() -> {
+                refreshSnapshot(productId);
+                handleProductUpdate(productId, product.getIsStandard());
+                eventPublisher.publishProductLive(productId);
+                elasticsearchProductIndexer.indexProduct(productId);
+            }).exceptionally(ex -> {
+                log.error("Async product update failed for productId={}", productId, ex);
+                return null;
+            });
+
+            return new ApiResponse<>(true, "Product Live", null, 200);
         } catch (Exception e) {
             return new ApiResponse<>(false, "Something went wrong: " + e.getMessage(), null, 500);
         }
@@ -786,20 +827,8 @@ public class SellerService extends BaseService {
         }
     }
 
-    private int updateStatusById(UUID productId, Product.Step step) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-        product.setStep(step);
-        productRepository.save(product); // 🔥 will trigger @PostUpdate
-        return 1;
-    }
-
-    @Async
-    public void handleProductUpdate(UUID productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-
-        if (Boolean.TRUE.equals(product.getIsStandard()) && product.getStep() == Product.Step.LIVE) {
+    public void handleProductUpdate(UUID productId, Boolean isStandard) {
+        if (Boolean.TRUE.equals(isStandard)) {
             // Product flagged as a new catalog candidate — requires admin review before
             // it can be added to the standard product catalog. No auto-creation here.
             log.info("Product {} is a new catalog candidate. Pending admin review for promotion.", productId);
@@ -926,7 +955,7 @@ public class SellerService extends BaseService {
                 .orElse(new ApiResponse<>(false, "Catalog item not found or unavailable", null, 404));
     }
 
-    @jakarta.transaction.Transactional
+    @Transactional
     public ApiResponse<Object> createListingFromCatalog(CreateListingFromCatalogDto dto) {
         StandardProduct std = standardProductRepository.findById(dto.standardProductId())
                 .orElseThrow(() -> new RuntimeException("Standard product not found in catalog"));
@@ -937,6 +966,10 @@ public class SellerService extends BaseService {
 
         Seller seller = sellerRepository.findById(getUserId())
                 .orElseThrow(() -> new RuntimeException("Seller not found"));
+
+        if (productRepository.findBySellerIdAndStandardProductId(seller.getId(), std.getId()).isPresent()) {
+            return new ApiResponse<>(false, "This standard product is already in your catalog", null, 409);
+        }
 
         Product product = new Product();
         product.setName(std.getName());
@@ -977,9 +1010,12 @@ public class SellerService extends BaseService {
             product.setStep(Product.Step.LIVE);
             product.setIsActive(true);
             productRepository.save(product);
-            refreshSnapshot(savedId);
-            eventPublisher.publishProductLive(savedId);
-            elasticsearchProductIndexer.indexProduct(savedId);
+            CompletableFuture.runAsync(() -> {
+                refreshSnapshot(savedId);
+                eventPublisher.publishProductLive(savedId);
+                elasticsearchProductIndexer.indexProduct(savedId);
+            });
+
         }
 
         String step = product.getStep().name();
@@ -1108,22 +1144,10 @@ public class SellerService extends BaseService {
                     }
                 }
 
-                // Idempotent: wipe existing Cloudinary assets + clear images/publicIds
-                // on every ProductAttribute for this product that already has images.
-                for (ProductAttribute pa : productAttributeRepository.findImageAttributesByProductId(productId)) {
-                    if (pa.getImagePublicIds() != null) {
-                        for (String pid : pa.getImagePublicIds()) {
-                            try {
-                                cloudinary.uploader().destroy(pid, ObjectUtils.emptyMap());
-                            } catch (Exception ignored) {
-                            }
-                        }
-                    }
-                    pa.setImages(new ArrayList<>());
-                    pa.setImagePublicIds(new ArrayList<>());
-                    productAttributeRepository.save(pa);
-                }
-
+                // Additive: each uploaded image is appended to its attribute value's
+                // existing gallery rather than wiping the product's other attribute
+                // images first — mirrors add-variants' append-only semantics so
+                // editing an existing product can safely add just the new photos.
                 for (int i = 0; i < attributeImageKeys.size(); i++) {
                     String key = attributeImageKeys.get(i);
                     String[] parts = key.split("::");
@@ -1155,8 +1179,17 @@ public class SellerService extends BaseService {
                 }
             }
 
-            product.setStep(Product.Step.PRODUCT_IMAGE);
+            // Don't regress an already-published product back to an earlier wizard
+            // step — this endpoint is also used to update a LIVE product's photos
+            // from the edit flow.
+            if (product.getStep() != Product.Step.LIVE) {
+                product.setStep(Product.Step.PRODUCT_IMAGE);
+            }
             productRepository.save(product);
+
+            if (product.getStep() == Product.Step.LIVE) {
+                CompletableFuture.runAsync(() -> elasticsearchProductIndexer.indexProduct(productId));
+            }
 
             Map<String, Object> data = new java.util.LinkedHashMap<>();
             data.put("productId", productId.toString());
@@ -1411,7 +1444,8 @@ public class SellerService extends BaseService {
                             "name", attrName,
                             "value", pa.getValue() != null ? pa.getValue() : "",
                             "isVariant", Boolean.TRUE.equals(pa.getCategoryAttribute().getIsVariantAttribute()),
-                            "isImage", Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute()));
+                            "isImage", Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute()),
+                            "images", pa.getImages() != null ? pa.getImages() : List.of());
                 }).toList());
 
         return new ApiResponse<>(true, "Product edit data", data, 200);

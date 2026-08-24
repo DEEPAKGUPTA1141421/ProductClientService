@@ -54,11 +54,21 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     boolean existsById(UUID id);
 
-    @Query("SELECT DISTINCT p FROM Product p " +
+    // No DISTINCT here: Product.attributesSnapshot is a plain `json` column and
+    // Postgres has no equality operator for `json` (only `jsonb`), so a SQL-level
+    // DISTINCT over the fetch-joined result blows up. The fetch join still returns
+    // one row per attribute, but Hibernate's first-level cache resolves every row
+    // to the same Product instance, so de-duping in Java (findProductWithAttributesAndVariants
+    // below) is equivalent and side-steps the json comparison entirely.
+    @Query("SELECT p FROM Product p " +
             "LEFT JOIN FETCH p.productAttributes pa " +
-            "LEFT JOIN FETCH p.variants " +
             "WHERE p.id = :productId")
-    Optional<Product> findProductWithAttributesAndVariants(@Param("productId") UUID productId);
+    List<Product> findProductWithAttributesRaw(@Param("productId") UUID productId);
+
+    default Optional<Product> findProductWithAttributesAndVariants(UUID productId) {
+        List<Product> result = findProductWithAttributesRaw(productId);
+        return result.isEmpty() ? Optional.empty() : Optional.of(result.get(0));
+    }
 
     @Query("SELECT p FROM Product p JOIN p.productAttributes pa WHERE pa.id = :productAttributeId")
     Optional<Product> findByProductAttributeId(@Param("productAttributeId") UUID productAttributeId);
@@ -289,6 +299,15 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("size")     int  size,
             @Param("offset")   int  offset);
 
+    /** Total count of LIVE products for a seller — used by the DB fallback for the seller's product list. */
+    @Query(value = """
+            SELECT COUNT(*)
+            FROM products p
+            WHERE p.seller_id = :sellerId
+              AND p.step = 5
+            """, nativeQuery = true)
+    long countLiveProductsBySeller(@Param("sellerId") UUID sellerId);
+
     /** Stock count + is_active for a batch of product IDs (used by ES-backed seller listing). */
     @Query(value = """
             SELECT p.id::text, COALESCE(SUM(v.stock), 0), p.is_active
@@ -345,6 +364,17 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("productId") UUID productId);
 
     Optional<Product> findBySellerIdAndStandardProductId(UUID sellerId, UUID standardProductId);
+
+    /** Distinct categories the seller actually has LIVE products in — powers the seller's category filter. */
+    @Query(value = """
+            SELECT DISTINCT c.id, c.name
+            FROM products p
+            JOIN categories c ON c.id = p.category_id
+            WHERE p.seller_id = :sellerId
+              AND p.step = 5
+            ORDER BY c.name
+            """, nativeQuery = true)
+    List<Object[]> findDistinctCategoriesBySeller(@Param("sellerId") UUID sellerId);
 }
 
 // hyuhk khui huih iui huiuhukuijkji

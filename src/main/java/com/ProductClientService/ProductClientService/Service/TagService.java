@@ -50,6 +50,9 @@ public class TagService {
     public Product AddProductTag(ProductTagRequestDto requestDto) {
         Product product = productRepository.findById(requestDto.product_id())
                 .orElseThrow(() -> new RuntimeException("Product not found"));
+        if (product.getStep() != Product.Step.LIVE) {
+            product.setStep(Product.Step.PRODUCT_BRAND_AND_TAGS);
+        }
 
         Set<Tag> tagSet = new HashSet<>();
 

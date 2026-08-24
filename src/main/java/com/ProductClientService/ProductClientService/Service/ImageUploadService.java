@@ -16,16 +16,25 @@ public class ImageUploadService {
     private Cloudinary cloudinary;
 
     public String uploadImage(MultipartFile file) throws IOException {
-        return uploadBytes(file.getBytes());
+        return uploadBytes(file.getBytes(), ObjectUtils.emptyMap());
     }
 
     public String uploadImage(byte[] bytes) throws IOException {
-        return uploadBytes(bytes);
+        return uploadBytes(bytes, ObjectUtils.emptyMap());
+    }
+
+    /**
+     * Uploads into a specific Cloudinary folder — used for sensitive documents
+     * (e.g. KYC) that should be kept out of general/public media folders.
+     */
+    public String uploadImage(MultipartFile file, String folder) throws IOException {
+        return uploadBytes(file.getBytes(), ObjectUtils.asMap("folder", folder));
     }
 
     @SuppressWarnings("unchecked")
-    private String uploadBytes(byte[] bytes) throws IOException {
-        Map<String, Object> uploadResult = cloudinary.uploader().upload(bytes, ObjectUtils.emptyMap());
-        return uploadResult.get("url").toString();
+    private String uploadBytes(byte[] bytes, Map<String, Object> options) throws IOException {
+        Map<String, Object> uploadResult = cloudinary.uploader().upload(bytes, options);
+        Object secureUrl = uploadResult.get("secure_url");
+        return secureUrl != null ? secureUrl.toString() : uploadResult.get("url").toString();
     }
 }

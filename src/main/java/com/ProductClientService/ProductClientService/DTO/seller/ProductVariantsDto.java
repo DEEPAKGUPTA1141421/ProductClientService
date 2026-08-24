@@ -4,16 +4,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+
 public record ProductVariantsDto(
-        UUID productId,
-        List<VariantItem> variants) {
+        @NotNull(message = "productId is required") UUID productId,
+
+        @NotEmpty(message = "variants list cannot be empty") @Valid List<VariantItem> variants) {
 
     public record VariantItem(
-            Map<String, String> combination,
-            String label,
-            double price,
-            double mrp,
-            int stock,
-            String sku) {
+            @NotEmpty(message = "combination cannot be empty") Map<String, @NotBlank String> combination,
+
+            @NotBlank(message = "label is required") String label,
+
+            @Positive(message = "price must be greater than 0") double price,
+
+            @Positive(message = "mrp must be greater than 0") double mrp,
+
+            @PositiveOrZero(message = "stock cannot be negative") int stock,
+
+            @NotBlank(message = "sku is required") String sku) {
     }
 }

@@ -63,53 +63,63 @@ public class ElasticsearchSearchService {
     public SearchResultsResponse search(
             com.ProductClientService.ProductClientService.DTO.search.SearchRequest req,
             UUID userId) {
-
         try {
-            SearchRequest esReq = buildEsRequest(req);
-            SearchResponse<ProductSearchDocument> resp =
-                    esClient.search(esReq, ProductSearchDocument.class);
-
-            long total = resp.hits().total() != null ? resp.hits().total().value() : 0L;
-            List<Hit<ProductSearchDocument>> hits = resp.hits().hits();
-
-            List<SearchProductDto> products = hits.stream()
-                    .map(Hit::source)
-                    .filter(doc -> doc != null)
-                    .map(this::toDto)
-                    .toList();
-
-            boolean hasMore = ((long) req.getPage() + 1) * req.getPageSize() < total;
-
-            // Build next cursor from the last hit's sort values (used with search_after)
-            String sortBy = req.getSortBy() == null ? "rel" : req.getSortBy();
-            String nextCursor = null;
-            if (hasMore && !hits.isEmpty()) {
-                List<FieldValue> lastSort = hits.get(hits.size() - 1).sort();
-                if (lastSort != null && !lastSort.isEmpty()) {
-                    nextCursor = encodeCursor(sortBy, lastSort);
-                }
-            }
-
-            SearchResultsResponse.ShopScope shopScope = req.getSellerId() != null
-                    ? SearchResultsResponse.ShopScope.builder().sellerId(req.getSellerId()).build()
-                    : null;
-
-            return SearchResultsResponse.builder()
-                    .totalCount(total)
-                    .page(req.getPage())
-                    .pageSize(req.getPageSize())
-                    .hasMore(hasMore)
-                    .products(products)
-                    .shopScope(shopScope)
-                    .nextCursor(nextCursor)
-                    .build();
-
+            return searchOrThrow(req, userId);
         } catch (Exception e) {
             log.error("ES search failed, returning empty result: {}", e.getMessage());
             return SearchResultsResponse.builder()
                     .totalCount(0).page(req.getPage()).pageSize(req.getPageSize())
                     .hasMore(false).products(List.of()).build();
         }
+    }
+
+    /**
+     * Same as {@link #search}, but lets ES failures propagate instead of swallowing them.
+     * Used by callers (e.g. the seller product listing) that need to detect ES being
+     * down/unavailable so they can fall back to the database.
+     */
+    public SearchResultsResponse searchOrThrow(
+            com.ProductClientService.ProductClientService.DTO.search.SearchRequest req,
+            UUID userId) throws java.io.IOException {
+
+        SearchRequest esReq = buildEsRequest(req);
+        SearchResponse<ProductSearchDocument> resp =
+                esClient.search(esReq, ProductSearchDocument.class);
+
+        long total = resp.hits().total() != null ? resp.hits().total().value() : 0L;
+        List<Hit<ProductSearchDocument>> hits = resp.hits().hits();
+
+        List<SearchProductDto> products = hits.stream()
+                .map(Hit::source)
+                .filter(doc -> doc != null)
+                .map(this::toDto)
+                .toList();
+
+        boolean hasMore = ((long) req.getPage() + 1) * req.getPageSize() < total;
+
+        // Build next cursor from the last hit's sort values (used with search_after)
+        String sortBy = req.getSortBy() == null ? "rel" : req.getSortBy();
+        String nextCursor = null;
+        if (hasMore && !hits.isEmpty()) {
+            List<FieldValue> lastSort = hits.get(hits.size() - 1).sort();
+            if (lastSort != null && !lastSort.isEmpty()) {
+                nextCursor = encodeCursor(sortBy, lastSort);
+            }
+        }
+
+        SearchResultsResponse.ShopScope shopScope = req.getSellerId() != null
+                ? SearchResultsResponse.ShopScope.builder().sellerId(req.getSellerId()).build()
+                : null;
+
+        return SearchResultsResponse.builder()
+                .totalCount(total)
+                .page(req.getPage())
+                .pageSize(req.getPageSize())
+                .hasMore(hasMore)
+                .products(products)
+                .shopScope(shopScope)
+                .nextCursor(nextCursor)
+                .build();
     }
 
     // ── ES request builder ────────────────────────────────────────────────────
