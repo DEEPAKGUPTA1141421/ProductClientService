@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -16,7 +17,13 @@ public interface ProductMediaRepository extends JpaRepository<ProductMedia, UUID
     List<ProductMedia> findByProductIdOrderByPositionAsc(UUID productId);
 
     @Query("SELECT m.url FROM ProductMedia m WHERE m.product.id = :productId AND m.isCover = true")
-    java.util.Optional<String> findCoverImageUrlByProductId(@Param("productId") UUID productId);
+    Optional<String> findCoverImageUrlByProductId(@Param("productId") UUID productId);
+
+    @Query("SELECT m.product.id FROM ProductMedia m WHERE m.id = :mediaId")
+    Optional<UUID> findProductIdByMediaId(@Param("mediaId") UUID mediaId);
+
+    @Query("SELECT m.product.seller.id FROM ProductMedia m WHERE m.id = :mediaId")
+    Optional<UUID> findSellerIdByMediaId(@Param("mediaId") UUID mediaId);
 
     int countByProductId(UUID productId);
 

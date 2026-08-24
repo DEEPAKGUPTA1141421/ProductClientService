@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,6 +23,8 @@ import com.ProductClientService.ProductClientService.DTO.Settings.NotificationPr
 import com.ProductClientService.ProductClientService.DTO.Settings.PersonalInfoDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.PreferencesDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.SecurityQuestionsDto;
+import com.ProductClientService.ProductClientService.DTO.user.UpdateEmailRequest;
+import com.ProductClientService.ProductClientService.DTO.user.VerifyEmailOtpRequest;
 import com.ProductClientService.ProductClientService.Service.seller.SellerSettingsService;
 
 @RestController
@@ -56,6 +59,22 @@ public class SellerSettingsController {
     public ResponseEntity<?> updatePersonalInfo(@Valid @ModelAttribute PersonalInfoDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updatePersonalInfo(dto);
         return ResponseEntity.status(200).body(response);
+    }
+
+    // Email changes require OTP verification — see
+    // requestEmailUpdate/verifyEmailOtp.
+    @PostMapping("/personal/email/request")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> requestEmailUpdate(@Valid @RequestBody UpdateEmailRequest dto) {
+        ApiResponse<Object> response = sellerSettingsService.requestEmailUpdate(dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PostMapping("/personal/email/verify")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> verifyEmailUpdate(@Valid @RequestBody VerifyEmailOtpRequest dto) {
+        ApiResponse<Object> response = sellerSettingsService.verifyEmailOtp(dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     // ─────────────────────────────────────────────
@@ -116,14 +135,14 @@ public class SellerSettingsController {
 
     public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordDto dto) {
         ApiResponse<Object> response = sellerSettingsService.changePassword(dto);
-        return ResponseEntity.status(200).body(response);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @PutMapping("/security/questions")
 
     public ResponseEntity<?> updateSecurityQuestions(@Valid @RequestBody SecurityQuestionsDto dto) {
         ApiResponse<Object> response = sellerSettingsService.updateSecurityQuestions(dto);
-        return ResponseEntity.status(200).body(response);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @GetMapping("/security/sessions")
@@ -137,7 +156,7 @@ public class SellerSettingsController {
 
     public ResponseEntity<?> revokeSession(@PathVariable String sessionId) {
         ApiResponse<Object> response = sellerSettingsService.revokeSession(sessionId);
-        return ResponseEntity.status(200).body(response);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     // ─────────────────────────────────────────────
@@ -157,3 +176,4 @@ public class SellerSettingsController {
         return ResponseEntity.status(200).body(response);
     }
 }
+// gyuuyh yhhuyhuhhyyhuyhuh uiuiuui uhuiuj uhujhuujhhuj jiijiijjiji

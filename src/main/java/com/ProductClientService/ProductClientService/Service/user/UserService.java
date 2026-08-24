@@ -133,7 +133,7 @@ public class UserService extends BaseService {
     @Async
     public void sendEmailOtpAsync(String toEmail, String phone) {
         try {
-            Otp otp = Otp.create(phone, Otp.typeOfOtp.aadhaarVerification, false);
+            Otp otp = new Otp(phone, Otp.typeOfOtp.emailVerification, false);
             otpRepository.save(otp);
 
             NotificationRequest notification = new NotificationRequest();
@@ -158,7 +158,11 @@ public class UserService extends BaseService {
             return new ApiResponse<>(false, "No pending email update found. Please request again.", null, 400);
         }
 
-        Otp otp = otpRepository.findTopByPhoneAndTypeOrderByCreatedAtDesc(user.getPhone(), Otp.typeOfOtp.emailVerification);
+        Otp otp = otpRepository.findTopByPhoneAndTypeOrderByCreatedAtDesc(user.getPhone(),
+                Otp.typeOfOtp.emailVerification);
+
+        if (otp == null)
+            throw new IllegalArgumentException("No OTP request found. Please request a new OTP.");
 
         if (otp.isVerified())
             throw new IllegalArgumentException("OTP has already been used");

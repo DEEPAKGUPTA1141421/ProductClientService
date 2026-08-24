@@ -5,6 +5,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,13 +14,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
+import com.ProductClientService.ProductClientService.DTO.NotificationRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.Settings.BankDetailsDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.BusinessDetailsDto;
@@ -27,19 +30,27 @@ import com.ProductClientService.ProductClientService.DTO.Settings.NotificationPr
 import com.ProductClientService.ProductClientService.DTO.Settings.PersonalInfoDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.PreferencesDto;
 import com.ProductClientService.ProductClientService.DTO.Settings.SecurityQuestionsDto;
+import com.ProductClientService.ProductClientService.DTO.user.UpdateEmailRequest;
+import com.ProductClientService.ProductClientService.DTO.user.VerifyEmailOtpRequest;
+import com.ProductClientService.ProductClientService.Model.Otp;
+import com.ProductClientService.ProductClientService.Model.RefreshToken;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Category;
 import com.ProductClientService.ProductClientService.Model.SellerBankDetails;
 import com.ProductClientService.ProductClientService.Model.SellerNotificationPreferences;
 import com.ProductClientService.ProductClientService.Model.SellerPreferences;
 import com.ProductClientService.ProductClientService.Repository.CategoryRepository;
+import com.ProductClientService.ProductClientService.Repository.OtpRepository;
+import com.ProductClientService.ProductClientService.Repository.RefreshTokenRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerBankDetailsRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerNotificationPreferencesRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerPreferencesRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
+import com.ProductClientService.ProductClientService.Service.BaseService;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService;
 import com.ProductClientService.ProductClientService.Service.ImageUploadService;
+import com.ProductClientService.ProductClientService.Service.KafkaProducerService;
 //import com.ProductClientService.ProductClientService.Repository.SellerSessionRepository;
 import com.ProductClientService.ProductClientService.Service.GoogleMapsService.AddressResponse;
 import com.ProductClientService.ProductClientService.filter.UserPrincipal;
@@ -49,33 +60,33 @@ import org.slf4j.LoggerFactory;
 
 @Service
 @RequiredArgsConstructor
-public class SellerSettingsService {
+public class SellerSettingsService extends BaseService {
+
+    private static final String ZONE_KOLKATA = "Asia/Kolkata";
+    private static final long EMAIL_OTP_RESEND_COOLDOWN_SECONDS = 60;
 
     private final SellerRepository sellerRepository;
     private final SellerBankDetailsRepository bankDetailsRepository;
     private final SellerNotificationPreferencesRepository notificationRepository;
     private final SellerPreferencesRepository preferencesRepository;
     private final CategoryRepository CategoryRepository;
-    // private final SellerSessionRepository sessionRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final HttpServletRequest request;
     private final EntityManager entityManager;
     private final GoogleMapsService googleMapsService;
     private final SellerAddressRepository sellerAddressRepository;
     private final ImageUploadService fileUploadService;
     private final ObjectMapper objectMapper;
+    private final OtpRepository otpRepository;
+    private final KafkaProducerService producerService;
     private static final Logger logger = LoggerFactory.getLogger(SellerSettingsService.class);
 
     // ──────────────────────────────────────────
     // Helper: get current seller UUID from request
     // ─────────────────────────────────────────────
 
-    private UUID getSellerId() {
-        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
-    }
-
     private Seller getSellerOrThrow() {
-        return sellerRepository.findById(getSellerId())
+        return sellerRepository.findById(getUserId())
                 .orElseThrow(() -> new RuntimeException("Seller not found"));
     }
 
@@ -83,7 +94,7 @@ public class SellerSettingsService {
     // GET ALL SETTINGS (single call for frontend)
     // ─────────────────────────────────────────────
     public ApiResponse<Object> getAllSettings() {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
 
         Seller seller = getSellerOrThrow();
         Optional<SellerBankDetails> bank = bankDetailsRepository.findBySellerId(sellerId);
@@ -126,15 +137,14 @@ public class SellerSettingsService {
             seller.setLegalName(dto.fullName());
         if (dto.displayName() != null)
             seller.setDisplayName(dto.displayName());
-        if (dto.email() != null)
-            seller.setEmail(dto.email());
-        if (dto.phone() != null)
-            seller.setPhone(dto.phone());
+        // Email changes are NOT accepted here — they must go through the
+        // OTP-verified requestEmailUpdate()/verifyEmailOtp() flow below so a
+        // seller can never assign themselves an unverified email address.
 
         // Update address if present
         if (dto.address() != null) {
             AddressResponse addressDetails = googleMapsService.getAddressFromLatLng(dto.latitude(), dto.longitude());
-            boolean isSaved = saveAddress(addressDetails, dto.phone(), dto.latitude(), dto.longitude());
+            boolean isSaved = saveAddress(addressDetails, dto.latitude(), dto.longitude());
         }
 
         // Profile photo upload
@@ -177,8 +187,111 @@ public class SellerSettingsService {
         return new ApiResponse<>(true, "Personal info updated", buildPersonalInfo(seller), 200);
     }
 
-    private boolean saveAddress(AddressResponse addressDetails, String phone, BigDecimal lat, BigDecimal longi) {
-        Optional<Seller> optionalSeller = sellerRepository.findByPhone(phone);
+    // ─────────────────────────────────────────────
+    // EMAIL CHANGE — OTP verified
+    // ─────────────────────────────────────────────
+    @Transactional
+    public ApiResponse<Object> requestEmailUpdate(UpdateEmailRequest dto) {
+        Seller seller = getSellerOrThrow();
+        String newEmail = dto.email().trim().toLowerCase();
+
+        if (newEmail.equalsIgnoreCase(seller.getEmail())) {
+            return new ApiResponse<>(false, "This is already your current email", null, 400);
+        }
+
+        // Email must be unique across sellers (excluding the requesting seller)
+        Optional<Seller> owner = sellerRepository.findByEmail(newEmail);
+        if (owner.isPresent() && !owner.get().getId().equals(seller.getId())) {
+            return new ApiResponse<>(false, "Email already in use by another account", null, 409);
+        }
+
+        // Resend cooldown — avoid OTP spam to the same phone/type
+        Otp lastOtp = otpRepository.findTopByPhoneAndTypeOrderByCreatedAtDesc(seller.getPhone(),
+                Otp.typeOfOtp.emailUpdate);
+        if (lastOtp != null) {
+            ZonedDateTime now = ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA));
+            ZonedDateTime canResendAt = lastOtp.getCreatedAt().plusSeconds(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
+            if (now.isBefore(canResendAt)) {
+                long waitSeconds = java.time.Duration.between(now, canResendAt).getSeconds();
+                return new ApiResponse<>(false,
+                        "Please wait " + waitSeconds + "s before requesting another OTP", null, 429);
+            }
+        }
+
+        // Stage the new email — it is NOT committed to seller.email until verified
+        seller.setPendingEmail(newEmail);
+        sellerRepository.save(seller);
+
+        sendEmailOtpAsync(seller.getPhone(), newEmail);
+
+        return new ApiResponse<>(true, "OTP sent to " + newEmail + ". Please verify to complete the update.",
+                null, 200);
+    }
+
+    @Async
+    public void sendEmailOtpAsync(String phone, String toEmail) {
+        try {
+            Otp otp = new Otp(phone, Otp.typeOfOtp.emailUpdate, false);
+            otpRepository.save(otp);
+
+            NotificationRequest notification = new NotificationRequest();
+            notification.setTo(toEmail);
+            notification.setSubject("Verify your new email");
+            notification.setBody("Your Dashly Seller email verification OTP is: " + otp.getOtpCode()
+                    + ". It is valid for 5 minutes. Do not share this code with anyone.");
+            notification.setType("email");
+
+            producerService.sendMessage("notification", objectMapper.writeValueAsString(notification));
+        } catch (Exception e) {
+            logger.error("Failed to send seller email OTP: {}", e.getMessage());
+        }
+    }
+
+    @Transactional
+    public ApiResponse<Object> verifyEmailOtp(VerifyEmailOtpRequest dto) {
+        Seller seller = getSellerOrThrow();
+
+        if (seller.getPendingEmail() == null) {
+            return new ApiResponse<>(false, "No pending email update found. Please request again.", null, 400);
+        }
+
+        Otp otp = otpRepository.findTopByPhoneAndTypeOrderByCreatedAtDesc(seller.getPhone(),
+                Otp.typeOfOtp.emailUpdate);
+
+        if (otp == null) {
+            return new ApiResponse<>(false, "No OTP request found. Please request a new OTP.", null, 400);
+        }
+        if (otp.isVerified()) {
+            return new ApiResponse<>(false, "This OTP has already been used. Please request a new one.", null, 400);
+        }
+        if (ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA)).isAfter(otp.getExpiryTime())) {
+            return new ApiResponse<>(false, "OTP has expired. Please request a new one.", null, 400);
+        }
+        if (!otp.getOtpCode().equals(dto.otp())) {
+            return new ApiResponse<>(false, "Invalid OTP code", null, 400);
+        }
+
+        // Re-check uniqueness at commit time in case it was claimed meanwhile
+        Optional<Seller> owner = sellerRepository.findByEmail(seller.getPendingEmail());
+        if (owner.isPresent() && !owner.get().getId().equals(seller.getId())) {
+            seller.setPendingEmail(null);
+            sellerRepository.save(seller);
+            return new ApiResponse<>(false, "Email already in use by another account", null, 409);
+        }
+
+        seller.setEmail(seller.getPendingEmail());
+        seller.setPendingEmail(null);
+        seller.setEmailVerified(true);
+        sellerRepository.save(seller);
+
+        otpRepository.markAsVerified(seller.getPhone(), dto.otp(), Otp.typeOfOtp.emailUpdate);
+
+        return new ApiResponse<>(true, "Email verified and updated successfully",
+                Map.of("email", seller.getEmail()), 200);
+    }
+
+    private boolean saveAddress(AddressResponse addressDetails, BigDecimal lat, BigDecimal longi) {
+        Optional<Seller> optionalSeller = sellerRepository.findById(getUserId());
         if (optionalSeller.isEmpty()) {
             return false;
         }
@@ -226,7 +339,7 @@ public class SellerSettingsService {
     // BANK DETAILS
     // ─────────────────────────────────────────────
     public ApiResponse<Object> getBankDetails() {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
         SellerBankDetails bank = bankDetailsRepository.findBySellerId(sellerId)
                 .orElseThrow(() -> new RuntimeException("Bank details not found"));
         return new ApiResponse<>(true, "Bank details fetched", buildBankInfo(bank), 200);
@@ -234,7 +347,7 @@ public class SellerSettingsService {
 
     @Transactional
     public ApiResponse<Object> updateBankDetails(BankDetailsDto dto) {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
         Seller seller = getSellerOrThrow();
         if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.BUSINESS_INFO) {
             seller.setOnboardingStage(Seller.ONBOARDSTAGE.BANK_ACCOUNT);
@@ -258,7 +371,7 @@ public class SellerSettingsService {
     // NOTIFICATIONS
     // ─────────────────────────────────────────────
     public ApiResponse<Object> getNotificationPreferences() {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
         SellerNotificationPreferences notif = notificationRepository.findBySellerId(sellerId)
                 .orElse(new SellerNotificationPreferences());
         return new ApiResponse<>(true, "Notification preferences fetched", buildNotifInfo(notif), 200);
@@ -266,7 +379,7 @@ public class SellerSettingsService {
 
     @Transactional
     public ApiResponse<Object> updateNotificationPreferences(NotificationPreferencesDto dto) {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
 
         SellerNotificationPreferences notif = notificationRepository.findBySellerId(sellerId)
                 .orElse(new SellerNotificationPreferences());
@@ -296,41 +409,54 @@ public class SellerSettingsService {
     // SECURITY
     // ─────────────────────────────────────────────
     public ApiResponse<Object> changePassword(ChangePasswordDto dto) {
-        if (!dto.newPassword().equals(dto.confirmPassword())) {
-            return new ApiResponse<>(false, "Passwords do not match", null, 400);
-        }
-
-        Seller seller = getSellerOrThrow();
-
-        // TODO: validate currentPassword against stored hash
-        // if (!passwordEncoder.matches(dto.currentPassword(), seller.getPassword())) {
-        // return new ApiResponse<>(false, "Incorrect current password", null, 400);
-        // }
-
-        // seller.setPassword(passwordEncoder.encode(dto.newPassword()));
-        // sellerRepository.save(seller);
-
-        return new ApiResponse<>(true, "Password updated successfully", null, 200);
+        // This app has no password-based authentication — sellers sign in via
+        // phone + OTP only (see AuthService), and Seller has no password field.
+        return new ApiResponse<>(false,
+                "Password login is not supported. This account signs in with a phone OTP.", null, 400);
     }
 
     public ApiResponse<Object> updateSecurityQuestions(SecurityQuestionsDto dto) {
-        // TODO: Save to SellerSecurityQuestions entity
-        return new ApiResponse<>(true, "Security questions updated", null, 200);
+        // No password-based recovery flow exists to back security questions.
+        return new ApiResponse<>(false,
+                "Security questions are not supported. This account signs in with a phone OTP.", null, 400);
     }
 
     public ApiResponse<Object> getActiveSessions() {
-        UUID sellerId = getSellerId();
-        // TODO: fetch from SellerSession table
-        List<Map<String, Object>> sessions = List.of(
-                Map.of("id", "session-1", "device", "Chrome on Windows", "location", "Bangalore, IN", "time", "Now",
-                        "current", true),
-                Map.of("id", "session-2", "device", "Safari on iPhone", "location", "Bangalore, IN", "time",
-                        "2 hours ago", "current", false));
+        UUID sellerId = getUserId();
+        List<RefreshToken> tokens = refreshTokenRepository.findByUserIdAndRevokedFalseOrderByCreatedAtDesc(sellerId);
+
+        List<Map<String, Object>> sessions = tokens.stream()
+                .filter(t -> !t.isExpired())
+                .map(t -> {
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    map.put("id", t.getId());
+                    map.put("createdAt", t.getCreatedAt());
+                    map.put("expiresAt", t.getExpiresAt());
+                    return (Map<String, Object>) map;
+                })
+                .collect(java.util.stream.Collectors.toList());
+
         return new ApiResponse<>(true, "Active sessions fetched", sessions, 200);
     }
 
+    @Transactional
     public ApiResponse<Object> revokeSession(String sessionId) {
-        // TODO: delete session from SellerSession table
+        UUID sellerId = getUserId();
+        UUID tokenId;
+        try {
+            tokenId = UUID.fromString(sessionId);
+        } catch (IllegalArgumentException e) {
+            return new ApiResponse<>(false, "Invalid session id", null, 400);
+        }
+
+        RefreshToken token = refreshTokenRepository.findByIdAndUserId(tokenId, sellerId)
+                .orElse(null);
+        if (token == null) {
+            return new ApiResponse<>(false, "Session not found", null, 404);
+        }
+
+        token.setRevoked(true);
+        refreshTokenRepository.save(token);
         return new ApiResponse<>(true, "Session revoked", null, 200);
     }
 
@@ -338,7 +464,7 @@ public class SellerSettingsService {
     // PREFERENCES
     // ─────────────────────────────────────────────
     public ApiResponse<Object> getPreferences() {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
         SellerPreferences prefs = preferencesRepository.findBySellerId(sellerId)
                 .orElse(new SellerPreferences());
         return new ApiResponse<>(true, "Preferences fetched", buildPrefsInfo(prefs), 200);
@@ -346,7 +472,7 @@ public class SellerSettingsService {
 
     @Transactional
     public ApiResponse<Object> updatePreferences(PreferencesDto dto) {
-        UUID sellerId = getSellerId();
+        UUID sellerId = getUserId();
 
         SellerPreferences prefs = preferencesRepository.findBySellerId(sellerId)
                 .orElse(new SellerPreferences());
@@ -369,6 +495,8 @@ public class SellerSettingsService {
         map.put("fullName", seller.getLegalName());
         map.put("displayName", seller.getDisplayName());
         map.put("email", seller.getEmail());
+        map.put("emailVerified", seller.isEmailVerified());
+        map.put("pendingEmail", seller.getPendingEmail());
         map.put("phone", seller.getPhone());
         map.put("profile_image", seller.getProfilePhotoUrl());
         map.put("media_files", seller.getProfileImageAndVideos());
@@ -468,6 +596,4 @@ public class SellerSettingsService {
     }
 }
 // hjhuj gyhu hhujuhhhhhhhjgyy hgjyjgygyhjkj kuh uhkhuk ihuuhnjjkj kjj jbh
-// bhbnnjhkhjbnmbhhjnh kjjn jknj kjjn njkj bjnjhhhuhuhuh hu uhu kh jji njkbhj
-// nbjknjk njkjjkkjn hkhu hji hkhkb bh hiooij hj jkhkuuggyuhgyuhuhukhukhuuhhuk
-// huiyuuh
+// gftrfrr

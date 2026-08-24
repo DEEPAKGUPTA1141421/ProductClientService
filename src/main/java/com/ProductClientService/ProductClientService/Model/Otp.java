@@ -123,14 +123,13 @@ public class Otp {
     public Otp() {
     }
 
-    public static Otp create(String phone, typeOfOtp type, boolean testOtpMode) {
-        Otp otp = new Otp();
-        otp.setPhone(phone);
-        otp.setType(type);
-        otp.setVerified(false);
-        otp.setOtpCode(generateCode(testOtpMode));
-        otp.setExpiryTime(ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA)).plusMinutes(5));
-        return otp;
+    public Otp(String phone, typeOfOtp type, boolean testOtpMode) {
+        this();
+        setPhone(phone);
+        setType(type);
+        setVerified(false);
+        setOtpCode(generateCode(testOtpMode));
+        setExpiryTime(ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA)).plusMinutes(5));
     }
 
     private static String generateCode(boolean testOtpMode) {

@@ -23,6 +23,8 @@ public interface SellerRepository extends JpaRepository<Seller, UUID> {
 
     Optional<Seller> findByPhone(String phone);
 
+    Optional<Seller> findByEmail(String email);
+
     // List<Seller> findByAddress_CityAndShopCategory(String city,
     // Seller.ShopCategory shopCategory);
 

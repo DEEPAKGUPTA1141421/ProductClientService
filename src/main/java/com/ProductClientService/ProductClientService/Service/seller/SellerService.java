@@ -61,6 +61,7 @@ import com.ProductClientService.ProductClientService.Repository.StandardProductR
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService;
 import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.OpenStreetMapService.AddressResponse;
+import com.ProductClientService.ProductClientService.Service.BaseService;
 import com.ProductClientService.ProductClientService.Service.ElasticsearchProductIndexer;
 import com.ProductClientService.ProductClientService.Service.SearchResultsService;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
@@ -83,7 +84,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class SellerService {
+public class SellerService extends BaseService {
     @Value("${cloud.aws.s3.bucket-name}")
     private String bucketName;
     private final ProductRepository productRepository;
@@ -302,52 +303,42 @@ public class SellerService {
     @Transactional
     public ApiResponse<Object> quickUpdate(UUID productId, String name, Long priceInPaise, Integer stock) {
         UUID sellerId = getUserId();
-        Optional<Product> opt = productRepository.findById(productId);
-        if (opt.isEmpty()) {
+        Optional<String> currentName = productRepository.findNameByIdAndSellerId(productId, sellerId);
+        if (currentName.isEmpty()) {
+            UUID ownerId = productRepository.findSellerIdByProductId(productId);
+            if (ownerId != null) {
+                return new ApiResponse<>(false, "Access denied", null, 403);
+            }
             return new ApiResponse<>(false, "Product not found", null, 404);
         }
-        Product product = opt.get();
-        if (!product.getSeller().getId().equals(sellerId)) {
-            return new ApiResponse<>(false, "Access denied", null, 403);
-        }
+
+        String responseName = currentName.get();
         if (name != null && !name.isBlank()) {
-            product.setName(name.trim());
+            responseName = name.trim();
+            productRepository.updateNameByIdAndSellerId(productId, sellerId, responseName);
         }
         if (priceInPaise != null || stock != null) {
-            product.getVariants().forEach(v -> {
-                if (priceInPaise != null) {
-                    v.setPrice(String.valueOf(priceInPaise));
-                    // recompute MRP to match if lower, keep existing otherwise
-                    long existingMrp = v.getMrp() == null ? 0 : Long.parseLong(v.getMrp());
-                    if (priceInPaise > existingMrp)
-                        v.setMrp(String.valueOf(priceInPaise));
-                }
-                if (stock != null) {
-                    v.setStock(stock);
-                }
-            });
+            productVariantRepository.updateAllByProductId(productId, priceInPaise, stock);
         }
-        productRepository.save(product);
         return new ApiResponse<>(true, "Product updated", java.util.Map.of(
                 "id", productId.toString(),
-                "name", product.getName()), 200);
+                "name", responseName), 200);
     }
 
     // ── PATCH /api/v1/seller/product/{productId}/toggle-active ───────────────
     @Transactional
     public ApiResponse<Object> toggleActive(UUID productId) {
         UUID sellerId = getUserId();
-        Optional<Product> opt = productRepository.findById(productId);
-        if (opt.isEmpty()) {
+        Optional<Boolean> currentActive = productRepository.findActiveByIdAndSellerId(productId, sellerId);
+        if (currentActive.isEmpty()) {
+            UUID ownerId = productRepository.findSellerIdByProductId(productId);
+            if (ownerId != null) {
+                return new ApiResponse<>(false, "Access denied", null, 403);
+            }
             return new ApiResponse<>(false, "Product not found", null, 404);
         }
-        Product product = opt.get();
-        if (!product.getSeller().getId().equals(sellerId)) {
-            return new ApiResponse<>(false, "Access denied", null, 403);
-        }
-        boolean newActive = !Boolean.TRUE.equals(product.getIsActive());
-        product.setIsActive(newActive);
-        productRepository.save(product);
+        boolean newActive = !Boolean.TRUE.equals(currentActive.get());
+        productRepository.updateActiveByIdAndSellerId(productId, sellerId, newActive);
         return new ApiResponse<>(true,
                 newActive ? "Product activated" : "Product deactivated",
                 java.util.Map.of("isActive", newActive), 200);
@@ -685,15 +676,12 @@ public class SellerService {
 
     public ApiResponse<Object> handleLocation(SellerBasicInfo inforequest) {
 
-        String phone = getUserPhone();
-
         OpenStreetMapService.AddressResponse addressDetails = openStreetMapService.getAddressFromLatLng(
                 inforequest.latitude(),
                 inforequest.longitude());
 
         Address savedAddress = saveAddress(
                 addressDetails,
-                phone,
                 inforequest.latitude(),
                 inforequest.longitude());
 
@@ -703,9 +691,9 @@ public class SellerService {
         return new ApiResponse<>(true, "Location Info Saved", savedAddress, 200);
     }
 
-    private Address saveAddress(AddressResponse addressDetails, String phone, BigDecimal lat, BigDecimal longi) {
+    private Address saveAddress(AddressResponse addressDetails, BigDecimal lat, BigDecimal longi) {
 
-        Seller seller = sellerRepository.findByPhone(phone)
+        Seller seller = sellerRepository.findById(getUserId())
                 .orElseThrow(() -> new RuntimeException("Seller not found"));
         if (seller.getOnboardingStage() == Seller.ONBOARDSTAGE.RESGISTER) {
             seller.setOnboardingStage(Seller.ONBOARDSTAGE.LOCATION);
@@ -1186,6 +1174,14 @@ public class SellerService {
     @Transactional
     public ApiResponse<Object> removeProductMedia(UUID mediaId) {
         try {
+            UUID sellerId = getUserId();
+            Optional<UUID> mediaSellerId = productMediaRepository.findSellerIdByMediaId(mediaId);
+            if (mediaSellerId.isEmpty()) {
+                return new ApiResponse<>(false, "Media not found", null, 404);
+            }
+            if (!mediaSellerId.get().equals(sellerId)) {
+                return new ApiResponse<>(false, "Access denied", null, 403);
+            }
             ProductMedia media = productMediaRepository.findById(mediaId)
                     .orElseThrow(() -> new RuntimeException("Media not found"));
 
@@ -1220,6 +1216,14 @@ public class SellerService {
     @Transactional
     public ApiResponse<Object> setCoverImage(UUID mediaId) {
         try {
+            UUID sellerId = getUserId();
+            Optional<UUID> mediaSellerId = productMediaRepository.findSellerIdByMediaId(mediaId);
+            if (mediaSellerId.isEmpty()) {
+                return new ApiResponse<>(false, "Media not found", null, 404);
+            }
+            if (!mediaSellerId.get().equals(sellerId)) {
+                return new ApiResponse<>(false, "Access denied", null, 403);
+            }
             ProductMedia media = productMediaRepository.findById(mediaId)
                     .orElseThrow(() -> new RuntimeException("Media not found"));
 
@@ -1239,8 +1243,14 @@ public class SellerService {
 
     public ApiResponse<Object> getProductMedia(UUID productId) {
         try {
-            productRepository.findById(productId)
-                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            UUID sellerId = getUserId();
+            UUID ownerId = productRepository.findSellerIdByProductId(productId);
+            if (ownerId == null) {
+                return new ApiResponse<>(false, "Product not found", null, 404);
+            }
+            if (!ownerId.equals(sellerId)) {
+                return new ApiResponse<>(false, "Access denied", null, 403);
+            }
 
             List<ProductMediaResponseDto> result = productMediaRepository
                     .findByProductIdOrderByPositionAsc(productId)
@@ -1432,11 +1442,11 @@ public class SellerService {
     // ── GET /api/v1/seller/product/{productId}/variants ──────────────────────
     public ApiResponse<Object> getProductVariants(UUID productId) {
         UUID sellerId = getUserId();
-        Optional<Product> opt = productRepository.findById(productId);
-        if (opt.isEmpty()) {
+        UUID ownerId = productRepository.findSellerIdByProductId(productId);
+        if (ownerId == null) {
             return new ApiResponse<>(false, "Product not found", null, 404);
         }
-        if (!opt.get().getSeller().getId().equals(sellerId)) {
+        if (!ownerId.equals(sellerId)) {
             return new ApiResponse<>(false, "Access denied", null, 403);
         }
         List<ProductVariant> variants = productVariantRepository.findByProductId(productId);
@@ -1469,25 +1479,17 @@ public class SellerService {
     @Transactional
     public ApiResponse<Object> updateVariant(UUID productId, UUID variantId, Long priceInPaise, Integer stock) {
         UUID sellerId = getUserId();
-        Optional<Product> opt = productRepository.findById(productId);
-        if (opt.isEmpty()) {
+        UUID ownerId = productRepository.findSellerIdByProductId(productId);
+        if (ownerId == null) {
             return new ApiResponse<>(false, "Product not found", null, 404);
         }
-        if (!opt.get().getSeller().getId().equals(sellerId)) {
+        if (!ownerId.equals(sellerId)) {
             return new ApiResponse<>(false, "Access denied", null, 403);
         }
-        ProductVariant variant = productVariantRepository.findById(variantId)
-                .orElseThrow(() -> new RuntimeException("Variant not found"));
-        if (priceInPaise != null) {
-            variant.setPrice(String.valueOf(priceInPaise));
-            long existingMrp = variant.getMrp() == null ? 0 : Long.parseLong(variant.getMrp());
-            if (priceInPaise > existingMrp)
-                variant.setMrp(String.valueOf(priceInPaise));
+        if (!productVariantRepository.existsByIdAndProductIdAndSellerId(variantId, productId, sellerId)) {
+            return new ApiResponse<>(false, "Variant not found", null, 404);
         }
-        if (stock != null) {
-            variant.setStock(stock);
-        }
-        productVariantRepository.save(variant);
+        productVariantRepository.updateByIdAndProductId(variantId, productId, priceInPaise, stock);
         return new ApiResponse<>(true, "Variant updated", java.util.Map.of("id", variantId.toString()), 200);
     }
 
@@ -1550,14 +1552,6 @@ public class SellerService {
         payload.put("totalCount", totalCount);
         payload.put("distribution", distribution);
         return new ApiResponse<>(true, "Review summary", payload, 200);
-    }
-
-    private UUID getUserId() {
-        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
-    }
-
-    private String getUserPhone() {
-        return ((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getPhone();
     }
 }
 // hukiiu iuui jkjbhjhhjhj huhu uhh,j uh yiu ujhhuhjuhui uhh juyyuuik uhhu

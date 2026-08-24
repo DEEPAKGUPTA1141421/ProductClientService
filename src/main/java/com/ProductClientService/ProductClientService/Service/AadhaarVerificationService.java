@@ -85,7 +85,7 @@ public class AadhaarVerificationService {
     /**
      * Verify Aadhaar OTP
      */
-    public ApiResponse<Object> verifyAadhaarOtp(String otp) throws IllegalArgumentException{
+    public ApiResponse<Object> verifyAadhaarOtp(String otp) throws IllegalArgumentException {
         try {
             // Get phone number from UserPrincipal (JWT token)
             String phoneNumber = getPhoneNumberFromPrincipal();
@@ -199,7 +199,7 @@ public class AadhaarVerificationService {
     @Async
     public void sendOtpAsync(String phoneNumber) {
         try {
-            Otp otp = Otp.create(phoneNumber, Otp.typeOfOtp.aadhaarVerification, false);
+            Otp otp = new Otp(phoneNumber, Otp.typeOfOtp.aadhaarVerification, false);
             otpRepository.save(otp);
             logger.info("OTP created asynchronously for phone: {} and OTP: {}", phoneNumber, otp.getOtpCode());
 

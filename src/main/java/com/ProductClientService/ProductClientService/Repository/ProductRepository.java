@@ -126,6 +126,32 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("select p.seller.id from Product p where p.id = :productId")
     UUID findSellerIdByProductId(@Param("productId") UUID productId);
 
+    @Query("SELECT p.isActive FROM Product p WHERE p.id = :productId AND p.seller.id = :sellerId")
+    Optional<Boolean> findActiveByIdAndSellerId(
+            @Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId);
+
+    @Query("SELECT p.name FROM Product p WHERE p.id = :productId AND p.seller.id = :sellerId")
+    Optional<String> findNameByIdAndSellerId(
+            @Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Product p SET p.isActive = :isActive WHERE p.id = :productId AND p.seller.id = :sellerId")
+    int updateActiveByIdAndSellerId(
+            @Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId,
+            @Param("isActive") boolean isActive);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Product p SET p.name = :name WHERE p.id = :productId AND p.seller.id = :sellerId")
+    int updateNameByIdAndSellerId(
+            @Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId,
+            @Param("name") String name);
+
     @Query("SELECT p.category.id FROM Product p WHERE p.id = :productId")
     Optional<UUID> findCategoryIdByProductId(@Param("productId") UUID productId);
 

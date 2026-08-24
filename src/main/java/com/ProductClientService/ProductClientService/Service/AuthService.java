@@ -3,6 +3,7 @@ package com.ProductClientService.ProductClientService.Service;
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -27,6 +28,7 @@ import com.ProductClientService.ProductClientService.DTO.network.DeliveryInvetor
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Seller.ONBOARDSTAGE;
 import com.ProductClientService.ProductClientService.Model.User;
+import com.ProductClientService.ProductClientService.Model.Otp;
 import com.ProductClientService.ProductClientService.Model.Otp.typeOfOtp;
 import com.ProductClientService.ProductClientService.Model.RefreshToken;
 import com.ProductClientService.ProductClientService.Repository.OtpRepository;
@@ -117,8 +119,7 @@ public class AuthService {
             } else {
                 return new ApiResponse<>(false, "Invalid User Type", null, 403);
             }
-
-            sendOtpAsync(loginRequest.phone(), "login");
+            CompletableFuture.runAsync(() -> sendOtpAsync(loginRequest.phone(), "login"));
             Map<String, String> logData = new HashMap<>();
             logData.put("phone", loginRequest.phone());
             logData.put("isSignup", String.valueOf(isSignup));
@@ -270,14 +271,13 @@ public class AuthService {
         return new ApiResponse<>(true, "All sessions revoked", null, 200);
     }
 
-    @Async
     public void sendOtpAsync(String phone, String type) {
-        String otpCode = generateOtp(); // Implement your OTP generation logic
-        otpRepository.CreateOtp(phone, type, otpCode);
-        logger.info("OTP created asynchronously for phone: {} and Otp: {} ", phone, otpCode);
+        Otp otp = new Otp(phone, Otp.typeOfOtp.login, testOtpMode);
+        otpRepository.save(otp);
+        logger.info("OTP created asynchronously for phone: {} and Otp: {} ", phone, otp.getOtpCode());
         NotificationRequest request = createNotificationBody(
                 "Login Otp",
-                "Otp For Login Is" + otpCode + " Please Do not share with anyone",
+                "Otp For Login Is" + otp.getOtpCode() + " Please Do not share with anyone",
                 phone,
                 "sms");
         try {
@@ -386,4 +386,4 @@ public class AuthService {
 }
 
 // huyh hihi hyihi hyh huih huihu huj ggygggygggggg
-// kjj juji hukjiij hjuhhuughuhuhuhhh
+// kjj juji hukjiij hjuhhuughuhuhuhhhguyjyu gyujyuh guyyhu7yuhyuhy

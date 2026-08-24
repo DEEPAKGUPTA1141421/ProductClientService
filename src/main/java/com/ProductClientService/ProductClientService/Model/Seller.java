@@ -32,6 +32,12 @@ public class Seller {
     @Column(name = "email", unique = true)
     private String email;
 
+    @Column(name = "email_verified")
+    private boolean emailVerified = false;
+
+    @Column(name = "pending_email")
+    private String pendingEmail;
+
     @Column(name = "phone", nullable = false, unique = true)
     private String phone;
 

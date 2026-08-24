@@ -7,23 +7,14 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ProductDto;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
 import com.ProductClientService.ProductClientService.DTO.Settings.AadhaarVerificationDto;
-import com.ProductClientService.ProductClientService.DTO.seller.CatalogSearchResultDto;
 import com.ProductClientService.ProductClientService.DTO.seller.CreateListingFromCatalogDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductAttributeDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductTagRequestDto;
 import com.ProductClientService.ProductClientService.DTO.seller.ProductVariantsDto;
-import com.ProductClientService.ProductClientService.Model.Seller;
-import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Service.AadhaarVerificationService;
-import com.ProductClientService.ProductClientService.Service.ImageUploadService;
-import com.ProductClientService.ProductClientService.Service.S3Service;
 import com.ProductClientService.ProductClientService.Service.SearchIntentGeneratorService;
-//import com.ProductClientService.ProductClientService.Service.SuggestionGeneratorService;
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerService;
-import com.cloudinary.Search;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,9 +26,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,9 +43,6 @@ import org.springframework.http.MediaType;
 @RequiredArgsConstructor
 public class SellerController {
     private final SellerService sellerService;
-    private final S3Service s3Service;
-    private final ProductRepository productRepository;
-    private final ImageUploadService imageUploadService;
     private final TagService tagService;
     private final SearchIntentGeneratorService searchIntentGeneratorService;
     private final AadhaarVerificationService aadhaarVerificationService;
