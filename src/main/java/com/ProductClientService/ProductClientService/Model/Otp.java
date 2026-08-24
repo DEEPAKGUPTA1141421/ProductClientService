@@ -132,6 +132,10 @@ public class Otp {
         setExpiryTime(ZonedDateTime.now(ZoneId.of(ZONE_KOLKATA)).plusMinutes(5));
     }
 
+    public static Otp create(String phone, typeOfOtp type, boolean testOtpMode) {
+        return new Otp(phone, type, testOtpMode);
+    }
+
     private static String generateCode(boolean testOtpMode) {
         if (testOtpMode) {
             return "123456";
