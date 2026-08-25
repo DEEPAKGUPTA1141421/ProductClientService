@@ -49,6 +49,9 @@ public class CartService extends BaseService {
     private final EventPublisherService       eventPublisher;
     private final com.ProductClientService.ProductClientService.Repository.UserRepojectory userRepo;
     private final com.ProductClientService.ProductClientService.Repository.SellerAddressRepository sellerAddressRepository;
+    private final com.ProductClientService.ProductClientService.Service.AppConfigService appConfigService;
+
+    private static final String MEMBERSHIP_OFFER_CONFIG_KEY = "membership_offer";
 
     // ── Internal data holders ─────────────────────────────────────────────────
 
@@ -122,6 +125,24 @@ public class CartService extends BaseService {
     @Transactional(readOnly = true)
     public ApiResponse<Object> getCart() {
         return getCartByUserId(getUserId());
+    }
+
+    /** Adds the D2D Prime membership add-on (app_config "membership_offer") to the active cart. Idempotent. */
+    @Transactional
+    public ApiResponse<Object> addMembership() {
+        Cart cart = getOrCreateActiveCart();
+        cart.setMembershipAdded(true);
+        cartRepo.save(cart);
+        return getCart();
+    }
+
+    /** Removes the membership add-on from the active cart. */
+    @Transactional
+    public ApiResponse<Object> removeMembership() {
+        Cart cart = mustGetActiveCart();
+        cart.setMembershipAdded(false);
+        cartRepo.save(cart);
+        return getCart();
     }
 
     @Transactional(readOnly = true)
@@ -249,14 +270,32 @@ public class CartService extends BaseService {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private CartResponseDto emptyCartResponse(UUID userId, Cart cart) {
+        Object  membershipOffer  = appConfigService.getConfigValue(MEMBERSHIP_OFFER_CONFIG_KEY);
+        boolean membershipAdded  = cart != null && Boolean.TRUE.equals(cart.getMembershipAdded());
+        BigDecimal membershipCharge = membershipAdded
+                ? BigDecimal.valueOf(resolveMembershipPrice(membershipOffer)) : BigDecimal.ZERO;
+
         return CartResponseDto.builder()
                 .userId(userId)
                 .status(cart != null ? cart.getStatus().name() : Cart.Status.ACTIVE.name())
                 .items(List.of()).subOrders(List.of()).validationIssues(List.of())
                 .totalAmount(0).totalDiscount(0).serviceCharge(r2(SERVICE_CHARGE))
-                .deliveryCharge(0).gstCharge(0).grandTotal(r2(SERVICE_CHARGE))
+                .deliveryCharge(0).gstCharge(0)
+                .grandTotal(r2(SERVICE_CHARGE.add(membershipCharge)))
                 .cartLineDiscount("0")
+                .membershipOffer(membershipOffer)
+                .membershipAdded(membershipAdded)
+                .membershipCharge(r2(membershipCharge))
                 .build();
+    }
+
+    /** Reads app_config "membership_offer".price, defaulting to 0 if missing/malformed. */
+    private double resolveMembershipPrice(Object membershipOffer) {
+        if (membershipOffer instanceof Map<?, ?> map) {
+            Object price = map.get("price");
+            if (price instanceof Number n) return n.doubleValue();
+        }
+        return 0;
     }
 
     /** Loads variants, seller IDs, image attributes, and seller addresses in 4 DB queries. */
@@ -458,7 +497,14 @@ public class CartService extends BaseService {
         BigDecimal totalItemDisc = items.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalDelivery = subOrders.stream().map(s -> bd(s.getDeliveryCharge())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalGst      = subOrders.stream().map(s -> bd(s.getGstCharge())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal grandTotal    = subOrders.stream().map(s -> bd(s.getSubOrderTotal())).reduce(BigDecimal.ZERO, BigDecimal::add).add(SERVICE_CHARGE);
+
+        Object     membershipOffer  = appConfigService.getConfigValue(MEMBERSHIP_OFFER_CONFIG_KEY);
+        boolean    membershipAdded  = Boolean.TRUE.equals(cart.getMembershipAdded());
+        BigDecimal membershipCharge = membershipAdded
+                ? BigDecimal.valueOf(resolveMembershipPrice(membershipOffer)) : BigDecimal.ZERO;
+
+        BigDecimal grandTotal = subOrders.stream().map(s -> bd(s.getSubOrderTotal())).reduce(BigDecimal.ZERO, BigDecimal::add)
+                .add(SERVICE_CHARGE).add(membershipCharge);
 
         return CartResponseDto.builder()
                 .cartId(cart.getId()).userId(userId).status(cart.getStatus().name())
@@ -471,6 +517,9 @@ public class CartService extends BaseService {
                 .grandTotal(r2(grandTotal))
                 .cartCoupon(couponInfo.code())
                 .cartLineDiscount(couponInfo.discountStr())
+                .membershipOffer(membershipOffer)
+                .membershipAdded(membershipAdded)
+                .membershipCharge(r2(membershipCharge))
                 .build();
     }
 

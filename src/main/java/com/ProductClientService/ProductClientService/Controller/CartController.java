@@ -65,6 +65,29 @@ public class CartController {
         }
     }
 
+    // ---- Membership add-on ----
+    @PostMapping("/membership")
+
+    public ResponseEntity<?> addMembership() {
+        try {
+            var cart = cartService.addMembership();
+            return ResponseEntity.status(200).body(cart);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/membership")
+
+    public ResponseEntity<?> removeMembership() {
+        try {
+            var cart = cartService.removeMembership();
+            return ResponseEntity.status(200).body(cart);
+        } catch (Exception e) {
+            return ResponseEntity.status(501).body(e.getMessage());
+        }
+    }
+
     @DeleteMapping
 
     public ResponseEntity<?> clear() {

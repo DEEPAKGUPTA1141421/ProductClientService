@@ -5,21 +5,20 @@ import com.ProductClientService.ProductClientService.Service.ElasticsearchProduc
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 /**
- * Consumes product.live events and indexes the product into the
+ * Handles product.live events and indexes the product into the
  * "products-v1" Elasticsearch index so it appears in search results.
+ * Delivered via Kafka or Redis depending on app.messaging.provider.
  *
  * Runs in a separate consumer group from SearchIntentIndexerConsumer
- * so both consumers receive every product.live event independently.
+ * (Kafka mode) / as a separate subscriber (Redis mode) so both receive
+ * every product.live event independently.
  *
- * Failure strategy: log and ack.
+ * Failure strategy: log and continue.
  * A failed index attempt is recoverable — the batch reindex job or
- * a manual re-trigger can backfill the document without stalling the partition.
+ * a manual re-trigger can backfill the document.
  */
 @Service
 @RequiredArgsConstructor
@@ -32,21 +31,14 @@ public class ProductIndexerConsumer {
     private final ElasticsearchProductIndexer productIndexer;
     private final ObjectMapper objectMapper;
 
-    @KafkaListener(
-            topics = TOPIC,
-            groupId = GROUP,
-            containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void onProductLive(ConsumerRecord<String, String> record, Acknowledgment ack) {
+    public void handleProductLive(String payload) {
         try {
-            ProductLiveEvent event = objectMapper.readValue(record.value(), ProductLiveEvent.class);
+            ProductLiveEvent event = objectMapper.readValue(payload, ProductLiveEvent.class);
             log.info("Received product.live event for productId={}, indexing to products-v1",
                     event.getProductId());
             productIndexer.indexProduct(event.getProductId());
         } catch (Exception e) {
             log.warn("Failed to process product.live event for ES indexing: {}", e.getMessage());
-        } finally {
-            ack.acknowledge();
         }
     }
 }

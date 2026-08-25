@@ -2,18 +2,18 @@ package com.ProductClientService.ProductClientService.Service.kafka;
 
 import com.ProductClientService.ProductClientService.DTO.events.*;
 import com.ProductClientService.ProductClientService.DTO.events.UserInteractionEvent;
+import com.ProductClientService.ProductClientService.Service.messaging.EventPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 
 
 /**
- * Thin wrapper over KafkaTemplate.
- * Immediate serialization/send setup failures are caught so a Kafka outage does not fail the API call.
+ * Thin wrapper over EventPublisher (Kafka or Redis, per app.messaging.provider).
+ * Immediate serialization/send setup failures are caught so a broker outage does not fail the API call.
  */
 @Service
 @RequiredArgsConstructor
@@ -32,7 +32,7 @@ public class EventPublisherService {
     public static final String TOPIC_USER_INTERACTION         = "user.interaction";
     public static final String TOPIC_SELLER_LIVE              = "seller.live";
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
     public void publishProductViewed(UUID productId, UUID userId, UUID categoryId) {
@@ -102,7 +102,7 @@ public class EventPublisherService {
         for (UserInteractionEvent ev : events) {
             try {
                 String key = ev.getProductId() != null ? ev.getProductId().toString() : null;
-                kafkaTemplate.send(TOPIC_USER_INTERACTION, key, objectMapper.writeValueAsString(ev));
+                eventPublisher.publish(TOPIC_USER_INTERACTION, key, objectMapper.writeValueAsString(ev));
             } catch (Exception e) {
                 log.warn("Failed to publish user.interaction: {}", e.getMessage());
             }
@@ -111,7 +111,7 @@ public class EventPublisherService {
 
     private void publish(String topic, Object event) {
         try {
-            kafkaTemplate.send(topic, objectMapper.writeValueAsString(event));
+            eventPublisher.publish(topic, objectMapper.writeValueAsString(event));
         } catch (Exception e) {
             log.warn("Failed to publish to topic={}: {}", topic, e.getMessage());
         }

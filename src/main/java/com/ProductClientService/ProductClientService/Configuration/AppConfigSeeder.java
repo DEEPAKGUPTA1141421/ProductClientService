@@ -33,6 +33,20 @@ public class AppConfigSeeder implements CommandLineRunner {
                 "social_share_platforms",
                 "Ordered list of platforms shown on the seller app \"Share Product\" sheet.",
                 socialSharePlatforms());
+        upsertSeed(
+                "membership_offer",
+                "Membership upsell card shown on the cart/order-summary screen.",
+                membershipOffer());
+    }
+
+    private Map<String, Object> membershipOffer() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("title", "Unlimited Free Deliveries");
+        m.put("subtitle", "D2D Prime Membership");
+        m.put("buttonText", "Add To Cart");
+        m.put("price", 49);
+        m.put("active", true);
+        return m;
     }
 
     private void upsertSeed(String key, String description, Object value) {

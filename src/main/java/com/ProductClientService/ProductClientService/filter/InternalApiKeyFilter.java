@@ -4,7 +4,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,14 +24,16 @@ import java.io.IOException;
  * for /internal/** paths — all other paths are passed through untouched.
  */
 @Component
-@RequiredArgsConstructor
 public class InternalApiKeyFilter extends OncePerRequestFilter {
 
     public static final String HEADER_NAME = "X-Internal-Api-Key";
     private static final Logger log = LoggerFactory.getLogger(InternalApiKeyFilter.class);
 
-    @Value("${internal.api.key}")
-    private String internalApiKey;
+    private final String internalApiKey;
+
+    public InternalApiKeyFilter(@Value("${internal.api.key}") String internalApiKey) {
+        this.internalApiKey = "internal-api";
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,

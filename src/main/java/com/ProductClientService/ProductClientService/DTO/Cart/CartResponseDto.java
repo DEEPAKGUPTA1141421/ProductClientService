@@ -73,4 +73,14 @@ public class CartResponseDto {
      * INSUFFICIENT_STOCK / COUPON_EXPIRED are warnings.
      */
     private List<CartValidationIssue> validationIssues;
+
+    // ── Config ────────────────────────────────────────────────────────────────
+    /** app_config["membership_offer"] value (title/subtitle/buttonText/price/active), null if not configured. */
+    private Object membershipOffer;
+
+    /** Whether the user has added the membership add-on to this cart. */
+    private boolean membershipAdded;
+
+    /** membershipOffer.price, included in grandTotal when membershipAdded is true. */
+    private double membershipCharge;
 }

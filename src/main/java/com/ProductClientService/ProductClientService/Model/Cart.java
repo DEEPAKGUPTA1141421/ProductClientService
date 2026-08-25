@@ -42,6 +42,10 @@ public class Cart {
     private String tax = "0";
     private String grandTotal = "0";
 
+    /** Whether the D2D Prime membership add-on (app_config "membership_offer") is in this cart. */
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private Boolean membershipAdded = false;
+
     @CreationTimestamp
     @Column(updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));

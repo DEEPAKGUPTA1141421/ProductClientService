@@ -6,13 +6,20 @@ import java.util.Map;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.core.*;
 
+/**
+ * Only active when app.messaging.provider=kafka (the default). When the
+ * flag is set to "redis" this whole config — and every bean that depends on
+ * it — is left out of the context, so no connection to a broker is attempted.
+ */
 @Configuration
 @EnableKafka
+@ConditionalOnProperty(prefix = "app.messaging", name = "provider", havingValue = "kafka", matchIfMissing = true)
 public class KafkaConfig {
 
     @Value("${kafka.bootstrap-servers}")

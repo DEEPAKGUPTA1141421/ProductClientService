@@ -17,6 +17,8 @@ import java.util.Map;
 public class CacheConfig {
 
     public static final String CATEGORY_TREE = "categoryTree";
+    /** Generic app_config key → value lookups (membership offers, feature toggles, etc.). */
+    public static final String APP_CONFIG    = "appConfig";
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory cf) {
@@ -28,7 +30,8 @@ public class CacheConfig {
         return RedisCacheManager.builder(cf)
                 .cacheDefaults(defaults)
                 .withInitialCacheConfigurations(Map.of(
-                        CATEGORY_TREE, defaults.entryTtl(Duration.ofMinutes(30))))
+                        CATEGORY_TREE, defaults.entryTtl(Duration.ofMinutes(30)),
+                        APP_CONFIG, defaults.entryTtl(Duration.ofMinutes(15))))
                 .build();
     }
 }

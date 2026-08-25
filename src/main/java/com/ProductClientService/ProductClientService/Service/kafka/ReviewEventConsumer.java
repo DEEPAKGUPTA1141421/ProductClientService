@@ -13,9 +13,6 @@ import com.ProductClientService.ProductClientService.Service.ReviewService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +22,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Processes review pipeline events off the HTTP request thread.
+ * Processes review pipeline events off the HTTP request thread. Delivered via
+ * Kafka or Redis depending on app.messaging.provider.
  *
  * review.submit.requested
  *   1. Upload each image to Cloudinary
@@ -48,13 +46,11 @@ public class ReviewEventConsumer {
     private final ReviewService reviewService;
     private final com.ProductClientService.ProductClientService.Service.ShopRatingUpdater shopRatingUpdater;
 
-    @KafkaListener(topics = "review.submit.requested", groupId = "review-events-group",
-                   containerFactory = "kafkaListenerContainerFactory")
     @Transactional
-    public void onReviewSubmitRequested(ConsumerRecord<String, String> record, Acknowledgment ack) {
+    public void handleReviewSubmitRequested(String payload) {
         try {
             ReviewSubmitRequestedEvent event =
-                    objectMapper.readValue(record.value(), ReviewSubmitRequestedEvent.class);
+                    objectMapper.readValue(payload, ReviewSubmitRequestedEvent.class);
 
             // ── 1. Upload images to Cloudinary ────────────────────────────────
             List<String> imageUrls = uploadImages(event.getImageBytes(), event.getUserId());
@@ -107,21 +103,15 @@ public class ReviewEventConsumer {
             log.info("Review saved reviewId={} productId={}", saved.getId(), productId);
         } catch (Exception e) {
             log.error("Failed to process review.submit.requested: {}", e.getMessage(), e);
-        } finally {
-            ack.acknowledge();
         }
     }
 
-    @KafkaListener(topics = "review.helpful", groupId = "review-events-group",
-                   containerFactory = "kafkaListenerContainerFactory")
-    public void onReviewHelpful(ConsumerRecord<String, String> record, Acknowledgment ack) {
+    public void handleReviewHelpful(String payload) {
         try {
-            ReviewHelpfulEvent event = objectMapper.readValue(record.value(), ReviewHelpfulEvent.class);
+            ReviewHelpfulEvent event = objectMapper.readValue(payload, ReviewHelpfulEvent.class);
             log.debug("review.helpful reviewId={} action={}", event.getReviewId(), event.getAction());
         } catch (Exception e) {
             log.warn("Failed to process review.helpful: {}", e.getMessage());
-        } finally {
-            ack.acknowledge();
         }
     }
 

@@ -16,6 +16,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.ProductClientService.ProductClientService.Service.JwtService;
+import com.ProductClientService.ProductClientService.filter.ClientCredentialFilter;
 import com.ProductClientService.ProductClientService.filter.InternalApiKeyFilter;
 import com.ProductClientService.ProductClientService.filter.JwtAuthenticationFilter;
 
@@ -28,6 +29,7 @@ public class WebConfig {
 
         private final JwtService jwtService;
         private final InternalApiKeyFilter internalApiKeyFilter;
+        private final ClientCredentialFilter clientCredentialFilter;
 
         // ✅ CORS Configuration (IMPORTANT)
         @Bean
@@ -129,6 +131,8 @@ public class WebConfig {
 
                                 // ✅ Internal API key filter (before JWT — handles /internal/** only)
                                 .addFilterBefore(internalApiKeyFilter, UsernamePasswordAuthenticationFilter.class)
+                                // ✅ Client credential filter (interservice auth — handles /internal/v1/cart/** only)
+                                .addFilterBefore(clientCredentialFilter, UsernamePasswordAuthenticationFilter.class)
                                 // ✅ JWT Filter
                                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
