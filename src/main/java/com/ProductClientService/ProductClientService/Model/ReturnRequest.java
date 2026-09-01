@@ -32,6 +32,14 @@ public class ReturnRequest {
     @Column(nullable = false, length = 128)
     private String bookingId;
 
+    /** Product being returned — supplied by the client at submit time, used to resolve {@link #sellerId}. */
+    @Column(name = "product_id")
+    private UUID productId;
+
+    /** Denormalized from productId's owning product — lets sellers query their own return/refund requests. */
+    @Column(name = "seller_id")
+    private UUID sellerId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private ReturnReason reason;

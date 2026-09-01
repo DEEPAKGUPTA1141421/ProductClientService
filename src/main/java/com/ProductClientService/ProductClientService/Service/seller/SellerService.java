@@ -40,6 +40,7 @@ import com.ProductClientService.ProductClientService.Model.Product;
 import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductMedia;
 import com.ProductClientService.ProductClientService.Model.ProductMedia.MediaType;
+import com.ProductClientService.ProductClientService.Model.ProductMetrics;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Model.Seller;
 import com.ProductClientService.ProductClientService.Model.Brand;
@@ -56,6 +57,7 @@ import com.ProductClientService.ProductClientService.Repository.ProductRepositor
 import com.ProductClientService.ProductClientService.Repository.ProductMediaRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductVariantRepository;
 import com.ProductClientService.ProductClientService.Repository.ProductRatingRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductMetricsRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerAddressRepository;
 import com.ProductClientService.ProductClientService.Repository.SellerRepository;
 import com.ProductClientService.ProductClientService.Repository.StandardProductRepository;
@@ -65,6 +67,7 @@ import com.ProductClientService.ProductClientService.Service.OpenStreetMapServic
 import com.ProductClientService.ProductClientService.Service.BaseService;
 import com.ProductClientService.ProductClientService.Service.ElasticsearchProductIndexer;
 import com.ProductClientService.ProductClientService.Service.SearchResultsService;
+import com.ProductClientService.ProductClientService.Service.SellerNotificationPublisher;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import com.ProductClientService.ProductClientService.DTO.search.SearchRequest;
 import com.ProductClientService.ProductClientService.DTO.search.SearchResultsResponse;
@@ -88,7 +91,13 @@ import lombok.extern.slf4j.Slf4j;
 public class SellerService extends BaseService {
     @Value("${cloud.aws.s3.bucket-name}")
     private String bucketName;
+    // Defaults: 5MB images, 50MB videos — overridable in application.properties.
+    @Value("${app.upload.max-image-bytes:5242880}")
+    private long maxImageBytes;
+    @Value("${app.upload.max-video-bytes:52428800}")
+    private long maxVideoBytes;
     private final ProductRepository productRepository;
+    private final SellerNotificationPublisher sellerNotificationPublisher;
     private final S3Service s3Service;
     private final CategoryRepository categoryRepository;
     private final HttpServletRequest request;
@@ -108,6 +117,9 @@ public class SellerService extends BaseService {
     private final ProductMediaRepository productMediaRepository;
     private final SearchResultsService searchResultsService;
     private final ProductRatingRepository productRatingRepository;
+    private final ProductMetricsRepository productMetricsRepository;
+    private final com.ProductClientService.ProductClientService.Repository.ReviewLikeRepository reviewLikeRepository;
+    private final com.ProductClientService.ProductClientService.Service.ReviewService reviewService;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -231,6 +243,13 @@ public class SellerService extends BaseService {
             productRepository.findStockAndActiveByIds(ids).forEach(row -> stockMap.put(row[0].toString(), row));
         }
 
+        // Batch-load per-product engagement metrics (views/likes/sales), same
+        // pattern as the stock/isActive batch load above.
+        Map<UUID, ProductMetrics> metricsMap = new java.util.HashMap<>();
+        if (!ids.isEmpty()) {
+            productMetricsRepository.findAllById(ids).forEach(m -> metricsMap.put(m.getProductId(), m));
+        }
+
         List<Map<String, Object>> products = esDtos.stream().map(dto -> {
             Map<String, Object> p = new java.util.LinkedHashMap<>();
             p.put("id", dto.getId() != null ? dto.getId().toString() : null);
@@ -251,6 +270,10 @@ public class SellerService extends BaseService {
             boolean activeVal = stockRow != null && stockRow[2] != null ? (Boolean) stockRow[2] : true;
             p.put("stock", stockVal);
             p.put("isActive", activeVal);
+            ProductMetrics metrics = dto.getId() != null ? metricsMap.get(dto.getId()) : null;
+            p.put("views", metrics != null ? metrics.getViewCount() : 0L);
+            p.put("likes", metrics != null ? metrics.getWishlistCount() : 0L);
+            p.put("sales", metrics != null ? metrics.getNumberOfPurchases() : 0L);
             return p;
         })
                 // Post-ES filters applied on DB values (isActive, maxStock)
@@ -291,6 +314,17 @@ public class SellerService extends BaseService {
         List<Object[]> rows = productRepository.findLiveProductsBySeller(sellerId, safeSize, offset);
         long totalCount = productRepository.countLiveProductsBySeller(sellerId);
 
+        // Batch-load per-product engagement metrics (views/likes/sales), same
+        // pattern used by the ES-backed variant above.
+        List<UUID> ids = rows.stream()
+                .map(row -> row[0] != null ? UUID.fromString(row[0].toString()) : null)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<UUID, ProductMetrics> metricsMap = new java.util.HashMap<>();
+        if (!ids.isEmpty()) {
+            productMetricsRepository.findAllById(ids).forEach(m -> metricsMap.put(m.getProductId(), m));
+        }
+
         List<Map<String, Object>> products = rows.stream().map(row -> {
             Map<String, Object> p = new java.util.LinkedHashMap<>();
             p.put("id", row[0] != null ? row[0].toString() : null);
@@ -306,6 +340,10 @@ public class SellerService extends BaseService {
             p.put("variantId", null);
             p.put("stock", row[6]); // total stock across variants
             p.put("isActive", row[8] == null || (Boolean) row[8]);
+            ProductMetrics metrics = row[0] != null ? metricsMap.get(UUID.fromString(row[0].toString())) : null;
+            p.put("views", metrics != null ? metrics.getViewCount() : 0L);
+            p.put("likes", metrics != null ? metrics.getWishlistCount() : 0L);
+            p.put("sales", metrics != null ? metrics.getNumberOfPurchases() : 0L);
             return p;
         })
                 .filter(p -> isActive == null || isActive.equals(p.get("isActive")))
@@ -318,6 +356,75 @@ public class SellerService extends BaseService {
         payload.put("hasMore", (long) (offset + rows.size()) < totalCount);
         payload.put("source", "database");
         return new ApiResponse<>(true, "Products fetched", payload, 200);
+    }
+
+    // ── GET /api/v1/seller/product/scheduled-products ──────────────────────────
+    // Products the seller finished building but chose to publish later instead
+    // of going live immediately (see scheduleProduct below).
+    public ApiResponse<Object> getScheduledProducts(int page, int size, String query) {
+        UUID sellerId = getUserId();
+        int safeSize = Math.min(Math.max(1, size), 100);
+        int safePage = Math.max(0, page);
+        int offset = safePage * safeSize;
+        String safeQuery = (query != null && !query.isBlank()) ? query.trim() : null;
+
+        List<Object[]> rows = productRepository.findScheduledProductsBySeller(sellerId, safeQuery, safeSize, offset);
+        long totalCount = productRepository.countScheduledProductsBySeller(sellerId, safeQuery);
+
+        List<Map<String, Object>> products = rows.stream().map(row -> {
+            Map<String, Object> p = new java.util.LinkedHashMap<>();
+            p.put("id", row[0] != null ? row[0].toString() : null);
+            p.put("name", row[1]);
+            p.put("scheduledAt", row[3]);
+            p.put("lastEdited", row[4]);
+            p.put("price", row[5]);
+            p.put("imageUrl", row[6]);
+            return p;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("products", products);
+        payload.put("totalCount", totalCount);
+        payload.put("hasMore", (long) (offset + rows.size()) < totalCount);
+        return new ApiResponse<>(true, "Scheduled products fetched", payload, 200);
+    }
+
+    // ── POST /api/v1/seller/product/{productId}/schedule ───────────────────────
+    // Sets (or updates — "Reschedule") the future auto-publish time for a
+    // product that has finished the listing wizard but isn't live yet. The
+    // ScheduledProductPublishJob cron picks it up once scheduledAt arrives.
+    @Transactional
+    public ApiResponse<Object> scheduleProduct(UUID productId, java.time.ZonedDateTime scheduledAt) {
+        UUID sellerId = getUserId();
+        if (scheduledAt == null || !scheduledAt.isAfter(java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")))) {
+            return new ApiResponse<>(false, "scheduledAt must be a future date/time", null, 400);
+        }
+        Optional<Product.Step> stepOpt = productRepository.findStepByIdAndSellerId(productId, sellerId);
+        if (stepOpt.isEmpty()) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        Product.Step step = stepOpt.get();
+        if (step != Product.Step.PRODUCT_BRAND_AND_TAGS && step != Product.Step.CATALOG_SELECTED) {
+            return new ApiResponse<>(false,
+                    "Product is not ready to be scheduled, current step is " + step, null, 409);
+        }
+        productRepository.updateScheduledAtByIdAndSellerId(productId, sellerId, scheduledAt);
+        return new ApiResponse<>(true, "Product scheduled", Map.of("scheduledAt", scheduledAt.toString()), 200);
+    }
+
+    // ── POST /api/v1/seller/product/{productId}/publish-now ────────────────────
+    // Publishes a scheduled product immediately instead of waiting for its
+    // scheduledAt — reuses MakeProductLive, which also clears scheduledAt.
+    public ApiResponse<Object> publishScheduledProductNow(UUID productId) {
+        UUID sellerId = getUserId();
+        UUID ownerId = productRepository.findSellerIdByProductId(productId);
+        if (ownerId == null) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        if (!ownerId.equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        return MakeProductLive(productId);
     }
 
     // ── DELETE /api/v1/seller/product/{productId} ─────────────────────────────
@@ -360,6 +467,9 @@ public class SellerService extends BaseService {
         }
         if (priceInPaise != null || stock != null) {
             productVariantRepository.updateAllByProductId(productId, priceInPaise, stock);
+            if (stock != null) {
+                checkLowStockAndNotify(productId, sellerId);
+            }
         }
         return new ApiResponse<>(true, "Product updated", java.util.Map.of(
                 "id", productId.toString(),
@@ -665,6 +775,20 @@ public class SellerService extends BaseService {
     // }
 
     public ApiResponse<Object> addProductVariants(ProductVariantsDto dto) {
+        // Validate any discount config up front so a bad discount doesn't 500 —
+        // same validation rules as configureVariantDiscount.
+        for (ProductVariantsDto.VariantItem item : dto.variants()) {
+            com.ProductClientService.ProductClientService.DTO.seller.VariantDiscountDto d = item.discount();
+            if (d == null) continue;
+            if (d.type() == com.ProductClientService.ProductClientService.Model.DiscountType.PERCENTAGE
+                    && d.value() > 90) {
+                return new ApiResponse<>(false, "Percentage discount cannot exceed 90%", null, 400);
+            }
+            if (d.startsAt() != null && d.endsAt() != null && !d.startsAt().isBefore(d.endsAt())) {
+                return new ApiResponse<>(false, "startsAt must be before endsAt", null, 400);
+            }
+        }
+
         try {
             Product product = productRepository.findById(dto.productId())
                     .orElseThrow(() -> new RuntimeException("Product not found"));
@@ -678,6 +802,15 @@ public class SellerService extends BaseService {
                 variant.setPrice(String.valueOf((long) (item.price() * 100)));
                 variant.setMrp(String.valueOf((long) (item.mrp() * 100)));
                 variant.setCombination(item.combination());
+                if (item.discount() != null) {
+                    com.ProductClientService.ProductClientService.DTO.seller.VariantDiscountDto d = item.discount();
+                    variant.setDiscountType(d.type());
+                    variant.setDiscountValue(String.valueOf(d.value()));
+                    variant.setDiscountActive(d.active());
+                    variant.setDiscountStartsAt(d.startsAt());
+                    variant.setDiscountEndsAt(d.endsAt());
+                    variant.recomputeEffectiveDiscount();
+                }
                 variant = productVariantRepository.save(variant);
                 product.getVariants().add(variant);
             }
@@ -802,6 +935,7 @@ public class SellerService extends BaseService {
             }
 
             product.setStep(Product.Step.LIVE);
+            product.setScheduledAt(null);
             productRepository.save(product); // 🔥 will trigger @PostUpdate
 
             CompletableFuture.runAsync(() -> {
@@ -1204,6 +1338,271 @@ public class SellerService extends BaseService {
         }
     }
 
+    // ── Presigned direct-to-Cloudinary upload ───────────────────────────────
+    // The app no longer proxies raw photo/video bytes through this server —
+    // it asks here for a short-lived signature, uploads straight to
+    // Cloudinary itself, then calls confirmMediaUpload() with just the
+    // resulting metadata. Keeps this server's bandwidth/memory out of the
+    // upload path entirely while still enforcing size limits and ownership.
+
+    public ApiResponse<Object> createMediaUploadSignature(UUID productId,
+            com.ProductClientService.ProductClientService.DTO.seller.MediaSignatureRequestDto req) {
+        try {
+            UUID sellerId = getUserId();
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            if (!product.getSeller().getId().equals(sellerId)) {
+                return new ApiResponse<>(false, "Not authorized for this product", null, 403);
+            }
+
+            String resourceType = req.resourceType().toLowerCase();
+            String folder;
+            if ("attribute".equals(req.purpose())) {
+                String key = req.attributeKey();
+                if (key == null || !key.contains("::")) {
+                    return new ApiResponse<>(false,
+                            "Valid attributeKey ('{categoryAttributeId}::{value}') is required", null, 400);
+                }
+                String attributeValue = key.substring(key.indexOf("::") + 2).trim();
+                folder = "products/" + productId + "/" + attributeValue;
+            } else {
+                folder = "products/" + productId + "/cover";
+            }
+
+            String publicId = UUID.randomUUID().toString();
+            long timestamp = System.currentTimeMillis() / 1000;
+
+            // Only params the client is allowed to send are signed — folder and
+            // public_id are pinned here, so a tampered upload request (different
+            // folder, different public_id) will simply fail Cloudinary's own
+            // signature check rather than silently landing somewhere else.
+            Map<String, Object> paramsToSign = new java.util.TreeMap<>();
+            paramsToSign.put("folder", folder);
+            paramsToSign.put("public_id", publicId);
+            paramsToSign.put("timestamp", timestamp);
+            String signature = cloudinary.apiSignRequest(paramsToSign, cloudinary.config.apiSecret);
+
+            var dto = new com.ProductClientService.ProductClientService.DTO.seller.MediaSignatureResponseDto(
+                    cloudinary.config.cloudName,
+                    cloudinary.config.apiKey,
+                    signature,
+                    timestamp,
+                    folder,
+                    publicId,
+                    resourceType,
+                    "video".equals(resourceType) ? maxVideoBytes : maxImageBytes);
+
+            return new ApiResponse<>(true, "Signature generated", dto, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Could not generate upload signature: " + e.getMessage(), null, 500);
+        }
+    }
+
+    @Transactional
+    public ApiResponse<Object> confirmMediaUpload(
+            com.ProductClientService.ProductClientService.DTO.seller.MediaConfirmRequestDto req) {
+        try {
+            UUID sellerId = getUserId();
+            Product product = productRepository.findById(req.productId())
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            if (!product.getSeller().getId().equals(sellerId)) {
+                return new ApiResponse<>(false, "Not authorized for this product", null, 403);
+            }
+
+            boolean isVideo = "video".equals(req.resourceType().toLowerCase());
+            long limit = isVideo ? maxVideoBytes : maxImageBytes;
+
+            // Defense in depth: the client already checked size before
+            // uploading, but a modified client could skip that check — this
+            // re-validates the ACTUAL bytes Cloudinary reports (not anything
+            // the client claims) and destroys the asset if it's oversized
+            // instead of trusting the upload was legitimate.
+            if (req.bytes() > limit) {
+                try {
+                    cloudinary.uploader().destroy(req.publicId(),
+                            ObjectUtils.asMap("resource_type", isVideo ? "video" : "image"));
+                } catch (Exception ignored) {
+                }
+                return new ApiResponse<>(false,
+                        (isVideo ? "Video" : "Image") + " exceeds the " + (limit / (1024 * 1024)) + "MB limit",
+                        null, 400);
+            }
+
+            // The uploaded asset's own folder must match this product — guards
+            // against confirming an asset that was signed for a different
+            // product/seller (e.g. a stale signature reused after the fact).
+            String expectedFolderPrefix = "products/" + req.productId() + "/";
+            if (!req.publicId().contains(expectedFolderPrefix) && !req.secureUrl().contains(expectedFolderPrefix)) {
+                return new ApiResponse<>(false, "Uploaded asset does not belong to this product", null, 400);
+            }
+
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("productId", product.getId().toString());
+
+            if ("attribute".equals(req.purpose())) {
+                String key = req.attributeKey();
+                if (key == null || !key.contains("::")) {
+                    return new ApiResponse<>(false, "Valid attributeKey is required", null, 400);
+                }
+                String[] parts = key.split("::", 2);
+                UUID categoryAttributeId = UUID.fromString(parts[0].trim());
+                String attributeValue = parts[1].trim();
+
+                ProductAttribute pa = productAttributeRepository
+                        .findByProductAndCategoryAttributeAndValue(product.getId(), categoryAttributeId,
+                                attributeValue)
+                        .orElseThrow(() -> new RuntimeException("No ProductAttribute found for key: " + key));
+
+                pa.getImages().add(req.secureUrl());
+                pa.getImagePublicIds().add(req.publicId());
+                productAttributeRepository.save(pa);
+
+                data.put("attributeMedia", Map.of(attributeValue, List.of(req.secureUrl())));
+            } else {
+                // Cover media — idempotent: replace whatever was there before,
+                // same semantics the old multipart flow had.
+                List<ProductMedia> existing = productMediaRepository.findByProductIdOrderByPositionAsc(product.getId());
+                for (ProductMedia old : existing) {
+                    try {
+                        cloudinary.uploader().destroy(old.getPublicId(),
+                                ObjectUtils.asMap("resource_type",
+                                        old.getMediaType() == MediaType.VIDEO ? "video" : "image"));
+                    } catch (Exception ignored) {
+                    }
+                }
+                productMediaRepository.deleteAll(existing);
+
+                ProductMedia media = new ProductMedia();
+                media.setProduct(product);
+                media.setUrl(req.secureUrl());
+                media.setPublicId(req.publicId());
+                media.setMediaType(isVideo ? MediaType.VIDEO : MediaType.IMAGE);
+                media.setPosition(0);
+                media.setCover(true);
+                productMediaRepository.save(media);
+
+                data.put("coverImageUrl", req.secureUrl());
+            }
+
+            if (product.getStep() != Product.Step.LIVE) {
+                product.setStep(Product.Step.PRODUCT_IMAGE);
+            }
+            productRepository.save(product);
+
+            if (product.getStep() == Product.Step.LIVE) {
+                CompletableFuture.runAsync(() -> elasticsearchProductIndexer.indexProduct(product.getId()));
+            }
+
+            return new ApiResponse<>(true, "Media attached successfully", data, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Could not attach media: " + e.getMessage(), null, 500);
+        }
+    }
+
+    /** Deletes one already-confirmed media item: the DB reference AND the Cloudinary asset itself. */
+    @Transactional
+    public ApiResponse<Object> removeConfirmedMedia(
+            com.ProductClientService.ProductClientService.DTO.seller.MediaRemoveRequestDto req) {
+        try {
+            UUID sellerId = getUserId();
+            Product product = productRepository.findById(req.productId())
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            if (!product.getSeller().getId().equals(sellerId)) {
+                return new ApiResponse<>(false, "Not authorized for this product", null, 403);
+            }
+
+            if ("attribute".equals(req.purpose())) {
+                String key = req.attributeKey();
+                if (key == null || !key.contains("::")) {
+                    return new ApiResponse<>(false, "Valid attributeKey is required", null, 400);
+                }
+                String[] parts = key.split("::", 2);
+                UUID categoryAttributeId = UUID.fromString(parts[0].trim());
+                String attributeValue = parts[1].trim();
+
+                ProductAttribute pa = productAttributeRepository
+                        .findByProductAndCategoryAttributeAndValue(req.productId(), categoryAttributeId,
+                                attributeValue)
+                        .orElseThrow(() -> new RuntimeException("No ProductAttribute found for key: " + key));
+
+                int idx = pa.getImages().indexOf(req.url());
+                if (idx == -1) {
+                    return new ApiResponse<>(false, "Image not found on this attribute", null, 404);
+                }
+                String publicId = idx < pa.getImagePublicIds().size() ? pa.getImagePublicIds().get(idx) : null;
+                pa.getImages().remove(idx);
+                if (publicId != null) {
+                    if (idx < pa.getImagePublicIds().size()) {
+                        pa.getImagePublicIds().remove(idx);
+                    }
+                    try {
+                        cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", "image"));
+                    } catch (Exception ignored) {
+                    }
+                }
+                productAttributeRepository.save(pa);
+            } else {
+                List<ProductMedia> matches = productMediaRepository
+                        .findByProductIdOrderByPositionAsc(req.productId())
+                        .stream()
+                        .filter(m -> m.getUrl().equals(req.url()))
+                        .toList();
+                if (matches.isEmpty()) {
+                    return new ApiResponse<>(false, "Media not found", null, 404);
+                }
+                for (ProductMedia m : matches) {
+                    try {
+                        cloudinary.uploader().destroy(m.getPublicId(),
+                                ObjectUtils.asMap("resource_type",
+                                        m.getMediaType() == MediaType.VIDEO ? "video" : "image"));
+                    } catch (Exception ignored) {
+                    }
+                    productMediaRepository.delete(m);
+                }
+            }
+
+            return new ApiResponse<>(true, "Media removed", null, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Could not remove media: " + e.getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Whether this product may proceed past the Images step — requires a
+     * cover photo/video and at least one image for every value of every
+     * image-required attribute (e.g. one photo per selected Color).
+     */
+    @Transactional
+    public ApiResponse<Object> getMediaStatus(UUID productId) {
+        try {
+            UUID sellerId = getUserId();
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+            if (!product.getSeller().getId().equals(sellerId)) {
+                return new ApiResponse<>(false, "Not authorized for this product", null, 403);
+            }
+
+            List<String> missing = new ArrayList<>();
+
+            boolean hasCover = productMediaRepository.findByProductIdOrderByPositionAsc(productId)
+                    .stream().anyMatch(ProductMedia::isCover);
+            if (!hasCover) missing.add("Cover photo or video");
+
+            for (ProductAttribute pa : product.getProductAttributes()) {
+                boolean isImageAttr = Boolean.TRUE.equals(pa.getCategoryAttribute().getIsImageAttribute());
+                if (isImageAttr && (pa.getImages() == null || pa.getImages().isEmpty())) {
+                    missing.add(pa.getValue() + " photo/video");
+                }
+            }
+
+            var dto = new com.ProductClientService.ProductClientService.DTO.seller.MediaStatusResponseDto(
+                    missing.isEmpty(), missing);
+            return new ApiResponse<>(true, missing.isEmpty() ? "Media complete" : "Missing required media", dto, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Could not check media status: " + e.getMessage(), null, 500);
+        }
+    }
+
     @Transactional
     public ApiResponse<Object> removeProductMedia(UUID mediaId) {
         try {
@@ -1473,6 +1872,28 @@ public class SellerService extends BaseService {
         return new ApiResponse<>(true, "Low stock products", result, 200);
     }
 
+    // ── GET /api/v1/seller/product/dashboard-summary ──────────────────────────
+    public ApiResponse<Object> getDashboardSummary() {
+        UUID sellerId = getUserId();
+        int lowStockThreshold = 5;
+
+        long totalProducts     = productRepository.countAllProductsBySeller(sellerId);
+        long liveProducts      = productRepository.countLiveProductsBySeller(sellerId);
+        long activeProducts    = productRepository.countActiveLiveProductsBySeller(sellerId);
+        long outOfStockProducts = productRepository.countOutOfStockProductsBySeller(sellerId);
+        long lowStockProducts  = productRepository.countLowStockProductsBySeller(sellerId, lowStockThreshold);
+
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("totalProducts",     totalProducts);
+        data.put("liveProducts",      liveProducts);
+        data.put("activeProducts",    activeProducts);
+        data.put("outOfStockProducts", outOfStockProducts);
+        data.put("lowStockProducts",  lowStockProducts);
+        data.put("lowStockThreshold", lowStockThreshold);
+
+        return new ApiResponse<>(true, "Dashboard summary fetched", data, 200);
+    }
+
     // ── GET /api/v1/seller/product/{productId}/variants ──────────────────────
     public ApiResponse<Object> getProductVariants(UUID productId) {
         UUID sellerId = getUserId();
@@ -1504,6 +1925,7 @@ public class SellerService extends BaseService {
             m.put("mrpRupees", String.format("%.2f", mrp / 100.0));
             m.put("stock", v.getStock());
             m.put("combination", v.getCombination() != null ? v.getCombination() : Map.of());
+            m.put("discount", toDiscountView(v));
             return m;
         }).toList();
         return new ApiResponse<>(true, "Variants fetched", result, 200);
@@ -1524,16 +1946,163 @@ public class SellerService extends BaseService {
             return new ApiResponse<>(false, "Variant not found", null, 404);
         }
         productVariantRepository.updateByIdAndProductId(variantId, productId, priceInPaise, stock);
+        if (stock != null) {
+            checkLowStockAndNotify(productId, sellerId);
+        }
         return new ApiResponse<>(true, "Variant updated", java.util.Map.of("id", variantId.toString()), 200);
     }
 
+    // ── PATCH /api/v1/seller/product/{productId}/variants/{variantId}/discount ─
+    // Configures (creates or overwrites) a per-variant discount, independently of
+    // price/stock. Recomputes the buyer-facing discount_price/discount_percentage
+    // columns and reindexes the product to ES so search stays correct.
+    @Transactional
+    public ApiResponse<Object> configureVariantDiscount(UUID productId, UUID variantId,
+            com.ProductClientService.ProductClientService.DTO.seller.VariantDiscountDto dto) {
+        UUID sellerId = getUserId();
+        UUID ownerId = productRepository.findSellerIdByProductId(productId);
+        if (ownerId == null) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        if (!ownerId.equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        if (!productVariantRepository.existsByIdAndProductIdAndSellerId(variantId, productId, sellerId)) {
+            return new ApiResponse<>(false, "Variant not found", null, 404);
+        }
+        if (dto.type() == com.ProductClientService.ProductClientService.Model.DiscountType.PERCENTAGE
+                && dto.value() > 90) {
+            return new ApiResponse<>(false, "Percentage discount cannot exceed 90%", null, 400);
+        }
+        if (dto.startsAt() != null && dto.endsAt() != null && !dto.startsAt().isBefore(dto.endsAt())) {
+            return new ApiResponse<>(false, "startsAt must be before endsAt", null, 400);
+        }
+
+        ProductVariant variant = productVariantRepository.findById(variantId)
+                .orElseThrow(() -> new RuntimeException("Variant not found"));
+        variant.setDiscountType(dto.type());
+        variant.setDiscountValue(String.valueOf(dto.value()));
+        variant.setDiscountActive(dto.active());
+        variant.setDiscountStartsAt(dto.startsAt());
+        variant.setDiscountEndsAt(dto.endsAt());
+        variant.recomputeEffectiveDiscount();
+        variant = productVariantRepository.save(variant);
+
+        reindexIfPossible(productId);
+
+        return new ApiResponse<>(true, "Discount configured", toVariantResponseDto(variant), 200);
+    }
+
+    // ── DELETE /api/v1/seller/product/{productId}/variants/{variantId}/discount ─
+    @Transactional
+    public ApiResponse<Object> removeVariantDiscount(UUID productId, UUID variantId) {
+        UUID sellerId = getUserId();
+        UUID ownerId = productRepository.findSellerIdByProductId(productId);
+        if (ownerId == null) {
+            return new ApiResponse<>(false, "Product not found", null, 404);
+        }
+        if (!ownerId.equals(sellerId)) {
+            return new ApiResponse<>(false, "Access denied", null, 403);
+        }
+        if (!productVariantRepository.existsByIdAndProductIdAndSellerId(variantId, productId, sellerId)) {
+            return new ApiResponse<>(false, "Variant not found", null, 404);
+        }
+
+        ProductVariant variant = productVariantRepository.findById(variantId)
+                .orElseThrow(() -> new RuntimeException("Variant not found"));
+        variant.clearDiscount();
+        variant = productVariantRepository.save(variant);
+
+        reindexIfPossible(productId);
+
+        return new ApiResponse<>(true, "Discount removed", toVariantResponseDto(variant), 200);
+    }
+
+    private void reindexIfPossible(UUID productId) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                elasticsearchProductIndexer.indexProduct(productId);
+            } catch (Exception e) {
+                log.warn("ES re-index failed for productId={}: {}", productId, e.getMessage());
+            }
+        });
+    }
+
+    private com.ProductClientService.ProductClientService.DTO.seller.ProductVariantResponseDto.DiscountView toDiscountView(
+            ProductVariant v) {
+        if (v.getDiscountType() == null) {
+            return null;
+        }
+        double value = 0;
+        try {
+            value = Double.parseDouble(v.getDiscountValue());
+        } catch (Exception ignored) {
+        }
+        boolean effective = v.isDiscountCurrentlyEffective();
+        Double effectivePrice = null;
+        Double effectivePercentage = null;
+        if (effective) {
+            try {
+                effectivePrice = Double.parseDouble(v.getDiscountPrice());
+            } catch (Exception ignored) {
+            }
+            try {
+                effectivePercentage = Double.parseDouble(v.getDiscountPercentage());
+            } catch (Exception ignored) {
+            }
+        }
+        return new com.ProductClientService.ProductClientService.DTO.seller.ProductVariantResponseDto.DiscountView(
+                v.getDiscountType(), value, Boolean.TRUE.equals(v.getDiscountActive()),
+                v.getDiscountStartsAt(), v.getDiscountEndsAt(),
+                effective, effectivePrice, effectivePercentage);
+    }
+
+    private com.ProductClientService.ProductClientService.DTO.seller.ProductVariantResponseDto toVariantResponseDto(
+            ProductVariant v) {
+        return new com.ProductClientService.ProductClientService.DTO.seller.ProductVariantResponseDto(
+                v.getId(), v.getSku(), v.getPrice(), v.getStock(), toDiscountView(v));
+    }
+
+    /**
+     * Notify the seller when a product's total variant stock drops to/below the
+     * low-stock threshold (matches the /low-stock?threshold=5 default). Publishes
+     * to OrderPaymentNotificationService's shared notification pipeline.
+     */
+    private static final int LOW_STOCK_THRESHOLD = 5;
+
+    private void checkLowStockAndNotify(UUID productId, UUID sellerId) {
+        try {
+            List<Object[]> rows = productRepository.findStockAndActiveByIds(List.of(productId));
+            if (rows.isEmpty()) return;
+            Object[] row = rows.get(0);
+            long totalStock = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+            boolean isActive = row[2] != null && (Boolean) row[2];
+            if (!isActive || totalStock > LOW_STOCK_THRESHOLD) return;
+
+            String productName = productRepository.findNameByIdAndSellerId(productId, sellerId).orElse("your product");
+            sellerNotificationPublisher.publish(
+                    sellerId,
+                    "PRODUCT_UPDATES",
+                    totalStock == 0 ? "Product out of stock" : "Low stock alert",
+                    totalStock == 0
+                            ? "\"" + productName + "\" is out of stock."
+                            : "\"" + productName + "\" is low on stock (" + totalStock + " left).",
+                    "/products/" + productId,
+                    productId.toString(),
+                    java.util.Map.of("productId", productId.toString(), "stock", String.valueOf(totalStock)));
+        } catch (Exception e) {
+            log.warn("Low-stock notification check failed for productId={}: {}", productId, e.getMessage());
+        }
+    }
+
     // ── GET /reviews ────────────────────────────────────────────────────────────
-    public ApiResponse<Object> getSellerReviews(int page, int size) {
+    public ApiResponse<Object> getSellerReviews(int page, int size, String query) {
         UUID sellerId = getUserId();
         int safeSize = Math.min(Math.max(size, 1), 50);
         int offset = page * safeSize;
-        List<Object[]> rows = productRatingRepository.findReviewsBySeller(sellerId, safeSize, offset);
-        long total = productRatingRepository.countReviewsBySeller(sellerId);
+        String safeQuery = (query == null || query.isBlank()) ? null : query.trim();
+        List<Object[]> rows = productRatingRepository.findReviewsBySeller(sellerId, safeQuery, safeSize, offset);
+        long total = productRatingRepository.countReviewsBySeller(sellerId, safeQuery);
 
         List<Map<String, Object>> reviews = rows.stream().map(r -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
@@ -1546,7 +2115,14 @@ public class SellerService extends BaseService {
             m.put("createdAt", r[6] != null ? r[6].toString() : "");
             m.put("productId", r[7] != null ? r[7].toString() : "");
             m.put("productName", r[8] != null ? r[8].toString() : "");
-            m.put("reviewerName", r[9] != null ? r[9].toString() : "Anonymous");
+            m.put("categoryName", r[9] != null ? r[9].toString() : "");
+            m.put("productImageUrl", r[10] != null ? r[10].toString() : "");
+            m.put("reviewerId", r[11] != null ? r[11].toString() : "");
+            m.put("reviewerName", r[12] != null ? r[12].toString() : "Anonymous");
+            m.put("reviewerAvatarUrl", r[13] != null ? r[13].toString() : "");
+            m.put("sellerReply", r[14] != null ? r[14].toString() : "");
+            m.put("sellerReplyAt", r[15] != null ? r[15].toString() : "");
+            m.put("sellerReaction", r[16] != null ? r[16].toString() : "");
             return m;
         }).toList();
 
@@ -1558,6 +2134,100 @@ public class SellerService extends BaseService {
         payload.put("totalPages", (int) Math.ceil((double) total / safeSize));
         payload.put("hasMore", (long) (page + 1) * safeSize < total);
         return new ApiResponse<>(true, "Reviews fetched", payload, 200);
+    }
+
+    // ── DELETE /reviews/{reviewId} — seller moderates a comment on their own product ──
+    @org.springframework.transaction.annotation.Transactional
+    public ApiResponse<Object> deleteSellerReview(UUID reviewId) {
+        UUID sellerId = getUserId();
+
+        if (!productRatingRepository.existsByIdAndSellerId(reviewId, sellerId)) {
+            return new ApiResponse<>(false, "Comment not found", null, 404);
+        }
+
+        com.ProductClientService.ProductClientService.Model.ProductRating review =
+                productRatingRepository.findById(reviewId).orElse(null);
+        if (review == null) {
+            return new ApiResponse<>(false, "Comment not found", null, 404);
+        }
+
+        UUID productId = review.getProduct().getId();
+        reviewLikeRepository.deleteByReviewId(reviewId);
+        productRatingRepository.delete(review);
+        reviewService.updateProductRatingSummaryAsync(productId);
+
+        return new ApiResponse<>(true, "Comment deleted", null, 200);
+    }
+
+    // ── POST /reviews/{reviewId}/reply — seller replies to a comment ──────────
+    @org.springframework.transaction.annotation.Transactional
+    public ApiResponse<Object> replySellerReview(UUID reviewId, String replyText) {
+        UUID sellerId = getUserId();
+
+        if (replyText == null || replyText.isBlank()) {
+            return new ApiResponse<>(false, "Reply cannot be empty", null, 400);
+        }
+        if (!productRatingRepository.existsByIdAndSellerId(reviewId, sellerId)) {
+            return new ApiResponse<>(false, "Comment not found", null, 404);
+        }
+
+        com.ProductClientService.ProductClientService.Model.ProductRating review =
+                productRatingRepository.findById(reviewId).orElseThrow();
+        review.setSellerReply(replyText.replaceAll("<[^>]*>", "").trim());
+        review.setSellerReplyAt(java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")));
+        productRatingRepository.save(review);
+
+        return new ApiResponse<>(true, "Reply posted", Map.of(
+                "sellerReply", review.getSellerReply(),
+                "sellerReplyAt", review.getSellerReplyAt().toString()), 200);
+    }
+
+    // ── POST /customers/notify — seller sends a personal message/push to buyers ─
+    // Reuses the existing seller-notification Kafka pipeline (already consumed by
+    // OrderPaymentNotificationService for DB-persisted + FCM delivery) instead of
+    // building a separate chat/messaging system.
+    public ApiResponse<Object> notifyCustomers(List<UUID> userIds, String message) {
+        if (userIds == null || userIds.isEmpty()) {
+            return new ApiResponse<>(false, "No recipients selected", null, 400);
+        }
+        if (message == null || message.isBlank()) {
+            return new ApiResponse<>(false, "Message cannot be empty", null, 400);
+        }
+        String safeMessage = message.replaceAll("<[^>]*>", "").trim();
+        List<UUID> recipients = userIds.stream().distinct().limit(100).toList();
+
+        for (UUID userId : recipients) {
+            sellerNotificationPublisher.publish(
+                    userId,
+                    "SELLER_MESSAGE",
+                    "New message from a seller you follow",
+                    safeMessage,
+                    null,
+                    userId.toString(),
+                    Map.of("type", "SELLER_MESSAGE"));
+        }
+
+        return new ApiResponse<>(true, "Message sent to " + recipients.size() + " customer(s)",
+                Map.of("sentCount", recipients.size()), 200);
+    }
+
+    // ── POST /reviews/{reviewId}/react — seller toggles a quick emoji reaction ─
+    @org.springframework.transaction.annotation.Transactional
+    public ApiResponse<Object> reactToSellerReview(UUID reviewId, String emoji) {
+        UUID sellerId = getUserId();
+
+        if (!productRatingRepository.existsByIdAndSellerId(reviewId, sellerId)) {
+            return new ApiResponse<>(false, "Comment not found", null, 404);
+        }
+
+        com.ProductClientService.ProductClientService.Model.ProductRating review =
+                productRatingRepository.findById(reviewId).orElseThrow();
+        boolean cleared = emoji != null && emoji.equals(review.getSellerReaction());
+        review.setSellerReaction(cleared ? null : emoji);
+        productRatingRepository.save(review);
+
+        return new ApiResponse<>(true, cleared ? "Reaction removed" : "Reaction saved",
+                Map.of("sellerReaction", review.getSellerReaction() == null ? "" : review.getSellerReaction()), 200);
     }
 
     // ── GET /reviews/summary ─────────────────────────────────────────────────

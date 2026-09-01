@@ -17,6 +17,14 @@ import com.ProductClientService.ProductClientService.Model.ProductVariant;
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, UUID> {
     List<ProductVariant> findByProductId(UUID productId);
 
+    // ── Discount schedule sweep ────────────────────────────────────────────
+    // Only variants with an active discount AND a start/end window need
+    // periodic re-syncing — a discount with no schedule is already correct
+    // as of the last write, so we don't touch it here.
+    @Query("SELECT v FROM ProductVariant v WHERE v.discountActive = true " +
+            "AND (v.discountStartsAt IS NOT NULL OR v.discountEndsAt IS NOT NULL)")
+    List<ProductVariant> findScheduledDiscountVariants();
+
     @Query("SELECT CASE WHEN COUNT(v) > 0 THEN true ELSE false END FROM ProductVariant v " +
             "WHERE v.id = :variantId AND v.product.id = :productId AND v.product.seller.id = :sellerId")
     boolean existsByIdAndProductIdAndSellerId(

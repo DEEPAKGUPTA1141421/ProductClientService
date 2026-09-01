@@ -66,7 +66,7 @@ public interface ProductRatingRepository extends JpaRepository<ProductRating, UU
            "WHERE r.product.seller.id = :sellerId AND r.product.step = 4")
     List<Object[]> findSellerRatingSummary(@Param("sellerId") UUID sellerId);
 
-    /** Paginated reviews across all products of a seller, newest first. */
+    /** Paginated reviews (comments) across all products of a seller, newest first, optionally filtered by product name. */
     @Query(value = """
             SELECT r.id               AS id,
                    r.rating           AS rating,
@@ -77,21 +77,44 @@ public interface ProductRatingRepository extends JpaRepository<ProductRating, UU
                    r.created_at       AS createdAt,
                    p.id               AS productId,
                    p.name             AS productName,
-                   u.name             AS reviewerName
+                   c.name             AS categoryName,
+                   pm.url             AS productImageUrl,
+                   u.id               AS reviewerId,
+                   u.name             AS reviewerName,
+                   u.avatar_url       AS reviewerAvatarUrl,
+                   r.seller_reply     AS sellerReply,
+                   r.seller_reply_at  AS sellerReplyAt,
+                   r.seller_reaction  AS sellerReaction
             FROM product_ratings r
-            JOIN products p ON p.id = r.product_id
-            JOIN users    u ON u.id = r.user_id
+            JOIN products   p ON p.id = r.product_id
+            JOIN users      u ON u.id = r.user_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            LEFT JOIN product_media pm ON pm.product_id = p.id AND pm.is_cover = true
             WHERE p.seller_id = :sellerId
+              AND (:query IS NULL OR p.name ILIKE CONCAT('%', :query, '%'))
             ORDER BY r.created_at DESC
             LIMIT :size OFFSET :offset
             """, nativeQuery = true)
     List<Object[]> findReviewsBySeller(@Param("sellerId") UUID sellerId,
+                                       @Param("query")    String query,
                                        @Param("size")     int  size,
                                        @Param("offset")   int  offset);
 
-    @Query(value = "SELECT COUNT(*) FROM product_ratings r JOIN products p ON p.id = r.product_id WHERE p.seller_id = :sellerId",
-           nativeQuery = true)
-    long countReviewsBySeller(@Param("sellerId") UUID sellerId);
+    @Query(value = """
+            SELECT COUNT(*) FROM product_ratings r
+            JOIN products p ON p.id = r.product_id
+            WHERE p.seller_id = :sellerId
+              AND (:query IS NULL OR p.name ILIKE CONCAT('%', :query, '%'))
+            """, nativeQuery = true)
+    long countReviewsBySeller(@Param("sellerId") UUID sellerId, @Param("query") String query);
+
+    /** True when the given review belongs to a product owned by the given seller — used to authorize moderation actions. */
+    @Query(value = """
+            SELECT COUNT(*) > 0 FROM product_ratings r
+            JOIN products p ON p.id = r.product_id
+            WHERE r.id = :reviewId AND p.seller_id = :sellerId
+            """, nativeQuery = true)
+    boolean existsByIdAndSellerId(@Param("reviewId") UUID reviewId, @Param("sellerId") UUID sellerId);
 
     /** Star (1-5) distribution for all seller's products. */
     @Query(value = """
@@ -111,4 +134,21 @@ public interface ProductRatingRepository extends JpaRepository<ProductRating, UU
     @Modifying
     @Query("UPDATE ProductRating r SET r.helpfulCount = GREATEST(r.helpfulCount - 1, 0) WHERE r.id = :reviewId")
     void decrementHelpfulCount(@Param("reviewId") UUID reviewId);
+
+    /**
+     * Weekly review ("comments") counts across all of a seller's products since
+     * a given timestamp — backs the "Product activity" table's comments column.
+     * Returns rows of [weekStart (Postgres date_trunc('week', ...)), count].
+     */
+    @Query(value = """
+            SELECT date_trunc('week', r.created_at) AS week, COUNT(*) AS cnt
+            FROM product_ratings r
+            JOIN products p ON p.id = r.product_id
+            WHERE p.seller_id = :sellerId
+              AND r.created_at >= :since
+            GROUP BY week
+            ORDER BY week
+            """, nativeQuery = true)
+    List<Object[]> findWeeklyReviewCountsBySeller(@Param("sellerId") UUID sellerId,
+                                                   @Param("since") java.time.ZonedDateTime since);
 }

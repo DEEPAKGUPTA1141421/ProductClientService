@@ -4,6 +4,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.ReturnRequestDto;
 import com.ProductClientService.ProductClientService.Model.ReturnRequest;
 import com.ProductClientService.ProductClientService.Model.WalletTransaction;
+import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Repository.ReturnRequestRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class ReturnService extends BaseService {
     private final ImageUploadService imageUploadService;
     private final FcmService fcmService;
     private final WalletService walletService;
+    private final ProductRepository productRepository;
 
     // ── Submit a return request ───────────────────────────────────────────────
 
@@ -32,6 +34,7 @@ public class ReturnService extends BaseService {
             String bookingId,
             ReturnRequest.ReturnReason reason,
             String description,
+            UUID productId,
             List<MultipartFile> images) {
 
         UUID userId = getUserId();
@@ -56,9 +59,17 @@ public class ReturnService extends BaseService {
             }
         }
 
+        // productId lets us resolve which seller this return concerns — optional
+        // for backward compatibility with older client builds that don't send it.
+        UUID sellerId = productId != null
+                ? productRepository.findSellerIdByProductId(productId)
+                : null;
+
         ReturnRequest request = ReturnRequest.builder()
                 .userId(userId)
                 .bookingId(bookingId)
+                .productId(productId)
+                .sellerId(sellerId)
                 .reason(reason)
                 .description(description != null ? description.strip() : null)
                 .evidenceImages(imageUrls)
@@ -181,5 +192,90 @@ public class ReturnService extends BaseService {
                         "status", newStatus.name()));
 
         return new ApiResponse<>(true, "Status updated", ReturnRequestDto.fromEntity(r), 200);
+    }
+
+    // ── Seller: paginated refund/return requests on their own products ────────
+
+    private static final List<String> OPEN_STATUSES = List.of(
+            "PENDING", "APPROVED", "PICKUP_SCHEDULED", "PICKED_UP");
+    private static final List<String> CLOSED_STATUSES = List.of("REJECTED", "REFUNDED");
+    private static final List<String> ALL_STATUSES;
+    static {
+        List<String> all = new ArrayList<>(OPEN_STATUSES);
+        all.addAll(CLOSED_STATUSES);
+        ALL_STATUSES = List.copyOf(all);
+    }
+
+    /**
+     * {@code bucket}: "OPEN" (default) | "CLOSED" | "ALL" — matches the Figma
+     * "Refund requests" table's Open requests / Closed requests toggle.
+     */
+    public ApiResponse<Object> getSellerReturns(int page, int size, String bucket) {
+        UUID sellerId = getUserId();
+        List<String> statuses = switch (bucket == null ? "OPEN" : bucket.toUpperCase()) {
+            case "CLOSED" -> CLOSED_STATUSES;
+            case "ALL"    -> ALL_STATUSES;
+            default       -> OPEN_STATUSES;
+        };
+
+        Page<Object[]> pageResult = returnRepository.findSellerReturnsDetailed(
+                sellerId, statuses, PageRequest.of(page, Math.min(size, 20)));
+
+        List<ReturnRequestDto> returns = pageResult.getContent().stream()
+                .map(this::toDetailedDto).toList();
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("returns", returns);
+        response.put("totalElements", pageResult.getTotalElements());
+        response.put("hasMore", pageResult.hasNext());
+        response.put("page", page);
+
+        return new ApiResponse<>(true, "Returns fetched", response, 200);
+    }
+
+    private ReturnRequestDto toDetailedDto(Object[] row) {
+        ReturnRequest.ReturnStatus status = ReturnRequest.ReturnStatus.valueOf((String) row[2]);
+        ReturnRequest.ReturnReason reason = ReturnRequest.ReturnReason.valueOf((String) row[3]);
+
+        return ReturnRequestDto.builder()
+                .id((UUID) row[0])
+                .bookingId((String) row[1])
+                .status(status.name())
+                .statusLabel(status.label())
+                .boardStatusLabel(boardStatusLabel(status))
+                .reason(reason.name())
+                .reasonLabel(reason.label())
+                .description((String) row[4])
+                .createdAt(row[5] != null ? row[5].toString() : null)
+                .productId((UUID) row[6])
+                .productName((String) row[7])
+                .categoryName((String) row[8])
+                .productImageUrl((String) row[9])
+                .customerId((UUID) row[10])
+                .customerName((String) row[11])
+                .customerAvatarUrl((String) row[12])
+                .build();
+    }
+
+    private String boardStatusLabel(ReturnRequest.ReturnStatus status) {
+        return switch (status) {
+            case PENDING                        -> "New request";
+            case APPROVED, PICKUP_SCHEDULED,
+                 PICKED_UP                       -> "In progress";
+            case REFUNDED                        -> "Refunded";
+            case REJECTED                        -> "Rejected";
+        };
+    }
+
+    // ── Seller: open + new (last 24h) refund request counts ───────────────────
+
+    public ApiResponse<Object> getSellerReturnSummary() {
+        UUID sellerId = getUserId();
+        long openCount = returnRepository.countOpenBySellerId(sellerId);
+        long newCount  = returnRepository.countBySellerIdAndCreatedAtAfter(
+                sellerId, java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).minusHours(24));
+
+        return new ApiResponse<>(true, "Return summary fetched",
+                Map.of("openCount", openCount, "newCount", newCount), 200);
     }
 }

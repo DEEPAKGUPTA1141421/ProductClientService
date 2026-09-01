@@ -27,6 +27,9 @@ public record ProductVariantsDto(
 
             @PositiveOrZero(message = "stock cannot be negative") int stock,
 
-            @NotBlank(message = "sku is required") String sku) {
+            @NotBlank(message = "sku is required") String sku,
+
+            // Optional — configure a discount at variant-creation time.
+            @Valid VariantDiscountDto discount) {
     }
 }

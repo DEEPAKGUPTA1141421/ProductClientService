@@ -24,6 +24,7 @@ public class ReturnController {
             @RequestPart("bookingId") String bookingId,
             @RequestPart("reason") String reason,
             @RequestPart(value = "description", required = false) String description,
+            @RequestPart(value = "productId", required = false) UUID productId,
             @RequestPart(value = "images", required = false) List<MultipartFile> images) {
 
         ReturnRequest.ReturnReason returnReason;
@@ -34,7 +35,7 @@ public class ReturnController {
             return ResponseEntity.badRequest().body(bad);
         }
 
-        ApiResponse<Object> response = returnService.submitReturn(bookingId, returnReason, description, images);
+        ApiResponse<Object> response = returnService.submitReturn(bookingId, returnReason, description, productId, images);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 

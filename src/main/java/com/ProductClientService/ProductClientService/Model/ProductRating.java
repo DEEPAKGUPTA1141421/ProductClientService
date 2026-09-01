@@ -63,4 +63,15 @@ public class ProductRating {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
+
+    /** Seller's public reply to this review/comment. */
+    @Column(name = "seller_reply", length = 1000)
+    private String sellerReply;
+
+    @Column(name = "seller_reply_at")
+    private ZonedDateTime sellerReplyAt;
+
+    /** Single emoji the seller reacted with (e.g. "😊"), null if none. */
+    @Column(name = "seller_reaction", length = 8)
+    private String sellerReaction;
 }

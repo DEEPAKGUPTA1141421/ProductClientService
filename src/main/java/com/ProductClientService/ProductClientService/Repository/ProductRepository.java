@@ -375,6 +375,116 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             ORDER BY c.name
             """, nativeQuery = true)
     List<Object[]> findDistinctCategoriesBySeller(@Param("sellerId") UUID sellerId);
+
+    /** IDs of all LIVE products for a seller — used to scope interaction-event analytics queries. */
+    @Query(value = """
+            SELECT p.id
+            FROM products p
+            WHERE p.seller_id = :sellerId
+              AND p.step = 5
+            """, nativeQuery = true)
+    List<UUID> findLiveProductIdsBySeller(@Param("sellerId") UUID sellerId);
+
+    /** Total product count for a seller, regardless of wizard step (draft + live) — dashboard summary. */
+    @Query(value = "SELECT COUNT(*) FROM products p WHERE p.seller_id = :sellerId", nativeQuery = true)
+    long countAllProductsBySeller(@Param("sellerId") UUID sellerId);
+
+    /** Active LIVE products for a seller — dashboard summary. */
+    @Query(value = """
+            SELECT COUNT(*)
+            FROM products p
+            WHERE p.seller_id = :sellerId
+              AND p.step      = 5
+              AND p.is_active = true
+            """, nativeQuery = true)
+    long countActiveLiveProductsBySeller(@Param("sellerId") UUID sellerId);
+
+    /** Active LIVE products with zero total variant stock — dashboard summary. */
+    @Query(value = """
+            SELECT COUNT(*) FROM (
+                SELECT p.id
+                FROM products p
+                LEFT JOIN product_variants v ON v.product_id = p.id
+                WHERE p.seller_id = :sellerId
+                  AND p.step      = 5
+                  AND p.is_active = true
+                GROUP BY p.id
+                HAVING COALESCE(SUM(v.stock), 0) = 0
+            ) out_of_stock
+            """, nativeQuery = true)
+    long countOutOfStockProductsBySeller(@Param("sellerId") UUID sellerId);
+
+    /** All not-yet-live products a seller has scheduled for future auto-publish. */
+    @Query(value = """
+            SELECT
+                p.id                                                    AS id,
+                p.name                                                  AS name,
+                p.description                                           AS description,
+                p.scheduled_at                                          AS scheduledAt,
+                p.updated_at                                            AS updatedAt,
+                COALESCE(MIN(v.price), '0')                             AS minPrice,
+                (SELECT pm.url FROM product_media pm
+                 WHERE pm.product_id = p.id AND pm.is_cover = true
+                 LIMIT 1)                                               AS coverImage
+            FROM products p
+            LEFT JOIN product_variants v  ON v.product_id = p.id
+            WHERE p.seller_id     = :sellerId
+              AND p.step         <> 5
+              AND p.scheduled_at IS NOT NULL
+              AND (:query IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')))
+            GROUP BY p.id
+            ORDER BY p.scheduled_at ASC
+            LIMIT :size OFFSET :offset
+            """, nativeQuery = true)
+    List<Object[]> findScheduledProductsBySeller(
+            @Param("sellerId") UUID sellerId,
+            @Param("query")    String query,
+            @Param("size")     int  size,
+            @Param("offset")   int  offset);
+
+    /** Total count of a seller's scheduled (not-yet-live) products — for pagination. */
+    @Query(value = """
+            SELECT COUNT(*)
+            FROM products p
+            WHERE p.seller_id     = :sellerId
+              AND p.step         <> 5
+              AND p.scheduled_at IS NOT NULL
+              AND (:query IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')))
+            """, nativeQuery = true)
+    long countScheduledProductsBySeller(@Param("sellerId") UUID sellerId, @Param("query") String query);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Product p SET p.scheduledAt = :scheduledAt WHERE p.id = :productId AND p.seller.id = :sellerId")
+    int updateScheduledAtByIdAndSellerId(
+            @Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId,
+            @Param("scheduledAt") java.time.ZonedDateTime scheduledAt);
+
+    @Query("SELECT p.step FROM Product p WHERE p.id = :productId AND p.seller.id = :sellerId")
+    Optional<Product.Step> findStepByIdAndSellerId(
+            @Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId);
+
+    /** IDs of all products whose scheduled auto-publish time has arrived — polled by the publish cron. */
+    @Query("SELECT p.id FROM Product p WHERE p.scheduledAt IS NOT NULL AND p.scheduledAt <= :now AND p.step <> com.ProductClientService.ProductClientService.Model.Product.Step.LIVE")
+    List<UUID> findDueScheduledProductIds(@Param("now") java.time.ZonedDateTime now);
+
+    /** Active LIVE products at or below the low-stock threshold (but not out of stock) — dashboard summary. */
+    @Query(value = """
+            SELECT COUNT(*) FROM (
+                SELECT p.id
+                FROM products p
+                LEFT JOIN product_variants v ON v.product_id = p.id
+                WHERE p.seller_id = :sellerId
+                  AND p.step      = 5
+                  AND p.is_active = true
+                GROUP BY p.id
+                HAVING COALESCE(SUM(v.stock), 0) > 0
+                   AND COALESCE(SUM(v.stock), 0) <= :threshold
+            ) low_stock
+            """, nativeQuery = true)
+    long countLowStockProductsBySeller(@Param("sellerId") UUID sellerId, @Param("threshold") int threshold);
 }
 
 // hyuhk khui huih iui huiuhukuijkji

@@ -10,6 +10,7 @@ import com.ProductClientService.ProductClientService.Repository.ProductRepositor
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Service.ImageUploadService;
 import com.ProductClientService.ProductClientService.Service.ReviewService;
+import com.ProductClientService.ProductClientService.Service.SellerNotificationPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,6 +47,7 @@ public class ReviewEventConsumer {
     private final UserRepojectory userRepository;
     private final ReviewService reviewService;
     private final com.ProductClientService.ProductClientService.Service.ShopRatingUpdater shopRatingUpdater;
+    private final SellerNotificationPublisher sellerNotificationPublisher;
 
     @Transactional
     public void handleReviewSubmitRequested(String payload) {
@@ -61,6 +64,8 @@ public class ReviewEventConsumer {
 
             Optional<ProductRating> existing =
                     ratingRepository.findByProductIdAndUserId(productId, userId);
+
+            boolean isNewReview = existing.isEmpty();
 
             ProductRating review;
             if (existing.isPresent()) {
@@ -95,10 +100,29 @@ public class ReviewEventConsumer {
             reviewService.updateProductRatingSummaryAsync(productId);
 
             // ── 4. Sync shop avg_rating in shops-v1 ES ────────────────────────
-            productRepository.findById(productId)
-                    .map(p -> p.getSeller())
+            Optional<Product> productOpt = productRepository.findById(productId);
+            productOpt
+                    .map(Product::getSeller)
                     .filter(seller -> seller != null)
                     .ifPresent(seller -> shopRatingUpdater.syncShopRating(seller.getId()));
+
+            // ── 5. Notify the seller of a brand-new review (not edits) ────────
+            if (isNewReview) {
+                productOpt.map(Product::getSeller).filter(seller -> seller != null).ifPresent(seller -> {
+                    String snippet = event.getReviewText() != null && event.getReviewText().length() > 80
+                            ? event.getReviewText().substring(0, 80) + "..."
+                            : event.getReviewText();
+                    sellerNotificationPublisher.publish(
+                            seller.getId(),
+                            "REVIEW_REMINDERS",
+                            "New review received",
+                            (event.getRating()) + "★ review on \"" + productOpt.get().getName() + "\""
+                                    + (snippet != null && !snippet.isBlank() ? ": " + snippet : ""),
+                            "/reviews/" + saved.getId(),
+                            saved.getId().toString(),
+                            Map.of("productId", productId.toString(), "reviewId", saved.getId().toString()));
+                });
+            }
 
             log.info("Review saved reviewId={} productId={}", saved.getId(), productId);
         } catch (Exception e) {

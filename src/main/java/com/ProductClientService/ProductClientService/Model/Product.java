@@ -78,6 +78,12 @@ public class Product {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    // Set once the wizard is complete but the seller chose to publish later
+    // instead of going live now; cleared when the product actually goes LIVE
+    // (via the auto-publish cron job or a manual "Publish now").
+    @Column(name = "scheduled_at")
+    private ZonedDateTime scheduledAt;
+
     @Column(name = "search_intent_created", nullable = false)
     private Boolean searchIntentCreated = false;
 

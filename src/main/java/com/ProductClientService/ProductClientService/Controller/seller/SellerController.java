@@ -19,6 +19,7 @@ import com.ProductClientService.ProductClientService.Service.SearchIntentGenerat
 import com.ProductClientService.ProductClientService.Service.TagService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerKycService;
 import com.ProductClientService.ProductClientService.Service.seller.SellerService;
+import com.ProductClientService.ProductClientService.Service.seller.SellerAnalyticsService;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,6 +52,8 @@ public class SellerController {
     private final SearchIntentGeneratorService searchIntentGeneratorService;
     private final AadhaarVerificationService aadhaarVerificationService;
     private final SellerKycService sellerKycService;
+    private final SellerAnalyticsService sellerAnalyticsService;
+    private final com.ProductClientService.ProductClientService.Service.ReturnService returnService;
 
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SELLER')")
@@ -104,6 +107,44 @@ public class SellerController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    // ── GET /api/v1/seller/product/scheduled-products ──────────────────────────
+    @GetMapping("/scheduled-products")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getScheduledProducts(
+            @RequestParam(defaultValue = "0")  int    page,
+            @RequestParam(defaultValue = "50") int    size,
+            @RequestParam(required = false)    String query) {
+        ApiResponse<Object> response = sellerService.getScheduledProducts(page, size, query);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── POST /api/v1/seller/product/{productId}/schedule ───────────────────────
+    // Body: { "scheduledAt": "2026-09-01T10:00:00+05:30" } — also used to reschedule.
+    @PostMapping("/{productId}/schedule")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> scheduleProduct(
+            @PathVariable UUID productId,
+            @RequestBody Map<String, String> body) {
+        String raw = body.get("scheduledAt");
+        java.time.ZonedDateTime scheduledAt;
+        try {
+            scheduledAt = java.time.ZonedDateTime.parse(raw);
+        } catch (Exception e) {
+            ApiResponse<Object> response = new ApiResponse<>(false, "Invalid scheduledAt", null, 400);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        }
+        ApiResponse<Object> response = sellerService.scheduleProduct(productId, scheduledAt);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── POST /api/v1/seller/product/{productId}/publish-now ────────────────────
+    @PostMapping("/{productId}/publish-now")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> publishScheduledProductNow(@PathVariable UUID productId) {
+        ApiResponse<Object> response = sellerService.publishScheduledProductNow(productId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/draft-product/full")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getDraftProductFull() {
@@ -143,6 +184,14 @@ public class SellerController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    // ── GET /api/v1/seller/product/dashboard-summary ──────────────────────────
+    @GetMapping("/dashboard-summary")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getDashboardSummary() {
+        ApiResponse<Object> response = sellerService.getDashboardSummary();
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/low-stock")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getLowStockProducts(
@@ -167,6 +216,29 @@ public class SellerController {
         Long    priceInPaise = body.get("priceInPaise") instanceof Number n ? n.longValue() : null;
         Integer stock        = body.get("stock")        instanceof Number n ? n.intValue()  : null;
         ApiResponse<Object> response = sellerService.updateVariant(productId, variantId, priceInPaise, stock);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── PATCH /api/v1/seller/product/{productId}/variants/{variantId}/discount ─
+    // Configures (creates or overwrites) a per-variant discount, independently
+    // of price/stock. Body: VariantDiscountDto.
+    @PatchMapping("/{productId}/variants/{variantId}/discount")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> configureVariantDiscount(
+            @PathVariable UUID productId,
+            @PathVariable UUID variantId,
+            @Valid @RequestBody com.ProductClientService.ProductClientService.DTO.seller.VariantDiscountDto dto) {
+        ApiResponse<Object> response = sellerService.configureVariantDiscount(productId, variantId, dto);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── DELETE /api/v1/seller/product/{productId}/variants/{variantId}/discount ─
+    @DeleteMapping("/{productId}/variants/{variantId}/discount")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> removeVariantDiscount(
+            @PathVariable UUID productId,
+            @PathVariable UUID variantId) {
+        ApiResponse<Object> response = sellerService.removeVariantDiscount(productId, variantId);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
@@ -328,6 +400,45 @@ public class SellerController {
         }
     }
 
+    // ── Presigned direct-to-Cloudinary upload ───────────────────────────────
+    // Replaces the multipart /upload-images path for the app: the client
+    // gets a short-lived signature here, uploads the file straight to
+    // Cloudinary itself (this server never sees the bytes), then calls
+    // /media/confirm with just the resulting metadata.
+    @PostMapping("/{productId}/media/signature")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getMediaUploadSignature(
+            @PathVariable UUID productId,
+            @Valid @RequestBody com.ProductClientService.ProductClientService.DTO.seller.MediaSignatureRequestDto request) {
+        ApiResponse<Object> response = sellerService.createMediaUploadSignature(productId, request);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @PostMapping("/media/confirm")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> confirmMediaUpload(
+            @Valid @RequestBody com.ProductClientService.ProductClientService.DTO.seller.MediaConfirmRequestDto request) {
+        ApiResponse<Object> response = sellerService.confirmMediaUpload(request);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    @DeleteMapping("/media/remove")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> removeConfirmedMedia(
+            @Valid @RequestBody com.ProductClientService.ProductClientService.DTO.seller.MediaRemoveRequestDto request) {
+        ApiResponse<Object> response = sellerService.removeConfirmedMedia(request);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // Gate the app's "Continue" action on the Images step — 400 (complete:
+    // false) if the cover or any required attribute image is still missing.
+    @GetMapping("/{productId}/media/status")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getMediaStatus(@PathVariable UUID productId) {
+        ApiResponse<Object> response = sellerService.getMediaStatus(productId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @DeleteMapping("/media/{mediaId}")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> removeProductMedia(@PathVariable UUID mediaId) {
@@ -451,12 +562,94 @@ public class SellerController {
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
+    // ── GET /api/v1/seller/product/activity ────────────────────────────────────
+    // Weekly product activity trend (products touched / views / review comments)
+    // for the seller's live products, over the last `weeks` ISO weeks.
+    @GetMapping("/activity")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getProductActivity(@RequestParam(defaultValue = "2") int weeks) {
+        ApiResponse<Object> response = sellerAnalyticsService.getProductActivity(weeks);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── GET /api/v1/seller/product/traffic-sources ─────────────────────────────
+    // Interaction counts grouped by source (home/search/pdp/push/cart) over the
+    // last `days` days, scoped to the seller's live products.
+    @GetMapping("/traffic-sources")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getTrafficSources(@RequestParam(defaultValue = "7") int days) {
+        ApiResponse<Object> response = sellerAnalyticsService.getTrafficSources(days);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── GET /api/v1/seller/product/viewers ──────────────────────────────────────
+    // Distinct-session viewer count per product over the last `days` days,
+    // scoped to the seller's live products.
+    @GetMapping("/viewers")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getViewers(@RequestParam(defaultValue = "7") int days) {
+        ApiResponse<Object> response = sellerAnalyticsService.getViewers(days);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── GET /api/v1/seller/product/top-cities?days=30 ──────────────────────────
+    // Real customer-location breakdown (from delivery addresses) for the
+    // Customer Analytics "Top cities" card — substitutes for "Top countries"
+    // since this marketplace is India-only (every address.country == "IN").
+    @GetMapping("/top-cities")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getTopCities(@RequestParam(defaultValue = "30") int days) {
+        ApiResponse<Object> response = sellerAnalyticsService.getTopCities(days);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── GET /api/v1/seller/product/monthly-views?months=6 ───────────────────────
+    @GetMapping("/monthly-views")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getMonthlyViews(@RequestParam(defaultValue = "6") int months) {
+        ApiResponse<Object> response = sellerAnalyticsService.getMonthlyViews(months);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── GET /api/v1/seller/product/returns/summary ─────────────────────────────
+    @GetMapping("/returns/summary")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getReturnSummary() {
+        ApiResponse<Object> response = returnService.getSellerReturnSummary();
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── POST /api/v1/seller/product/customers/notify ───────────────────────────
+    // Body: { "userIds": ["uuid1", ...], "message": "..." }
+    @PostMapping("/customers/notify")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> notifyCustomers(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> rawIds = (List<String>) body.getOrDefault("userIds", List.of());
+        List<UUID> userIds = rawIds.stream().map(UUID::fromString).toList();
+        String message = (String) body.get("message");
+        ApiResponse<Object> response = sellerService.notifyCustomers(userIds, message);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── GET /api/v1/seller/product/returns ──────────────────────────────────────
+    @GetMapping("/returns")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> getReturns(
+            @RequestParam(defaultValue = "0")    int    page,
+            @RequestParam(defaultValue = "20")   int    size,
+            @RequestParam(defaultValue = "OPEN") String status) {
+        ApiResponse<Object> response = returnService.getSellerReturns(page, size, status);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/reviews")
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getReviews(
             @RequestParam(defaultValue = "0")  int page,
-            @RequestParam(defaultValue = "20") int size) {
-        ApiResponse<Object> response = sellerService.getSellerReviews(page, size);
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false)    String query) {
+        ApiResponse<Object> response = sellerService.getSellerReviews(page, size, query);
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
@@ -464,6 +657,33 @@ public class SellerController {
     @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getReviewSummary() {
         ApiResponse<Object> response = sellerService.getSellerReviewSummary();
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── DELETE /api/v1/seller/product/reviews/{reviewId} ──────────────────────
+    // Removes an inappropriate/abusive comment left on one of the seller's own products.
+    @DeleteMapping("/reviews/{reviewId}")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> deleteReview(@PathVariable UUID reviewId) {
+        ApiResponse<Object> response = sellerService.deleteSellerReview(reviewId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── POST /api/v1/seller/product/reviews/{reviewId}/reply ──────────────────
+    // Body: { "reply": "Thanks for the feedback!" }
+    @PostMapping("/reviews/{reviewId}/reply")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> replyToReview(@PathVariable UUID reviewId, @RequestBody Map<String, String> body) {
+        ApiResponse<Object> response = sellerService.replySellerReview(reviewId, body.get("reply"));
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
+    // ── POST /api/v1/seller/product/reviews/{reviewId}/react ──────────────────
+    // Body: { "emoji": "😊" } — posting the same emoji again clears the reaction.
+    @PostMapping("/reviews/{reviewId}/react")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<?> reactToReview(@PathVariable UUID reviewId, @RequestBody Map<String, String> body) {
+        ApiResponse<Object> response = sellerService.reactToSellerReview(reviewId, body.get("emoji"));
         return ResponseEntity.status(response.statusCode()).body(response);
     }
 
