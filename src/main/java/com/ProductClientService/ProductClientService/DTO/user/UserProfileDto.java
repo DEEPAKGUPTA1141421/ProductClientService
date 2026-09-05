@@ -42,8 +42,12 @@ public class UserProfileDto {
     @Builder
     public static class AddressDto {
         private UUID id;
+        private String addressType;
+        private String fullName;
+        private String phone;
         private String line1;
         private String line2;
+        private String landmark;
         private String city;
         private String state;
         private String country;
@@ -58,8 +62,12 @@ public class UserProfileDto {
                 : user.getAddresses().stream()
                         .map(a -> AddressDto.builder()
                                 .id(a.getId())
+                                .addressType(a.getAddressType() != null ? a.getAddressType().name() : null)
+                                .fullName(a.getFullName())
+                                .phone(a.getPhone())
                                 .line1(a.getLine1())
                                 .line2(a.getLine2())
+                                .landmark(a.getLandmark())
                                 .city(a.getCity())
                                 .state(a.getState())
                                 .country(a.getCountry())

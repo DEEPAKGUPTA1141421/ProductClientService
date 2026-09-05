@@ -6,6 +6,7 @@ import com.ProductClientService.ProductClientService.DTO.search.StorefrontRespon
 import com.ProductClientService.ProductClientService.DTO.search.StorefrontResponse.StorefrontSection;
 import com.ProductClientService.ProductClientService.DTO.search.StorefrontResponse.StorefrontSection.SectionType;
 import com.ProductClientService.ProductClientService.Repository.CartRepository;
+import com.ProductClientService.ProductClientService.Repository.ProductRepository;
 import com.ProductClientService.ProductClientService.Repository.UserRepojectory;
 import com.ProductClientService.ProductClientService.Repository.WishlistRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class StorefrontService {
     private final UserRepojectory userRepo;
     private final WishlistRepository wishlistRepo;
     private final CartRepository cartRepo;
+    private final ProductRepository productRepository;
 
     private static final int PRODUCTS_PER_RAIL   = 10;
     private static final int MAX_SELLER_PRODUCTS = 200;
@@ -56,6 +58,13 @@ public class StorefrontService {
         SearchResultsResponse raw = esSearchService.search(req, null);
         List<SearchProductDto> all = new ArrayList<>(
                 raw.getProducts() != null ? raw.getProducts() : List.of());
+
+        if (all.isEmpty()) {
+            // ES may be down, or this seller's products haven't been (re)indexed
+            // yet — fall back to Postgres so the storefront isn't empty for a
+            // seller that genuinely has LIVE products.
+            all = dbFallbackProducts(shopId);
+        }
 
         if (all.isEmpty()) {
             return StorefrontResponse.builder().sections(List.of()).build();
@@ -133,6 +142,38 @@ public class StorefrontService {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /** DB fallback: builds SearchProductDtos straight from Postgres for a seller. */
+    private List<SearchProductDto> dbFallbackProducts(String shopId) {
+        try {
+            UUID sellerId = UUID.fromString(shopId);
+            List<Object[]> rows = productRepository.findLiveProductsWithCategoryBySeller(
+                    sellerId, MAX_SELLER_PRODUCTS);
+
+            return rows.stream().map(row -> {
+                double price = 0.0;
+                try {
+                    price = row[4] != null ? Double.parseDouble(row[4].toString()) / 100.0 : 0.0;
+                } catch (NumberFormatException ignored) {
+                }
+                String coverImage = row[5] != null ? row[5].toString() : null;
+
+                return SearchProductDto.builder()
+                        .id(row[0] != null ? UUID.fromString(row[0].toString()) : null)
+                        .name(row[1] != null ? row[1].toString() : null)
+                        .categoryId(row[2] != null ? UUID.fromString(row[2].toString()) : null)
+                        .categoryName(row[3] != null ? row[3].toString() : null)
+                        .price(price)
+                        .images(coverImage != null ? List.of(coverImage) : List.of())
+                        .rating(row[6] != null ? ((Number) row[6]).doubleValue() : 0.0)
+                        .reviewCount(row[7] != null ? ((Number) row[7]).intValue() : 0)
+                        .build();
+            }).collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("[StorefrontService] DB fallback failed for shopId={}: {}", shopId, e.getMessage());
+            return List.of();
+        }
+    }
 
     private Set<UUID> loadPurchasedIds(UUID userId) {
         if (userId == null) return Set.of();

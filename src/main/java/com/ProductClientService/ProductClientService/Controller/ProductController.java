@@ -78,6 +78,16 @@ public class ProductController {
         }
     }
 
+    @GetMapping("/popular")
+    public ResponseEntity<?> getPopularProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        UUID userId = principal != null ? principal.getId() : null;
+        ApiResponse<Object> response = productService.getPopularProducts(page, size, userId);
+        return ResponseEntity.status(response.statusCode()).body(response);
+    }
+
     @GetMapping("/{productId}")
     public ResponseEntity<?> getProduct(@PathVariable UUID productId) {
         try {

@@ -7,6 +7,7 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 
 import com.ProductClientService.ProductClientService.DTO.RecentSearchRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
+import com.ProductClientService.ProductClientService.DTO.address.AddressRequestDto;
 import com.ProductClientService.ProductClientService.DTO.user.UpdateEmailRequest;
 import com.ProductClientService.ProductClientService.DTO.user.UpdateProfileRequest;
 import com.ProductClientService.ProductClientService.DTO.user.VerifyEmailOtpRequest;
@@ -16,6 +17,7 @@ import com.ProductClientService.ProductClientService.Service.user.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 
 @RestController
@@ -52,6 +55,46 @@ public class UserController {
     @PatchMapping(value = "/profile/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> updateAvatar(@RequestPart("file") MultipartFile file) {
         return ResponseEntity.ok(userService.updateAvatar(file));
+    }
+
+    @PostMapping("/add-address")
+    public ResponseEntity<?> addAddress(@Valid @RequestBody AddressRequestDto dto) {
+        try {
+            ApiResponse<Object> response = userService.addAddress(dto);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ApiResponse<>(false, e.getMessage(), null, 500));
+        }
+    }
+
+    @PutMapping("/address/{addressId}")
+    public ResponseEntity<?> updateAddress(
+            @PathVariable UUID addressId,
+            @Valid @RequestBody AddressRequestDto dto) {
+        try {
+            ApiResponse<Object> response = userService.updateAddress(addressId, dto);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ApiResponse<>(false, e.getMessage(), null, 500));
+        }
+    }
+
+    @DeleteMapping("/address/{addressId}")
+    public ResponseEntity<?> deleteAddress(@PathVariable UUID addressId) {
+        try {
+            ApiResponse<Object> response = userService.deleteAddress(addressId);
+            return ResponseEntity.status(response.statusCode()).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ApiResponse<>(false, e.getMessage(), null, 500));
+        }
+    }
+
+    @GetMapping("/reverse-geocode")
+    public ResponseEntity<?> reverseGeocode(
+            @RequestParam BigDecimal lat,
+            @RequestParam BigDecimal lng) {
+        ApiResponse<Object> response = userService.reverseGeocode(lat, lng);
+        return ResponseEntity.status(response.statusCode()).body(response);
     }
 
     @PostMapping(value = "/update-address")

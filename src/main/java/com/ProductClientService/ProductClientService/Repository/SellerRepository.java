@@ -58,6 +58,32 @@ public interface SellerRepository extends JpaRepository<Seller, UUID> {
     List<Seller> findNearestShopsByCategory(@Param("lat") double lat, @Param("lon") double lon,
             @Param("category") String category, @Param("limit") int limit);
 
+    /**
+     * DB fallback for /shops/nearby when Elasticsearch is unreachable.
+     * Mirrors the ES geo_distance filter: ACTIVE sellers with a geocoded
+     * address, within radiusMeters of the user, sorted nearest-first.
+     * Uses the PostGIS `addresses.location` point (same field ShopIndexer
+     * reads via Address.getLatitude()/getLongitude()) rather than the
+     * legacy sellers.latitude/longitude columns used above.
+     */
+    @Query(value = """
+            SELECT s.*
+            FROM sellers s
+            JOIN addresses a ON a.seller_id = s.id
+            WHERE s.status = 'ACTIVE'
+              AND a.location IS NOT NULL
+              AND (:categoryId IS NULL OR s.category_id = :categoryId)
+              AND ST_DistanceSphere(a.location, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) <= :radiusMeters
+            ORDER BY ST_DistanceSphere(a.location, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) ASC
+            LIMIT :limit OFFSET :offset
+            """, nativeQuery = true)
+    List<Seller> findNearbyActiveShops(@Param("lat") double lat,
+            @Param("lon") double lon,
+            @Param("categoryId") UUID categoryId,
+            @Param("radiusMeters") double radiusMeters,
+            @Param("limit") int limit,
+            @Param("offset") int offset);
+
     default Seller findOrCreateByPhone(String phone) {
         return findByPhone(phone).orElseGet(() -> {
             Seller seller = new Seller();

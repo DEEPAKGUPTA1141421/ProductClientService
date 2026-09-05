@@ -17,12 +17,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(
-    name = "user_interaction_events",
-    indexes = {
-        @Index(name = "idx_uie_user_ts",    columnList = "user_id, event_ts DESC"),
-        @Index(name = "idx_uie_product_ts", columnList = "product_id, event_ts DESC"),
-        @Index(name = "idx_uie_session",    columnList = "session_id")
-    }
+    name = "user_interaction_events"
 )
 @Getter
 @Setter

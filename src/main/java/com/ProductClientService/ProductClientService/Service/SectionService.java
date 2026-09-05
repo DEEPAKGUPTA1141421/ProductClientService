@@ -29,17 +29,29 @@ public class SectionService {
     private final SectionItemRepository sectionItemRepository;
     private final SectionHydrator hydrator;
 
-    private static final int PAGE_TIMEOUT_MS = 400;
+    // Real round-trip latency to Postgres/Elasticsearch in this environment
+    // has been observed at multiple seconds for a single section (network,
+    // not localhost) — 800ms was timing out nearly every section, including
+    // ones with no ES dependency, well before their query even had a chance
+    // to finish.
+    private static final int PAGE_TIMEOUT_MS = 5000;
 
     public List<SectionResponseDto> getPage(String category, UUID userId) {
         OffsetDateTime now = OffsetDateTime.now();
         List<Section> sections = sectionRepository.findPageSections(category, now);
 
+        // Every section row that matches the query must appear in the response —
+        // a slow/timed-out hydration should degrade to empty items, not silently
+        // drop the whole section (previously completeOnTimeout(null, ...) + a
+        // nonNull filter would remove the row entirely, so the section count
+        // returned to clients could be less than what's actually in the DB).
         return sections.stream()
-                .map(s -> CompletableFuture.supplyAsync(() -> toDto(s, hydrator.hydrate(s, userId))))
-                .map(f -> f.completeOnTimeout(null, PAGE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                .map(s -> CompletableFuture
+                        .supplyAsync(() -> hydrator.hydrate(s, userId))
+                        .completeOnTimeout(Collections.<SectionItemResponseDto>emptyList(),
+                                PAGE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                        .thenApply(items -> toDto(s, items)))
                 .map(CompletableFuture::join)
-                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 

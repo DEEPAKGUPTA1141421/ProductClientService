@@ -5,6 +5,7 @@ import com.ProductClientService.ProductClientService.Model.ReturnRequest;
 import com.ProductClientService.ProductClientService.Service.ReturnService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -12,6 +13,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/admin/returns")
+@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class AdminReturnController {
 

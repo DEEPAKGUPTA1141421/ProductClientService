@@ -1,5 +1,6 @@
 package com.ProductClientService.ProductClientService.DTO.Cart;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 
 import java.util.List;
@@ -18,6 +19,11 @@ import java.util.UUID;
  *
  * subOrders groups items by shopId with per-shop financials already
  * computed. The Order service must create one sub-order per entry.
+ * It is populated on the internal endpoint (/internal/v1/cart/{userId})
+ * used by the order/booking service, but omitted (null) on the customer-
+ * facing endpoint (/api/v1/cart/get-cart) — the flat `items` list there
+ * already carries everything the app UI needs, and shipping subOrders
+ * too would duplicate every item a second time in the response body.
  *
  * validationIssues is non-null and may be empty. The Order service
  * MUST reject checkout if any issue of type OUT_OF_STOCK or
@@ -27,6 +33,7 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class CartResponseDto {
 
     // ── Identity ──────────────────────────────────────────────────────────────

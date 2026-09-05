@@ -65,8 +65,10 @@ public class ShopSearchService {
             return hitsToList(resp);
 
         } catch (Exception e) {
+            // Not swallowed here — ShopService catches this and falls back to
+            // a direct DB query when Elasticsearch is unreachable.
             log.error("ES nearby query failed: {}", e.getMessage(), e);
-            return List.of();
+            throw new ElasticsearchUnavailableException("ES nearby query failed", e);
         }
     }
 

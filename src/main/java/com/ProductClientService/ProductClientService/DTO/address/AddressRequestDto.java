@@ -25,9 +25,9 @@ public record AddressRequestDto(
 
         @NotBlank(message = "line1 is required") @Size(max = 255, message = "line1 must not exceed 255 characters") String line1,
 
-        @Size(max = 255, message = "line2 must not exceed 255 characters") String line2,
+        @NotBlank(message = "line2 is required") @Size(max = 255, message = "line2 must not exceed 255 characters") String line2,
 
-        @Size(max = 255, message = "landmark must not exceed 255 characters") String landmark,
+        @NotBlank(message = "landmark is required") @Size(max = 255, message = "landmark must not exceed 255 characters") String landmark,
 
         @NotBlank(message = "city is required") String city,
 

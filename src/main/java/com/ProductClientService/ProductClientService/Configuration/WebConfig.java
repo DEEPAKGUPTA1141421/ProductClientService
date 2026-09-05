@@ -19,6 +19,8 @@ import com.ProductClientService.ProductClientService.Service.JwtService;
 import com.ProductClientService.ProductClientService.filter.ClientCredentialFilter;
 import com.ProductClientService.ProductClientService.filter.InternalApiKeyFilter;
 import com.ProductClientService.ProductClientService.filter.JwtAuthenticationFilter;
+import com.ProductClientService.ProductClientService.filter.RestAccessDeniedHandler;
+import com.ProductClientService.ProductClientService.filter.RestAuthenticationEntryPoint;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,6 +32,8 @@ public class WebConfig {
         private final JwtService jwtService;
         private final InternalApiKeyFilter internalApiKeyFilter;
         private final ClientCredentialFilter clientCredentialFilter;
+        private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+        private final RestAccessDeniedHandler restAccessDeniedHandler;
 
         // ✅ CORS Configuration (IMPORTANT)
         @Bean
@@ -71,11 +75,25 @@ public class WebConfig {
                 JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtService);
 
                 http
-                                .cors(cors -> {
-                                }) // ✅ MUST ENABLE CORS HERE
+                                // Wire the CorsConfigurationSource bean explicitly — relying on
+                                // Spring Security to auto-discover it via an empty cors(cors -> {})
+                                // customizer left preflight OPTIONS requests falling through to
+                                // Spring MVC's own (unconfigured) CORS check, which rejects them
+                                // with a plain "Invalid CORS request" 403 and no CORS headers —
+                                // that's what browsers report as a CORS error.
+                                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                                 .csrf(csrf -> csrf.disable())
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                                // Return JSON (no WWW-Authenticate: Basic challenge) on 401/403 —
+                                // this app never uses HTTP Basic auth, and the default entry
+                                // point's empty body + Basic challenge breaks clients that expect
+                                // a normal ApiResponse and can cause browsers to intercept the
+                                // response as a credentials prompt instead of a plain 401.
+                                .exceptionHandling(ex -> ex
+                                                .authenticationEntryPoint(restAuthenticationEntryPoint)
+                                                .accessDeniedHandler(restAccessDeniedHandler))
 
                                 .authorizeHttpRequests(auth -> auth
 
@@ -96,9 +114,19 @@ public class WebConfig {
                                                                 "/api/v1/product/category",
                                                                 "api/v1/wishlist/token/**",
                                                                 "/api/v1/product/search",
-                                                                "/api/v1/admin/sellers/**",
+                                                                "/api/v1/admin/auth/login",
                                                                 "/api/v1/brands/category/**")
                                                 .permitAll()
+
+                                                // 🔒 Everything else under /api/v1/admin/** requires an ADMIN JWT.
+                                                // (Login above is the one deliberately public sub-path.)
+                                                // AdminKycController/AdminSellerController already enforce this
+                                                // via @PreAuthorize("hasRole('ADMIN')") too — this matcher closes
+                                                // the gap for controllers that had no role check at all, and
+                                                // removes the accidental permitAll() that used to cover
+                                                // /api/v1/admin/sellers/**.
+                                                .requestMatchers("/api/v1/admin/**")
+                                                .hasRole("ADMIN")
 
                                                 // ✅ Review reads are public; writes require auth (handled below)
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/reviews/**")

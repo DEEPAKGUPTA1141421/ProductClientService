@@ -5,6 +5,7 @@ import com.ProductClientService.ProductClientService.Service.admin.AdminFilterSe
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -34,6 +35,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/admin")
+@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class AdminFilterController {
 

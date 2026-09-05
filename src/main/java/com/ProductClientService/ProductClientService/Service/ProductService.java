@@ -93,6 +93,20 @@ public class ProductService {
         return new ApiResponse<>(true, "Fetched products and filters", response, 200);
     }
 
+    /**
+     * Global "Popular Products" feed — LIVE products ranked by ranking_score
+     * (same relevance sort used by /products/search with no keyword).
+     */
+    public ApiResponse<Object> getPopularProducts(int page, int size, UUID userId) {
+        SearchRequest req = new SearchRequest();
+        req.setPage(Math.max(page, 0));
+        req.setPageSize(Math.min(Math.max(size, 1), 50));
+        req.setSortBy("rel");
+
+        SearchResultsResponse products = searchResultsService.search(req, userId);
+        return new ApiResponse<>(true, "Popular products fetched successfully", products, 200);
+    }
+
     public ApiResponse<Object> searchProducts(String keyword) {
 
         List<ProductWithImagesProjection> products = productRepository.searchProductsWithImages(keyword);

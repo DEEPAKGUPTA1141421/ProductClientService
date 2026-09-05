@@ -9,7 +9,6 @@ import com.ProductClientService.ProductClientService.Model.ProductAttribute;
 import com.ProductClientService.ProductClientService.Model.ProductVariant;
 import com.ProductClientService.ProductClientService.Repository.*;
 import com.ProductClientService.ProductClientService.Repository.Projection.ProductSellerProjection;
-import com.ProductClientService.ProductClientService.Repository.Projection.ProductSummaryProjection;
 import com.ProductClientService.ProductClientService.Service.BaseService;
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 
@@ -63,7 +62,8 @@ public class CartService extends BaseService {
             Map<UUID, ProductVariant>        variantMap,
             Map<UUID, UUID>                  productToShop,
             Map<UUID, List<ProductAttribute>> imageAttrByProduct,
-            Map<UUID, com.ProductClientService.ProductClientService.Model.Address> sellerAddressMap
+            Map<UUID, com.ProductClientService.ProductClientService.Model.Address> sellerAddressMap,
+            Map<UUID, com.ProductClientService.ProductClientService.Repository.Projection.ProductIdSummaryProjection> productSummaryMap
     ) {}
 
     /** Resolved cart-level coupon data (code, amount, raw string). */
@@ -99,6 +99,7 @@ public class CartService extends BaseService {
                 cart.getItems().remove(item);
                 itemRepo.delete(item);
             } else {
+                validateRequestedQuantity(item.getVariantId(), qty);
                 item.setQuantity(qty);
             }
             recompute(cart);
@@ -122,9 +123,14 @@ public class CartService extends BaseService {
         return getCart();
     }
 
+    /**
+     * Customer-facing cart read. Omits the per-shop {@code subOrders} breakdown
+     * (which duplicates every item a second time) — the order/booking flow reads
+     * that breakdown from the internal endpoint instead, via {@link #getCartByUserId(UUID)}.
+     */
     @Transactional(readOnly = true)
     public ApiResponse<Object> getCart() {
-        return getCartByUserId(getUserId());
+        return getCartByUserId(getUserId(), false);
     }
 
     /** Adds the D2D Prime membership add-on (app_config "membership_offer") to the active cart. Idempotent. */
@@ -145,14 +151,20 @@ public class CartService extends BaseService {
         return getCart();
     }
 
+    /** Full cart read, including the per-shop {@code subOrders} breakdown — used by internal/order-service callers. */
     @Transactional(readOnly = true)
     public ApiResponse<Object> getCartByUserId(UUID userId) {
+        return getCartByUserId(userId, true);
+    }
+
+    @Transactional(readOnly = true)
+    public ApiResponse<Object> getCartByUserId(UUID userId, boolean includeSubOrders) {
         try {
             Cart cart = cartRepo.findByUserIdAndStatus(userId, Cart.Status.ACTIVE).orElse(null);
             List<CartItem> cartItems = cart != null ? cart.getItems() : List.of();
 
             if (cart == null || cartItems.isEmpty()) {
-                return new ApiResponse<>(true, "Cart fetched", emptyCartResponse(userId, cart), 200);
+                return new ApiResponse<>(true, "Cart fetched", emptyCartResponse(userId, cart, includeSubOrders), 200);
             }
 
             List<CartValidationIssue> issues      = new ArrayList<>();
@@ -163,8 +175,10 @@ public class CartService extends BaseService {
             Map<UUID, List<CartItemDto>> byShop    = groupByShop(itemDtos);
             List<SubOrderDto>         subOrders    = buildSubOrders(byShop, couponInfo, totalNet, ctx);
 
-            return new ApiResponse<>(true, "Cart fetched",
-                    assembleCartResponse(cart, userId, itemDtos, subOrders, couponInfo, issues), 200);
+            CartResponseDto response = assembleCartResponse(cart, userId, itemDtos, subOrders, couponInfo, issues);
+            if (!includeSubOrders) response.setSubOrders(null);
+
+            return new ApiResponse<>(true, "Cart fetched", response, 200);
 
         } catch (Exception e) {
             log.error("Error building cart for userId={}", userId, e);
@@ -269,7 +283,7 @@ public class CartService extends BaseService {
     // CART BUILD — step-by-step private helpers (called only by getCartByUserId)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private CartResponseDto emptyCartResponse(UUID userId, Cart cart) {
+    private CartResponseDto emptyCartResponse(UUID userId, Cart cart, boolean includeSubOrders) {
         Object  membershipOffer  = appConfigService.getConfigValue(MEMBERSHIP_OFFER_CONFIG_KEY);
         boolean membershipAdded  = cart != null && Boolean.TRUE.equals(cart.getMembershipAdded());
         BigDecimal membershipCharge = membershipAdded
@@ -278,7 +292,7 @@ public class CartService extends BaseService {
         return CartResponseDto.builder()
                 .userId(userId)
                 .status(cart != null ? cart.getStatus().name() : Cart.Status.ACTIVE.name())
-                .items(List.of()).subOrders(List.of()).validationIssues(List.of())
+                .items(List.of()).subOrders(includeSubOrders ? List.of() : null).validationIssues(List.of())
                 .totalAmount(0).totalDiscount(0).serviceCharge(r2(SERVICE_CHARGE))
                 .deliveryCharge(0).gstCharge(0)
                 .grandTotal(r2(SERVICE_CHARGE.add(membershipCharge)))
@@ -325,7 +339,13 @@ public class CartService extends BaseService {
                                 a -> a,
                                 (a1, a2) -> a1)); // keep first if multiple addresses exist
 
-        return new BatchContext(variantMap, productToShop, imageAttrByProduct, sellerAddressMap);
+        Map<UUID, com.ProductClientService.ProductClientService.Repository.Projection.ProductIdSummaryProjection> productSummaryMap =
+                productRepository.findNamesAndDescriptionsByIds(productIds).stream()
+                        .collect(Collectors.toMap(
+                                com.ProductClientService.ProductClientService.Repository.Projection.ProductIdSummaryProjection::getId,
+                                p -> p));
+
+        return new BatchContext(variantMap, productToShop, imageAttrByProduct, sellerAddressMap, productSummaryMap);
     }
 
     /** Validates the cart-level coupon; adds a CART_COUPON_EXPIRED issue if stale. */
@@ -372,7 +392,10 @@ public class CartService extends BaseService {
         String  image        = resolveImageUrl(
                 ctx.imageAttrByProduct().getOrDefault(item.getProductId(), List.of()), variant.getSku());
 
-        ProductSummaryProjection summary = productRepository.getProductNameAndDescription(item.getProductId());
+        var summary = ctx.productSummaryMap().get(item.getProductId());
+
+        double effPrice  = r2(effectivePrice(variant));
+        double baseP      = r2(basePrice(variant));
 
         return Optional.of(CartItemDto.builder()
                 .id(item.getId())
@@ -380,12 +403,13 @@ public class CartService extends BaseService {
                 .variantId(item.getVariantId())
                 .shopId(ctx.productToShop().get(item.getProductId()))
                 .quantity(item.getQuantity())
-                .price(parseDecimal(variant.getPrice()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).doubleValue())
+                .price(effPrice)
+                .mrp(baseP > effPrice ? baseP : 0)
                 .name(summary != null ? summary.getName() : "Unknown")
                 .description(summary != null ? summary.getDescription() : "")
                 .image(image)
                 .appliedCoupon(couponCode)
-                .discountLineAmount(lineDiscount)
+                .discountLineAmount(available ? lineDiscount : "0")
                 .stockAvailable(variant.getStock())
                 .isAvailable(available)
                 .build());
@@ -433,9 +457,18 @@ public class CartService extends BaseService {
         return items.stream().collect(Collectors.groupingBy(CartItemDto::getShopId));
     }
 
+    /**
+     * price × quantity for a single item — zero for OUT_OF_STOCK / INSUFFICIENT_STOCK
+     * items so they never contribute to any money total. They still appear in the
+     * response (flagged isAvailable=false) so the UI can prompt the user to remove them.
+     */
+    private BigDecimal lineAmount(CartItemDto i) {
+        return i.isAvailable() ? bd(i.getPrice()).multiply(bd(i.getQuantity())) : BigDecimal.ZERO;
+    }
+
     /** Total (subTotal − itemDiscounts) across all items — the base for coupon splitting. */
     private BigDecimal netAfterItemDiscounts(List<CartItemDto> items) {
-        BigDecimal sub  = items.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal sub  = items.stream().map(this::lineAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal disc = items.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         return sub.subtract(disc);
     }
@@ -453,7 +486,7 @@ public class CartService extends BaseService {
     private SubOrderDto buildSubOrder(UUID shopId, List<CartItemDto> shopItems,
                                       CartCouponInfo couponInfo, BigDecimal totalNet,
                                       BatchContext ctx) {
-        BigDecimal shopSub      = shopItems.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal shopSub      = shopItems.stream().map(this::lineAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal shopItemDisc = shopItems.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal shopNet      = shopSub.subtract(shopItemDisc);
         BigDecimal shopCartDisc = proportionalDiscount(shopNet, totalNet, couponInfo.discount());
@@ -493,7 +526,7 @@ public class CartService extends BaseService {
                                                  List<SubOrderDto> subOrders,
                                                  CartCouponInfo couponInfo,
                                                  List<CartValidationIssue> issues) {
-        BigDecimal totalSub      = items.stream().map(i -> bd(i.getPrice()).multiply(bd(i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalSub      = items.stream().map(this::lineAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalItemDisc = items.stream().map(i -> parseDecimal(i.getDiscountLineAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalDelivery = subOrders.stream().map(s -> bd(s.getDeliveryCharge())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalGst      = subOrders.stream().map(s -> bd(s.getGstCharge())).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -600,19 +633,49 @@ public class CartService extends BaseService {
     }
 
     private void mergeOrAddItem(Cart cart, CartItemRequest req) {
+        if (req.getProductId() == null || req.getVariantId() == null)
+            throw new IllegalArgumentException("productId and variantId are required");
+
+        ProductVariant variant = variantRepository.findById(req.getVariantId())
+                .orElseThrow(() -> new IllegalArgumentException("Product variant not found"));
+        UUID variantProductId = variant.getProduct() != null ? variant.getProduct().getId() : null;
+        if (variantProductId != null && !variantProductId.equals(req.getProductId()))
+            throw new IllegalArgumentException("variantId does not belong to productId");
+
         if (cart.getItems() == null) cart.setItems(new ArrayList<>());
         Optional<CartItem> existing = cart.getItems().stream()
                 .filter(i -> i.getProductId().equals(req.getProductId())
                         && Objects.equals(i.getVariantId(), req.getVariantId()))
                 .findFirst();
+
+        int requestedQty = Math.max(1, req.getQuantity() != null ? req.getQuantity() : 1);
+        int finalQty      = existing.map(i -> i.getQuantity() + requestedQty).orElse(requestedQty);
+        validateQuantityAgainstStock(finalQty, variant.getStock());
+
         if (existing.isPresent()) {
-            existing.get().setQuantity(existing.get().getQuantity() + Math.max(1, req.getQuantity()));
+            existing.get().setQuantity(finalQty);
         } else {
             cart.getItems().add(CartItem.builder()
                     .cart(cart).productId(req.getProductId()).variantId(req.getVariantId())
-                    .quantity(Math.max(1, req.getQuantity())).metadata(req.getMetadata()).lineDiscount("0")
+                    .quantity(finalQty).metadata(req.getMetadata()).lineDiscount("0")
                     .build());
         }
+    }
+
+    /** Validates a quantity update against the current variant stock (also enforces MAX_QTY_PER_ITEM). */
+    private void validateRequestedQuantity(UUID variantId, int qty) {
+        ProductVariant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new IllegalArgumentException("Product variant not found"));
+        validateQuantityAgainstStock(qty, variant.getStock());
+    }
+
+    private void validateQuantityAgainstStock(int qty, int stock) {
+        if (qty > MAX_QTY_PER_ITEM)
+            throw new IllegalArgumentException("Quantity cannot exceed " + MAX_QTY_PER_ITEM + " per item");
+        if (stock <= 0)
+            throw new IllegalArgumentException("Product is out of stock");
+        if (qty > stock)
+            throw new IllegalArgumentException("Only " + stock + " unit(s) available in stock");
     }
 
     private Coupon fetchActiveCoupon(String code) {
@@ -669,11 +732,18 @@ public class CartService extends BaseService {
     private void recompute(Cart cart) {
         if (cart.getItems() == null) cart.setItems(new ArrayList<>());
 
+        // Batch-fetch all variants once instead of one query per item.
+        Set<UUID> variantIds = cart.getItems().stream().map(CartItem::getVariantId).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantMap = variantIds.isEmpty() ? Map.of()
+                : variantRepository.findAllById(variantIds).stream()
+                        .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
         BigDecimal sub      = BigDecimal.ZERO;
         BigDecimal itemDisc = BigDecimal.ZERO;
 
         for (CartItem it : cart.getItems()) {
-            BigDecimal price = new BigDecimal(getPriceFromVariant(it.getVariantId()));
+            ProductVariant variant = variantMap.get(it.getVariantId());
+            BigDecimal price = variant != null ? effectivePrice(variant) : BigDecimal.ZERO;
             sub      = sub.add(price.multiply(BigDecimal.valueOf(it.getQuantity())));
             itemDisc = itemDisc.add(parseDecimal(it.getLineDiscount()));
         }
@@ -722,12 +792,21 @@ public class CartService extends BaseService {
     }
 
     private String getPriceFromVariant(UUID variantId) {
-        String paise = variantRepository.findById(variantId).map(ProductVariant::getPrice).orElse("0");
-        try {
-            return new BigDecimal(paise).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).toPlainString();
-        } catch (NumberFormatException e) {
-            return "0";
+        ProductVariant variant = variantRepository.findById(variantId).orElse(null);
+        return variant != null ? effectivePrice(variant).toPlainString() : "0";
+    }
+
+    /** Buyer-facing price in rupees: the active discount price if one is currently live, else the base price. */
+    private BigDecimal effectivePrice(ProductVariant variant) {
+        if (variant.isDiscountCurrentlyEffective() && variant.getDiscountPrice() != null) {
+            return parseDecimal(variant.getDiscountPrice()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         }
+        return basePrice(variant);
+    }
+
+    /** Seller-set base price in rupees, ignoring any active discount. */
+    private BigDecimal basePrice(ProductVariant variant) {
+        return parseDecimal(variant.getPrice()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
     public static long calculateDiscount(Coupon coupon, long cartAmount) {

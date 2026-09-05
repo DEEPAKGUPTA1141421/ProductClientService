@@ -24,7 +24,9 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     Optional<Category> findFirstByExternalIdAndCategoryLevel(Integer externalId, Category.Level categoryLevel);
 
-    List<CategoryProjection> findByCategoryLevel(Category.Level level);
+    @Query("SELECT c.id as id, c.name as name, c.imageUrl as imageUrl, c.priority as priority " +
+            "FROM Category c WHERE c.categoryLevel = :level ORDER BY c.priority ASC NULLS LAST")
+    List<CategoryProjection> findByCategoryLevel(@Param("level") Category.Level level);
 
     Optional<Category> findByIdAndCategoryLevel(UUID Id, Category.Level level);
 

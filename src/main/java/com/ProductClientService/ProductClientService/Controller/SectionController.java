@@ -27,9 +27,16 @@ public class SectionController extends BaseService {
     @GetMapping("/{categoryId}")
     public ResponseEntity<?> getPage(@PathVariable String categoryId) {
         try {
-            String categoryName = categoryRepository.findById(UUID.fromString(categoryId))
-                    .orElseThrow(() -> new RuntimeException("Category not found"))
-                    .getName();
+            String categoryName;
+            try {
+                UUID uuid = UUID.fromString(categoryId);
+                categoryName = categoryRepository.findById(uuid)
+                        .orElseThrow(() -> new RuntimeException("Category not found"))
+                        .getName();
+            } catch (IllegalArgumentException notAUuid) {
+                // Not a UUID — treat as a literal category/section name (e.g. "For You")
+                categoryName = categoryId;
+            }
 
             UUID userId = null;
             try {

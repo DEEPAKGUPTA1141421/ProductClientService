@@ -58,10 +58,78 @@ public class ShopService {
 
     /**
      * Primary listing: ACTIVE shops near the user, sorted by distance (default).
+     * Tries Elasticsearch first; if ES is unreachable, falls back to a direct
+     * Postgres geo query so the listing stays up during an ES outage.
      */
     public ShopPageResponse getNearbyShops(ShopFilterRequest req) {
-        List<ShopSearchDocument> docs = shopSearchService.nearby(req);
+        List<ShopSearchDocument> docs;
+        try {
+            docs = shopSearchService.nearby(req);
+        } catch (ElasticsearchUnavailableException e) {
+            log.warn("Elasticsearch unavailable for /shops/nearby, falling back to DB: {}", e.getMessage());
+            docs = dbFallbackNearby(req);
+        }
         return buildPageResponse(docs, req);
+    }
+
+    /**
+     * DB fallback for nearby shops when ES is down. Rating/review fields are
+     * not available from Postgres for this query and are returned as 0 —
+     * results are always distance-sorted regardless of req.sortBy.
+     */
+    private List<ShopSearchDocument> dbFallbackNearby(ShopFilterRequest req) {
+        try {
+            double radiusMeters = req.getRadiusKm() * 1000.0;
+            int offset = req.getPage() * req.getPageSize();
+
+            List<Seller> sellers = sellerRepository.findNearbyActiveShops(
+                    req.getUserLat(), req.getUserLng(),
+                    req.getCategoryId(), radiusMeters,
+                    req.getPageSize(), offset);
+
+            return sellers.stream().map(this::toSearchDocument).toList();
+        } catch (Exception e) {
+            log.error("DB fallback for /shops/nearby also failed: {}", e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    /** DB fallback for a single shop lookup when it is missing from the ES index. */
+    private ShopSearchDocument dbFallbackShop(String shopId) {
+        UUID sellerUuid = parseUuid(shopId);
+        if (sellerUuid == null) {
+            return null;
+        }
+        return sellerRepository.findById(sellerUuid)
+                .map(this::toSearchDocument)
+                .orElse(null);
+    }
+
+    private ShopSearchDocument toSearchDocument(Seller seller) {
+        var addr = seller.getAddress();
+
+        ShopSearchDocument.GeoPoint geoPoint = null;
+        if (addr != null && addr.getLatitude() != null && addr.getLongitude() != null) {
+            geoPoint = ShopSearchDocument.GeoPoint.builder()
+                    .lat(addr.getLatitude().doubleValue())
+                    .lon(addr.getLongitude().doubleValue())
+                    .build();
+        }
+
+        return ShopSearchDocument.builder()
+                .shopId(seller.getId().toString())
+                .displayName(seller.getDisplayName())
+                .legalName(seller.getLegalName())
+                .city(addr != null ? addr.getCity() : null)
+                .categoryId(seller.getCategory() != null ? seller.getCategory().getId().toString() : null)
+                .categoryName(seller.getCategory() != null ? seller.getCategory().getName() : null)
+                .status(seller.getStatus())
+                .isOpen(true)
+                .location(geoPoint)
+                .avgRating(0.0)
+                .reviewCount(0)
+                .logoUrl(seller.getProfilePhotoUrl() != null ? List.of(seller.getProfilePhotoUrl()) : List.of())
+                .build();
     }
 
     /**
@@ -84,6 +152,12 @@ public class ShopService {
      */
     public ShopDetailDto getShopDetail(String shopId, double userLat, double userLng, UUID userId) {
         ShopSearchDocument doc = shopSearchService.getById(shopId);
+        if (doc == null) {
+            // Not in the ES index (ES outage, or the seller's async index job
+            // hasn't run/failed yet) — fall back to Postgres so detail lookup
+            // stays consistent with the DB-backed nearby-list fallback.
+            doc = dbFallbackShop(shopId);
+        }
         if (doc == null)
             return null;
 

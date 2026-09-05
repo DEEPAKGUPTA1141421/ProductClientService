@@ -10,6 +10,8 @@ import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import com.ProductClientService.ProductClientService.DTO.Cart.CartItemRequest;
 import com.ProductClientService.ProductClientService.DTO.wishlist.PriceDropItemDto;
+import com.ProductClientService.ProductClientService.DTO.wishlist.WishlistItemDto;
+import com.ProductClientService.ProductClientService.DTO.wishlist.WishlistResponseDto;
 
 import com.ProductClientService.ProductClientService.Service.kafka.EventPublisherService;
 import lombok.RequiredArgsConstructor;
@@ -104,7 +106,51 @@ public class WishlistService {
         Wishlist wl = wishlistRepo.findByUserId(userId)
                 .orElseGet(() -> Wishlist.builder().userId(userId).items(List.of()).build());
 
-        return new ApiResponse<>(true, "Get wishlist", wl, 200);
+        return new ApiResponse<>(true, "Get wishlist", toResponseDto(wl), 200);
+    }
+
+    private WishlistResponseDto toResponseDto(Wishlist wl) {
+        List<WishlistItem> items = wl.getItems() == null ? List.of() : wl.getItems();
+
+        Map<UUID, Product> productMap = items.isEmpty() ? Map.of() : productRepo
+                .findAllById(items.stream().map(WishlistItem::getProductId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        List<UUID> variantIds = items.stream()
+                .map(WishlistItem::getVariantId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<UUID, ProductVariant> variantMap = variantIds.isEmpty() ? Map.of() : variantRepo
+                .findAllById(variantIds)
+                .stream()
+                .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        List<WishlistItemDto> itemDtos = items.stream()
+                .map(i -> {
+                    Product product = productMap.get(i.getProductId());
+                    ProductVariant variant = i.getVariantId() != null ? variantMap.get(i.getVariantId()) : null;
+
+                    return WishlistItemDto.builder()
+                            .wishlistItemId(i.getId())
+                            .productId(i.getProductId())
+                            .variantId(i.getVariantId())
+                            .name(product != null ? product.getName() : "Unknown")
+                            .coverImage(resolveFirstImage(product))
+                            .price(toRupees(variant != null ? variant.getPrice() : null))
+                            .mrp(toRupees(variant != null ? variant.getMrp() : null))
+                            .addedPrice(toRupees(i.getAddedPrice()))
+                            .build();
+                })
+                .toList();
+
+        return WishlistResponseDto.builder()
+                .id(wl.getId())
+                .userId(wl.getUserId())
+                .items(itemDtos)
+                .createdAt(wl.getCreatedAt())
+                .updatedAt(wl.getUpdatedAt())
+                .build();
     }
 
     @Transactional
@@ -238,6 +284,12 @@ public class WishlistService {
                 drops, 200);
     }
 
+    private String toRupees(String paise) {
+        if (paise == null)
+            return null;
+        return parseSafe(paise).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).toPlainString();
+    }
+
     private BigDecimal parseSafe(String value) {
         try {
             return new BigDecimal(value);
@@ -301,7 +353,7 @@ public class WishlistService {
                 .orElseGet(() -> Wishlist.builder()
                         .userId(share.getOwnerId()).items(List.of()).build());
 
-        return new ApiResponse<>(true, "Shared wishlist fetched", wl, 200);
+        return new ApiResponse<>(true, "Shared wishlist fetched", toResponseDto(wl), 200);
     }
 
     private ApiResponse<Object> buildShareResponse(SharedWishlist share) {

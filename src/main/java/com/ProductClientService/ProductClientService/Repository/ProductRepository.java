@@ -211,6 +211,18 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             """)
     ProductSummaryProjection getProductNameAndDescription(@Param("id") UUID productId);
 
+    /**
+     * Batch name/description lookup for a set of product IDs — used by CartService
+     * to avoid one query per cart item.
+     */
+    @Query("""
+                SELECT p.id AS id, p.name AS name, p.description AS description
+                FROM Product p
+                WHERE p.id IN :productIds
+            """)
+    List<com.ProductClientService.ProductClientService.Repository.Projection.ProductIdSummaryProjection>
+            findNamesAndDescriptionsByIds(@Param("productIds") Collection<UUID> productIds);
+
     @Query("""
                 SELECT
                     p.id as id,
@@ -307,6 +319,43 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
               AND p.step = 5
             """, nativeQuery = true)
     long countLiveProductsBySeller(@Param("sellerId") UUID sellerId);
+
+    /**
+     * LIVE products for a seller with category info — DB fallback for the
+     * storefront when the seller's products aren't (yet) in the ES index.
+     * Columns: id, name, categoryId, categoryName, minPrice (paise),
+     * coverImage, avgRating, reviewCount.
+     */
+    @Query(value = """
+            WITH cheapest_variant AS (
+                SELECT DISTINCT ON (pv.product_id)
+                    pv.product_id, pv.price AS min_price
+                FROM product_variants pv
+                WHERE pv.stock > 0
+                ORDER BY pv.product_id, CAST(pv.price AS NUMERIC) ASC
+            )
+            SELECT
+                p.id                                         AS id,
+                p.name                                        AS name,
+                c.id                                           AS categoryId,
+                c.name                                         AS categoryName,
+                COALESCE(cv.min_price, '0')                    AS minPrice,
+                (SELECT pm.url FROM product_media pm
+                 WHERE pm.product_id = p.id AND pm.is_cover = true
+                 LIMIT 1)                                      AS coverImage,
+                COALESCE(p.average_rating, 0)                  AS avgRating,
+                COALESCE(p.rating_count, 0)                    AS reviewCount
+            FROM products p
+            LEFT JOIN categories c        ON c.id = p.category_id
+            LEFT JOIN cheapest_variant cv ON cv.product_id = p.id
+            WHERE p.seller_id = :sellerId
+              AND p.step = 5
+            ORDER BY p.created_at DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Object[]> findLiveProductsWithCategoryBySeller(
+            @Param("sellerId") UUID sellerId,
+            @Param("limit") int limit);
 
     /** Stock count + is_active for a batch of product IDs (used by ES-backed seller listing). */
     @Query(value = """

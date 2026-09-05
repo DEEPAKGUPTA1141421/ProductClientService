@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ProductClientService.ProductClientService.DTO.ApiResponse;
 import com.ProductClientService.ProductClientService.DTO.NotificationRequest;
 import com.ProductClientService.ProductClientService.DTO.SellerBasicInfo;
+import com.ProductClientService.ProductClientService.DTO.address.AddressRequestDto;
 import com.ProductClientService.ProductClientService.DTO.user.UpdateEmailRequest;
 import com.ProductClientService.ProductClientService.DTO.user.UpdateProfileRequest;
 import com.ProductClientService.ProductClientService.DTO.user.UserProfileDto;
@@ -196,6 +197,113 @@ public class UserService extends BaseService {
 
         return new ApiResponse<>(true,
                 "Account scheduled for deletion. You can reactivate by logging in within 30 days.", null, 200);
+    }
+
+    /**
+     * Resolves a human-readable address (line1/city/state/pincode) from GPS
+     * coordinates without persisting anything. Used by the "Use current
+     * location" button to prefill the add-address form for the user to review.
+     */
+    public ApiResponse<Object> reverseGeocode(BigDecimal lat, BigDecimal lng) {
+        try {
+            OpenStreetMapService.AddressResponse address = openStreetMapService.getAddressFromLatLng(lat, lng);
+            return new ApiResponse<>(true, "Address resolved", address, 200);
+        } catch (Exception e) {
+            return new ApiResponse<>(false, "Failed to resolve address: " + e.getMessage(), null, 500);
+        }
+    }
+
+    @Transactional
+    public ApiResponse<Object> addAddress(AddressRequestDto dto) {
+        User user = userRepojectory.findById(getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Address address = new Address();
+        address.setAddressType(dto.addressType());
+        address.setFullName(dto.fullName());
+        address.setPhone(dto.phone());
+        address.setLine1(dto.line1());
+        address.setLine2(dto.line2());
+        address.setLandmark(dto.landmark());
+        address.setCity(dto.city());
+        address.setState(dto.state());
+        address.setPincode(dto.pincode());
+        if (dto.lat() != null && dto.lng() != null) {
+            address.setCoordinates(dto.lat(), dto.lng());
+        }
+        address.setUser(user);
+
+        boolean makeDefault = Boolean.TRUE.equals(dto.isDefault()) || user.getAddresses().isEmpty();
+        address.setDefault(makeDefault);
+
+        if (makeDefault) {
+            for (Address existing : user.getAddresses()) {
+                existing.setDefault(false);
+            }
+        }
+
+        user.getAddresses().add(address);
+        userRepojectory.save(user);
+
+        return new ApiResponse<>(true, "Address added successfully", UserProfileDto.fromEntity(user), 200);
+    }
+
+    @Transactional
+    public ApiResponse<Object> updateAddress(UUID addressId, AddressRequestDto dto) {
+        User user = userRepojectory.findById(getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Address address = user.getAddresses().stream()
+                .filter(a -> a.getId().equals(addressId))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Address not found"));
+
+        address.setAddressType(dto.addressType());
+        address.setFullName(dto.fullName());
+        address.setPhone(dto.phone());
+        address.setLine1(dto.line1());
+        address.setLine2(dto.line2());
+        address.setLandmark(dto.landmark());
+        address.setCity(dto.city());
+        address.setState(dto.state());
+        address.setPincode(dto.pincode());
+        if (dto.lat() != null && dto.lng() != null) {
+            address.setCoordinates(dto.lat(), dto.lng());
+        }
+
+        if (Boolean.TRUE.equals(dto.isDefault()) && !address.isDefault()) {
+            for (Address other : user.getAddresses()) {
+                other.setDefault(other.getId().equals(addressId));
+            }
+        }
+
+        userRepojectory.save(user);
+
+        return new ApiResponse<>(true, "Address updated successfully", UserProfileDto.fromEntity(user), 200);
+    }
+
+    @Transactional
+    public ApiResponse<Object> deleteAddress(UUID addressId) {
+        User user = userRepojectory.findById(getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Address toRemove = user.getAddresses().stream()
+                .filter(a -> a.getId().equals(addressId))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Address not found"));
+
+        boolean wasDefault = toRemove.isDefault();
+        user.getAddresses().remove(toRemove);
+
+        // Promote another address to default so the user always has one set,
+        // as long as any addresses remain.
+        if (wasDefault && !user.getAddresses().isEmpty()) {
+            user.getAddresses().get(0).setDefault(true);
+        }
+
+        userRepojectory.save(user);
+
+        return new ApiResponse<>(true, "Address deleted successfully", UserProfileDto.fromEntity(user), 200);
     }
 
     public ApiResponse<Object> handleLocaton(SellerBasicInfo inforequest) {
